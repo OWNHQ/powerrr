@@ -1,0 +1,10 @@
+.git
+.nuxt
+.output
+.turbo
+coverage
+node_modules
+**/node_modules
+*.log
+.env*
+!.env.example

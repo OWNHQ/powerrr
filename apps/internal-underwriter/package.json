@@ -1,0 +1,25 @@
+{
+  "name": "@powerrr/internal-underwriter",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev --host 127.0.0.1 --port 3001",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "lint": "nuxt prepare && eslint . --max-warnings 0",
+    "typecheck": "nuxt typecheck"
+  },
+  "dependencies": {
+    "@powerrr/own-underwriter": "workspace:*",
+    "@powerrr/schemas": "workspace:*",
+    "@powerrr/shared-types": "workspace:*",
+    "nuxt": "^4.5.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1.16.0",
+    "typescript": "^5.7.2",
+    "vue-tsc": "^2.1.10"
+  }
+}

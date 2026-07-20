@@ -1,0 +1,190 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color: #102223;
+    background: #f6f8f8;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-width: 320px;
+    font-family:
+      Inter,
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+    text-rendering: optimizeLegibility;
+  }
+
+  * {
+    letter-spacing: 0;
+  }
+
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+}
+
+@layer components {
+  .focus-ring {
+    @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-river focus-visible:ring-offset-2 focus-visible:ring-offset-paper;
+  }
+
+  .skip-link {
+    @apply fixed left-4 top-3 z-[60] -translate-y-24 rounded-lg bg-ink px-4 py-3 text-sm font-semibold text-white transition focus:translate-y-0;
+  }
+
+  .panel {
+    @apply rounded-xl border border-line bg-white shadow-panel;
+  }
+
+  .field-label {
+    @apply mb-2 block text-sm font-semibold text-ink;
+  }
+
+  .field-control {
+    @apply focus-ring mt-2 h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink placeholder:text-slate/65;
+  }
+
+  .progress-step {
+    @apply relative flex items-center gap-3 px-1 py-2 text-slate;
+  }
+
+  .progress-step:not(:last-child)::after {
+    content: "";
+    @apply absolute left-10 right-[-1.5rem] top-1/2 hidden h-px bg-line md:block;
+  }
+
+  .progress-step > * {
+    @apply relative z-10;
+  }
+
+  .progress-step strong {
+    @apply block text-sm font-semibold text-ink;
+  }
+
+  .progress-step small {
+    @apply mt-0.5 block text-xs text-slate;
+  }
+
+  .progress-number {
+    @apply grid h-8 w-8 shrink-0 place-items-center rounded-full border border-line bg-white text-sm font-bold;
+  }
+
+  .progress-step-complete .progress-number,
+  .progress-step-active .progress-number {
+    @apply border-river bg-river text-white;
+  }
+
+  .progress-step-complete::after {
+    @apply bg-river;
+  }
+
+  .compact-step {
+    @apply focus-ring flex min-h-16 items-center gap-3 rounded-xl border border-line bg-white px-3 py-2 text-slate no-underline transition hover:border-river/60;
+  }
+
+  .compact-step strong {
+    @apply block text-sm font-semibold text-ink;
+  }
+
+  .compact-step small {
+    @apply mt-0.5 hidden text-xs text-slate sm:block;
+  }
+
+  .compact-step-complete .progress-number,
+  .compact-step-active .progress-number {
+    @apply border-river bg-river text-white;
+  }
+
+  .compact-step-active {
+    @apply border-river bg-blue-50/60;
+  }
+
+  .compact-step[aria-disabled="true"] {
+    @apply cursor-default opacity-60;
+  }
+
+  .result-summary:focus {
+    outline: none;
+  }
+
+  .amount-range {
+    --range-progress: 50%;
+    appearance: none;
+    height: 8px;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      #0b5d5f 0%,
+      #0b5d5f var(--range-progress),
+      #d7e2e2 var(--range-progress),
+      #d7e2e2 100%
+    );
+    cursor: pointer;
+  }
+
+  .amount-range-own {
+    background: linear-gradient(
+      90deg,
+      #0b5d5f 0%,
+      #0b5d5f var(--range-progress),
+      #d7e2e2 var(--range-progress),
+      #d7e2e2 100%
+    );
+  }
+
+  .amount-range::-webkit-slider-thumb {
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    border: 2px solid #0b5d5f;
+    background: #fff;
+    box-shadow: 0 2px 7px rgb(16 34 35 / 0.18);
+  }
+
+  .amount-range::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    border: 2px solid #0b5d5f;
+    background: #fff;
+    box-shadow: 0 2px 7px rgb(16 34 35 / 0.18);
+  }
+
+  .amount-range:focus-visible {
+    outline: 2px solid #0b5d5f;
+    outline-offset: 4px;
+  }
+
+  dl dt {
+    @apply text-xs leading-5 text-slate;
+  }
+
+  dl dd {
+    @apply mt-2 text-xl font-semibold tracking-tight text-ink;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

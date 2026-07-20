@@ -1,0 +1,439 @@
+import type { ProtocolAdapterInput } from "@powerrr/shared-types";
+import {
+  decodeFunctionResult,
+  encodeFunctionData,
+  formatUnits,
+  getAddress,
+  isAddressEqual,
+  parseAbi,
+  type Address,
+  type Hex,
+} from "viem";
+import type { AaveLikeLiveSnapshot } from "./live-snapshots.js";
+import type { CompoundLiveRpcClient } from "./compound-live-source.js";
+
+const RAY = 1e27;
+const BPS = 10_000;
+const ZERO = BigInt(0);
+
+const abi = parseAbi([
+  "function getAllReservesTokens() view returns ((string symbol,address tokenAddress)[])",
+  "function getReserveConfigurationData(address asset) view returns (uint256 decimals,uint256 ltv,uint256 liquidationThreshold,uint256 liquidationBonus,uint256 reserveFactor,bool usageAsCollateralEnabled,bool borrowingEnabled,bool stableBorrowRateEnabled,bool isActive,bool isFrozen)",
+  "function getReserveTokensAddresses(address asset) view returns (address aTokenAddress,address stableDebtTokenAddress,address variableDebtTokenAddress)",
+  "function getUserReserveData(address asset,address user) view returns (uint256 currentATokenBalance,uint256 currentStableDebt,uint256 currentVariableDebt,uint256 principalStableDebt,uint256 scaledVariableDebt,uint256 stableBorrowRate,uint256 liquidityRate,uint40 stableRateLastUpdated,bool usageAsCollateralEnabled)",
+  "function getReserveData(address asset) view returns (uint256 unbacked,uint256 accruedToTreasuryScaled,uint256 totalAToken,uint256 totalStableDebt,uint256 totalVariableDebt,uint256 liquidityRate,uint256 variableBorrowRate,uint256 stableBorrowRate,uint256 averageStableBorrowRate,uint256 liquidityIndex,uint256 variableBorrowIndex,uint40 lastUpdateTimestamp)",
+  "function getReserveCaps(address asset) view returns (uint256 borrowCap,uint256 supplyCap)",
+  "function getAssetPrice(address asset) view returns (uint256)",
+  "function BASE_CURRENCY_UNIT() view returns (uint256)",
+  "function balanceOf(address account) view returns (uint256)",
+]);
+
+export type AaveLikeDeployment = {
+  protocolId: "aave-v3" | "sparklend";
+  protocolLabel: string;
+  familyId: string;
+  familyLabel: string;
+  dataProvider: Address;
+  oracle: Address;
+  targetHealthFactor: number;
+};
+
+export const AAVE_V3_ETHEREUM: AaveLikeDeployment = {
+  protocolId: "aave-v3",
+  protocolLabel: "Aave v3 Ethereum Core",
+  familyId: "aave",
+  familyLabel: "Aave",
+  dataProvider: "0x0a16f2FCC0D44FaE41cc54e079281D84A363bECD",
+  oracle: "0x54586bE62E3c3580375aE3723C145253060Ca0C2",
+  targetHealthFactor: 1.35,
+};
+
+export const SPARKLEND_ETHEREUM: AaveLikeDeployment = {
+  protocolId: "sparklend",
+  protocolLabel: "SparkLend Ethereum",
+  familyId: "sparklend",
+  familyLabel: "SparkLend",
+  dataProvider: "0xFc21d6d146E6086B8359705C8b28512a983db0cb",
+  oracle: "0x8105f69D9C41644c6A0803fDA7D03Aa70996cFD9",
+  targetHealthFactor: 1.4,
+};
+
+type ReserveToken = { symbol: string; tokenAddress: Address };
+type Configuration = readonly [
+  bigint,
+  bigint,
+  bigint,
+  bigint,
+  bigint,
+  boolean,
+  boolean,
+  boolean,
+  boolean,
+  boolean,
+];
+type UserReserve = readonly [
+  bigint,
+  bigint,
+  bigint,
+  bigint,
+  bigint,
+  bigint,
+  bigint,
+  number,
+  boolean,
+];
+type ReserveData = readonly [
+  bigint,
+  bigint,
+  bigint,
+  bigint,
+  bigint,
+  bigint,
+  bigint,
+  bigint,
+  bigint,
+  bigint,
+  bigint,
+  number,
+];
+type ReserveCaps = readonly [bigint, bigint];
+
+export async function loadAaveLikeSnapshot(
+  input: ProtocolAdapterInput & {
+    rpc: CompoundLiveRpcClient;
+    deployment: AaveLikeDeployment;
+  },
+): Promise<AaveLikeLiveSnapshot & { kind: "aave-like" }> {
+  const fetchedAt = input.now ?? new Date();
+  const freshnessSeconds = sourceAgeSeconds(fetchedAt, input.blockTimestamp);
+  const blockTag = input.asOfBlock
+    ? `0x${BigInt(input.asOfBlock).toString(16)}`
+    : "latest";
+  const blockHex = input.asOfBlock
+    ? (`0x${BigInt(input.asOfBlock).toString(16)}` as Hex)
+    : await input.rpc.request<Hex>({ method: "eth_blockNumber" });
+  const [rawReserves, baseCurrencyUnit] = await Promise.all([
+    call<unknown>(
+      input.rpc,
+      input.deployment.dataProvider,
+      "getAllReservesTokens",
+      [],
+      blockTag,
+    ),
+    call<bigint>(
+      input.rpc,
+      input.deployment.oracle,
+      "BASE_CURRENCY_UNIT",
+      [],
+      blockTag,
+    ),
+  ]);
+  const reserves = normalizeReserveTokens(rawReserves);
+  const targetSymbol = input.targetBorrowAssets[0] ?? "USDC";
+  const target = reserves.find(
+    (reserve) => reserve.symbol.toUpperCase() === targetSymbol.toUpperCase(),
+  );
+  if (!target) {
+    throw new Error(
+      `${input.deployment.protocolLabel} does not expose a ${targetSymbol} reserve`,
+    );
+  }
+
+  const walletAssets = new Map(
+    input.portfolio.map((asset) => [
+      getAddress((asset.protocolAssetToken ?? asset.token) as Address),
+      asset,
+    ]),
+  );
+  const candidateReserves =
+    input.mode === "wallet-estimate"
+      ? reserves.filter((reserve) =>
+          [...walletAssets.keys()].some((token) =>
+            isAddressEqual(token, reserve.tokenAddress),
+          ),
+        )
+      : reserves;
+  const [
+    targetTokens,
+    targetReserveData,
+    targetConfiguration,
+    targetPriceRaw,
+    targetCaps,
+  ] = await Promise.all([
+    call<readonly [Address, Address, Address]>(
+      input.rpc,
+      input.deployment.dataProvider,
+      "getReserveTokensAddresses",
+      [target.tokenAddress],
+      blockTag,
+    ),
+    call<ReserveData>(
+      input.rpc,
+      input.deployment.dataProvider,
+      "getReserveData",
+      [target.tokenAddress],
+      blockTag,
+    ),
+    call<Configuration>(
+      input.rpc,
+      input.deployment.dataProvider,
+      "getReserveConfigurationData",
+      [target.tokenAddress],
+      blockTag,
+    ),
+    call<bigint>(
+      input.rpc,
+      input.deployment.oracle,
+      "getAssetPrice",
+      [target.tokenAddress],
+      blockTag,
+    ),
+    call<ReserveCaps>(
+      input.rpc,
+      input.deployment.dataProvider,
+      "getReserveCaps",
+      [target.tokenAddress],
+      blockTag,
+    ),
+  ]);
+  const targetBorrowCapReached =
+    targetCaps[0] > ZERO &&
+    targetReserveData[3] + targetReserveData[4] >=
+      targetCaps[0] * BigInt(10) ** targetConfiguration[0];
+  if (
+    !targetConfiguration[6] ||
+    !targetConfiguration[8] ||
+    targetConfiguration[9] ||
+    targetPriceRaw <= ZERO ||
+    targetBorrowCapReached
+  ) {
+    throw new Error(
+      `${targetSymbol} borrowing is unavailable on ${input.deployment.protocolLabel}`,
+    );
+  }
+
+  const availableLiquidityRaw = await call<bigint>(
+    input.rpc,
+    target.tokenAddress,
+    "balanceOf",
+    [targetTokens[0]],
+    blockTag,
+  );
+  const reserveRows = await Promise.all(
+    candidateReserves.map(async (reserve) => {
+      const [configuration, priceRaw, userReserve, reserveData, reserveCaps] =
+        await Promise.all([
+          call<Configuration>(
+            input.rpc,
+            input.deployment.dataProvider,
+            "getReserveConfigurationData",
+            [reserve.tokenAddress],
+            blockTag,
+          ),
+          call<bigint>(
+            input.rpc,
+            input.deployment.oracle,
+            "getAssetPrice",
+            [reserve.tokenAddress],
+            blockTag,
+          ),
+          input.mode === "existing-position"
+            ? call<UserReserve>(
+                input.rpc,
+                input.deployment.dataProvider,
+                "getUserReserveData",
+                [reserve.tokenAddress, input.address],
+                blockTag,
+              )
+            : Promise.resolve(null),
+          call<ReserveData>(
+            input.rpc,
+            input.deployment.dataProvider,
+            "getReserveData",
+            [reserve.tokenAddress],
+            blockTag,
+          ),
+          call<ReserveCaps>(
+            input.rpc,
+            input.deployment.dataProvider,
+            "getReserveCaps",
+            [reserve.tokenAddress],
+            blockTag,
+          ),
+        ]);
+      const decimals = Number(configuration[0]);
+      const priceUsd = Number(priceRaw) / Number(baseCurrencyUnit);
+      const walletAsset = [...walletAssets.entries()].find(([token]) =>
+        isAddressEqual(token, reserve.tokenAddress),
+      )?.[1];
+      const balanceRaw =
+        input.mode === "existing-position"
+          ? (userReserve?.[0] ?? ZERO)
+          : BigInt(
+              walletAsset?.protocolBalanceRaw ?? walletAsset?.balanceRaw ?? "0",
+            );
+      const debtRaw =
+        input.mode === "existing-position"
+          ? (userReserve?.[1] ?? ZERO) + (userReserve?.[2] ?? ZERO)
+          : ZERO;
+      const isCollateral =
+        input.mode === "wallet-estimate"
+          ? configuration[5]
+          : Boolean(userReserve?.[8]);
+
+      return {
+        reserve,
+        configuration,
+        balanceRaw,
+        debtRaw,
+        priceUsd,
+        valueUsd: Number(formatUnits(balanceRaw, decimals)) * priceUsd,
+        debtUsd: Number(formatUnits(debtRaw, decimals)) * priceUsd,
+        isCollateral,
+        reserveData,
+        reserveCaps,
+      };
+    }),
+  );
+  const collateral = reserveRows
+    .filter((row) => {
+      const supplyCapRaw =
+        row.reserveCaps[1] * BigInt(10) ** row.configuration[0];
+      const capAvailable =
+        row.reserveCaps[1] === ZERO ||
+        row.reserveData[2] + row.balanceRaw <= supplyCapRaw;
+      return (
+        row.balanceRaw > ZERO &&
+        row.isCollateral &&
+        row.configuration[8] &&
+        !row.configuration[9] &&
+        row.configuration[1] > ZERO &&
+        row.priceUsd > 0 &&
+        capAvailable
+      );
+    })
+    .map((row) => ({
+      token: getAddress(row.reserve.tokenAddress) as `0x${string}`,
+      symbol: row.reserve.symbol,
+      valueUsd: row.valueUsd,
+      ltv: Number(row.configuration[1]) / BPS,
+      liquidationThreshold: Number(row.configuration[2]) / BPS,
+    }));
+  const targetDecimals = Number(targetConfiguration[0]);
+
+  return {
+    kind: "aave-like",
+    protocolId: input.deployment.protocolId,
+    protocolLabel: input.deployment.protocolLabel,
+    familyId: input.deployment.familyId,
+    familyLabel: input.deployment.familyLabel,
+    chainId: input.chainId,
+    mode: input.mode,
+    targetBorrowAsset: target.symbol,
+    rateType: "variable",
+    indicativeApr: Number(targetReserveData[6]) / RAY,
+    annualRateValue: Number(targetReserveData[6]) / RAY,
+    annualRateConvention: "apr",
+    rateSourceId: `${input.deployment.protocolId}:variable-borrow-rate`,
+    existingDebtUsd: reserveRows.reduce((sum, row) => sum + row.debtUsd, 0),
+    availableLiquidityUsd:
+      Number(formatUnits(availableLiquidityRaw, targetDecimals)) *
+      (Number(targetPriceRaw) / Number(baseCurrencyUnit)),
+    source: `${input.deployment.protocolLabel} data provider and oracle on-chain reads`,
+    sourceType: "on-chain",
+    ...(freshnessSeconds === undefined ? {} : { freshnessSeconds }),
+    fetchedAt: fetchedAt.toISOString(),
+    ...(input.blockTimestamp
+      ? {
+          observedAt: input.blockTimestamp,
+          blockTimestamp: input.blockTimestamp,
+        }
+      : {}),
+    blockNumber: String(BigInt(blockHex)),
+    ...(input.now ? { now: input.now } : {}),
+    assumptions: [
+      `Contract addresses are pinned to the protocol-owned address registry snapshot reviewed on 2026-07-15.`,
+      "USD values use the deployment oracle and reserve-native decimals.",
+      "Available liquidity is the target underlying balance held by its aToken contract.",
+    ],
+    warnings:
+      input.mode === "wallet-estimate"
+        ? [
+            "Wallet-estimate mode models supported wallet assets as newly supplied collateral; it is not a transaction preview.",
+          ]
+        : [],
+    confidencePenalties: {
+      sourcePenalty: 1,
+      stalenessPenalty: 0,
+      fallbackPenalty: 0,
+      complexityPenalty: 4,
+      liquidityPenalty: 0,
+    },
+    safetyProfile: input.safetyProfile,
+    targetHealthFactor: input.deployment.targetHealthFactor,
+    collateral,
+  };
+}
+
+function sourceAgeSeconds(
+  now: Date,
+  observedAt: string | undefined,
+): number | undefined {
+  if (!observedAt) return undefined;
+  const observedTime = new Date(observedAt).getTime();
+  if (!Number.isFinite(observedTime)) return undefined;
+  return Math.max(0, Math.floor((now.getTime() - observedTime) / 1_000));
+}
+
+async function call<TResult>(
+  rpc: CompoundLiveRpcClient,
+  to: Address,
+  functionName: string,
+  args: unknown[],
+  blockTag: string,
+): Promise<TResult> {
+  const data = encodeFunctionData({ abi, functionName, args } as never);
+  const result = await rpc.request<Hex>({
+    method: "eth_call",
+    params: [{ to, data }, blockTag],
+  });
+  return decodeFunctionResult({
+    abi,
+    functionName,
+    data: result,
+  } as never) as TResult;
+}
+
+function normalizeReserveTokens(value: unknown): ReserveToken[] {
+  if (!Array.isArray(value)) {
+    throw new Error("Protocol data provider returned an invalid reserve list");
+  }
+
+  return value.map((item) => {
+    if (
+      Array.isArray(item) &&
+      typeof item[0] === "string" &&
+      typeof item[1] === "string"
+    ) {
+      return { symbol: item[0], tokenAddress: getAddress(item[1]) };
+    }
+    if (
+      typeof item === "object" &&
+      item !== null &&
+      "symbol" in item &&
+      "tokenAddress" in item
+    ) {
+      const record = item as { symbol: unknown; tokenAddress: unknown };
+      if (
+        typeof record.symbol === "string" &&
+        typeof record.tokenAddress === "string"
+      ) {
+        return {
+          symbol: record.symbol,
+          tokenAddress: getAddress(record.tokenAddress),
+        };
+      }
+    }
+    throw new Error("Protocol data provider returned an invalid reserve token");
+  });
+}

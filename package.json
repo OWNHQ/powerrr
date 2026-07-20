@@ -1,0 +1,34 @@
+{
+  "name": "powerrr",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "pnpm --filter @powerrr/website dev",
+    "dev:engine": "pnpm --filter @powerrr/engine dev",
+    "dev:website": "pnpm --filter @powerrr/website dev",
+    "dev:internal-underwriter": "pnpm --filter @powerrr/internal-underwriter dev",
+    "start:engine": "pnpm --filter @powerrr/engine start",
+    "build:internal-underwriter": "pnpm --filter @powerrr/internal-underwriter build",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "lint": "turbo run lint && node tooling/check-boundaries.mjs",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "turbo run typecheck",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^22.10.2",
+    "@vitest/coverage-v8": "^4.1.10",
+    "prettier": "^3.9.5",
+    "tsx": "^4.19.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@powerrr/protocol-adapters",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@powerrr/clients": "workspace:*",
+    "@powerrr/configs": "workspace:*",
+    "@powerrr/fixtures": "workspace:*",
+    "@powerrr/math": "workspace:*",
+    "@powerrr/shared-types": "workspace:*",
+    "viem": "^2.55.4"
+  }
+}

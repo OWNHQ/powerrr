@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nuxtjs",
+  "env": {
+    "NUXT_ETHEREUM_RPC_URL": "https://ethereum-rpc.publicnode.com",
+    "NUXT_MORPHO_GRAPHQL_URL": "https://api.morpho.org/graphql",
+    "NUXT_POWERRR_DATA_MODE": "live",
+    "NUXT_PUBLIC_POWERRR_DATA_MODE": "live",
+    "POWERRR_RUNTIME_TIER": "public-rpc-preview",
+    "NUXT_OWN_LEAD_DEVELOPMENT_MOCK": "false"
+  },
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm --filter @powerrr/website exec nuxt build --preset vercel && mkdir -p .vercel && cp -R apps/website/.vercel/output .vercel/output"
+}
