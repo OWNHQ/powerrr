@@ -298,11 +298,13 @@ export function createPowerrrEngine(options: PowerrrEngineOptions = {}) {
         }
         const sourcePolicySatisfied =
           dataMode === "live" && hasOnlyApprovedSources(quotes);
-        const completeness = execution.protocolAvailability.every(
-          (item) => item.status === "available",
-        )
-          ? "complete"
-          : "partial";
+        const completeness =
+          portfolio.completeness !== "partial" &&
+          execution.protocolAvailability.every(
+            (item) => item.status === "available",
+          )
+            ? "complete"
+            : "partial";
         const portfolioWithMatches = applyConfirmedMatches(portfolio, quotes);
         const portfolioSummary = summarizeConfirmedPortfolio(
           portfolioWithMatches.assets,

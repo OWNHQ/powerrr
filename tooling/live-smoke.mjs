@@ -64,7 +64,7 @@ assert(
 
 for (const asset of quoteResponse.portfolio?.assets ?? []) {
   assert(asset.symbol !== "UNKNOWN", "UNKNOWN token symbol escaped");
-  assert(asset.amount > 0, `zero-value ${asset.symbol} row escaped`);
+  assert(Number(asset.balance) > 0, `zero-value ${asset.symbol} row escaped`);
   if (asset.priceStatus === "unavailable") {
     assert(
       asset.marketValueUsd === null || asset.marketValueUsd === undefined,

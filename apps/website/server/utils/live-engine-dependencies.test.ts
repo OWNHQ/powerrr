@@ -171,6 +171,7 @@ describe("Nuxt live engine dependencies", () => {
         return requests.map((request) => {
           if (request.method === "eth_getBalance") return "0xde0b6b3a7640000";
           const call = request.params?.[0] as { to: string; data: Hex };
+          if (call.to.toLowerCase() === wbtc.toLowerCase()) return "0x";
           if (call.to.toLowerCase() === steth.toLowerCase()) {
             return encodeFunctionResult({
               abi: erc20Abi,
@@ -256,6 +257,10 @@ describe("Nuxt live engine dependencies", () => {
       protocolBalanceRaw: "1700000000000000000",
       conversion: { kind: "wsteth", toSymbol: "wstETH" },
     });
+    expect(response.completeness).toBe("partial");
+    expect(response.portfolio.warnings).toContain(
+      "Some supported token balances were unavailable and excluded (WBTC).",
+    );
   });
 
   it("marks a requested protocol without an exact live adapter unavailable", async () => {

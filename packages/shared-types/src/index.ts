@@ -303,6 +303,7 @@ export type PortfolioResponse = {
   chainId: number;
   assets: PortfolioAsset[];
   summary: PortfolioSummary;
+  completeness?: "complete" | "partial";
   provenance: QuoteProvenance[];
   warnings: string[];
 };

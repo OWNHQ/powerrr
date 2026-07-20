@@ -196,13 +196,18 @@ export async function getLivePortfolio(
       balanceRequest(asset, resolved.resolvedAddress as Address, blockTag),
     ),
   );
-  const positive = ethereumAssetRegistryV1.flatMap((asset, index) => {
-    const balanceRaw =
-      asset.assetKind === "native"
-        ? BigInt(balanceResults[index] ?? "0x0")
-        : decodeUintResult(erc20Abi, "balanceOf", balanceResults[index]);
-    return balanceRaw > ZERO_BIGINT ? [{ asset, balanceRaw }] : [];
-  });
+  const balanceRows = ethereumAssetRegistryV1.map((asset, index) => ({
+    asset,
+    balanceRaw: decodeBalanceResult(asset, balanceResults[index]),
+  }));
+  const unreadableBalanceSymbols = balanceRows.flatMap(
+    ({ asset, balanceRaw }) => (balanceRaw === null ? [asset.symbol] : []),
+  );
+  const positive = balanceRows.flatMap(({ asset, balanceRaw }) =>
+    balanceRaw !== null && balanceRaw > ZERO_BIGINT
+      ? [{ asset, balanceRaw }]
+      : [],
+  );
   const oracleAddresses = [
     ...new Set(
       positive.map(({ asset }) => asset.priceSource.oracle.toLowerCase()),
@@ -351,6 +356,9 @@ export async function getLivePortfolio(
         ),
       )
     : undefined;
+  const portfolioPartial =
+    unreadableBalanceSymbols.length > 0 ||
+    assets.some((asset) => asset.priceStatus === "unavailable");
 
   return {
     resolvedAddress: resolved.resolvedAddress,
@@ -360,6 +368,7 @@ export async function getLivePortfolio(
     chainId: resolved.chainId,
     assets,
     summary: summarizePortfolio(assets),
+    completeness: portfolioPartial ? "partial" : "complete",
     provenance: [
       {
         source: `Ethereum RPC batch reads using ${ETHEREUM_ASSET_REGISTRY_VERSION}`,
@@ -379,11 +388,36 @@ export async function getLivePortfolio(
       },
     ],
     warnings: [
+      ...(unreadableBalanceSymbols.length
+        ? [
+            `Some supported token balances were unavailable and excluded (${unreadableBalanceSymbols.join(", ")}).`,
+          ]
+        : []),
+      ...(assets.some((asset) => asset.priceStatus === "unavailable")
+        ? [
+            "Some positive supported balances could not be priced and were excluded from borrowing capacity.",
+          ]
+        : []),
       "Only the reviewed blue-chip registry is queried; unsupported wallet tokens are intentionally omitted.",
       "PublicNode is public-rpc-preview infrastructure and has no availability guarantee.",
       "Protocol quote values use protocol-native source reads where live adapters are wired.",
     ],
   };
+}
+
+function decodeBalanceResult(
+  asset: EthereumAssetRegistryEntry,
+  data: Hex | undefined,
+): bigint | null {
+  if (!data || data === "0x") return null;
+  if (asset.assetKind === "native") {
+    try {
+      return BigInt(data);
+    } catch {
+      return null;
+    }
+  }
+  return decodeUintResultOrNull(erc20Abi, "balanceOf", data);
 }
 
 async function loadNuxtLiveSnapshots(
