@@ -7,10 +7,17 @@ import {
   calculateOwnOfferedPrincipal,
   outstandingBalanceAfterPayments,
   riskLevelFromHealthFactor,
+  roundUsd,
   runScenarioStress,
 } from "./index.js";
 
 describe("financial math", () => {
+  it("never rounds a positive USD value down to zero", () => {
+    expect(roundUsd(0.000422)).toBe(0.000422);
+    expect(roundUsd(0.00499999)).toBe(0.00499999);
+    expect(roundUsd(0.005)).toBe(0.01);
+  });
+
   it("calculates Aave/Spark-style theoretical and safe borrow capacity", () => {
     const result = calculateAaveLikeBorrow({
       collateral: [

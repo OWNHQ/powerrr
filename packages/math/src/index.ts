@@ -66,7 +66,11 @@ export function roundUsd(value: number): number {
     return 0;
   }
 
-  return Math.round(value * 100) / 100;
+  const rounded = Math.round(value * 100) / 100;
+  if (value > 0 && rounded === 0) {
+    return Number(value.toPrecision(6));
+  }
+  return rounded;
 }
 
 export function clamp(value: number, min: number, max: number): number {
