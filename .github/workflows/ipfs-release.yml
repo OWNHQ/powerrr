@@ -31,7 +31,7 @@ jobs:
         run: |
           python3 -m http.server 4173 --bind 127.0.0.1 --directory apps/website/.output/public > /tmp/powerrr-static.log 2>&1 &
           PLAYWRIGHT_SKIP_WEBSERVER=1 PLAYWRIGHT_BASE_URL=http://127.0.0.1:4173 pnpm test:e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: powerrr-static-${{ github.sha }}
           path: apps/website/.output/public
