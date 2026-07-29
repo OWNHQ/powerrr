@@ -45,8 +45,8 @@ export function toWebsiteQuoteRow(quote: ProtocolBorrowQuote): WebsiteQuoteRow {
     freshnessLabel: freshnessLabel(quote),
     availableLiquidityUsd: quote.availableLiquidityUsd ?? null,
     cta: {
-      label: quote.protocolId === "own" ? "Apply" : "Inspect",
-      action: quote.protocolId === "own" ? "open-apply-flow" : "open-drawer",
+      label: "Inspect",
+      action: "open-drawer",
     },
   };
 }

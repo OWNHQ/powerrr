@@ -1,65 +1,21 @@
-import type {
-  BorrowOpportunity,
-  ProtocolBorrowQuote,
-} from "@powerrr/shared-types";
+import type { ProtocolBorrowQuote } from "@powerrr/shared-types";
 
 export type EstimatorCapacitySummary = {
   providerMaximumUsd: number;
-  ownPotentialUsd: number;
-  maximumRequestableUsd: number;
   providerPathCount: number;
 };
 
 export function summarizeEstimatorCapacity(
   providerCapacities: number[],
-  ownPotentialUsd: number,
 ): EstimatorCapacitySummary {
   const usableProviderCapacities = providerCapacities.filter(
     (capacity) => Number.isFinite(capacity) && capacity > 0,
   );
   const providerMaximumUsd = Math.max(0, ...usableProviderCapacities);
-  const normalizedOwnPotentialUsd =
-    Number.isFinite(ownPotentialUsd) && ownPotentialUsd > 0
-      ? ownPotentialUsd
-      : 0;
-
   return {
     providerMaximumUsd,
-    ownPotentialUsd: normalizedOwnPotentialUsd,
-    maximumRequestableUsd: Math.max(
-      providerMaximumUsd,
-      normalizedOwnPotentialUsd,
-    ),
     providerPathCount: usableProviderCapacities.length,
   };
-}
-
-export function ownFundingStatusLabel(
-  status: BorrowOpportunity["fundingStatus"] | undefined,
-): string {
-  switch (status) {
-    case "available-now":
-      return "Funding available";
-    case "limited":
-      return "Limited availability";
-    case "request-required":
-      return "Request required";
-    default:
-      return "Unavailable";
-  }
-}
-
-export function ownSupportsRequestedAmount(
-  potentialBorrowUsd: number,
-  requestedAmountUsd: number,
-): boolean {
-  return (
-    Number.isFinite(potentialBorrowUsd) &&
-    potentialBorrowUsd > 0 &&
-    Number.isFinite(requestedAmountUsd) &&
-    requestedAmountUsd > 0 &&
-    potentialBorrowUsd >= requestedAmountUsd
-  );
 }
 
 export function providerRateLabel(
@@ -108,6 +64,19 @@ export function sortAssetsByUsdValue<
   return [...assets].sort(
     (left, right) => assetUsdValue(right) - assetUsdValue(left),
   );
+}
+
+export function filterSmallBalances<
+  T extends { balance: string; marketPriceUsd?: number | null },
+>(assets: T[], minimumUsd = 5): T[] {
+  const positiveAssets = assets.filter((asset) => assetUsdValue(asset) > 0);
+  const assetsAtOrAboveMinimum = positiveAssets.filter(
+    (asset) => assetUsdValue(asset) >= minimumUsd,
+  );
+
+  return assetsAtOrAboveMinimum.length
+    ? assetsAtOrAboveMinimum
+    : positiveAssets;
 }
 
 export function formatUsdValue(value: number | null | undefined): string {

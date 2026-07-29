@@ -52,7 +52,7 @@ defineExpose({
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center">
         <dl class="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 sm:gap-x-7">
           <div class="min-w-0">
-            <dt>Eligible collateral</dt>
+            <dt>Selected asset value</dt>
             <dd class="whitespace-nowrap">{{ matchedCollateral }}</dd>
           </div>
           <div class="min-w-0">

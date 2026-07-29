@@ -9,6 +9,7 @@ import {
 } from "@powerrr/math";
 import type {
   CollateralUsed,
+  ProtocolAssetEvaluation,
   ProtocolBorrowQuote,
   QuoteMode,
   QuoteProvenance,
@@ -50,6 +51,7 @@ export type LiveProtocolSnapshot = {
   now?: Date;
   assumptions?: string[];
   warnings?: string[];
+  assetEvaluations?: ProtocolAssetEvaluation[];
   confidencePenalties: LiveConfidencePenalties;
 };
 
@@ -300,6 +302,24 @@ function buildLiveQuote(input: {
   warnings: string[];
 }): ProtocolBorrowQuote {
   const confidence = calculateConfidenceScore(input.input.confidencePenalties);
+  const collateralValueUsd = input.collateralUsed.reduce(
+    (sum, item) => sum + item.valueUsd,
+    0,
+  );
+  const theoreticalBorrowUsd = Math.max(0, input.theoreticalBorrowUsd ?? 0);
+  const recommendedMaxUsd = Math.max(0, input.safeBorrowUsd ?? 0);
+  const liquidityLimitUsd = Math.max(0, input.input.availableLiquidityUsd);
+  const minimumBorrowUsd = Math.max(0, input.input.minimumBorrowUsd ?? 0);
+  const bindingConstraint =
+    collateralValueUsd <= 0
+      ? "no-eligible-collateral"
+      : minimumBorrowUsd > 0 && recommendedMaxUsd === 0
+        ? "minimum-borrow"
+        : liquidityLimitUsd <= recommendedMaxUsd + 0.01
+          ? "liquidity"
+          : recommendedMaxUsd + 0.01 < theoreticalBorrowUsd
+            ? "safety-buffer"
+            : "collateral";
 
   return {
     protocolId: input.input.protocolId,
@@ -334,6 +354,24 @@ function buildLiveQuote(input: {
           },
     liquidationRisk: input.liquidationRisk,
     collateralUsed: input.collateralUsed,
+    ...(input.input.assetEvaluations
+      ? { assetEvaluations: input.input.assetEvaluations }
+      : {}),
+    capacityBreakdown: {
+      collateralValueUsd: roundUsd(collateralValueUsd),
+      protocolBorrowLimitUsd: roundUsd(theoreticalBorrowUsd),
+      safetyAdjustedLimitUsd: roundUsd(
+        bindingConstraint === "liquidity"
+          ? theoreticalBorrowUsd
+          : recommendedMaxUsd,
+      ),
+      liquidityLimitUsd: roundUsd(liquidityLimitUsd),
+      ...(minimumBorrowUsd > 0
+        ? { minimumBorrowUsd: roundUsd(minimumBorrowUsd) }
+        : {}),
+      recommendedMaxUsd: roundUsd(recommendedMaxUsd),
+      bindingConstraint,
+    },
     healthFactor: input.healthFactor,
     riskLevel: riskLevelFromHealthFactor(input.healthFactor),
     confidence: confidence.confidence,

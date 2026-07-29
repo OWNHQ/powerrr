@@ -7,12 +7,8 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text-summary", "json-summary"],
-      include: [
-        "packages/*/src/**/*.ts",
-        "apps/website/server/utils/**/*.ts",
-        "apps/website/utils/**/*.ts",
-      ],
-      exclude: ["**/*.test.ts", "**/fixtures/**"],
+      include: ["packages/*/src/**/*.ts", "apps/website/utils/**/*.ts"],
+      exclude: ["**/*.test.ts"],
       thresholds: {
         statements: 60,
         branches: 55,
@@ -27,26 +23,14 @@ export default defineConfig({
         "./packages/shared-types/src/index.ts",
         import.meta.url,
       ).pathname,
-      "@powerrr/schemas": new URL(
-        "./packages/schemas/src/index.ts",
-        import.meta.url,
-      ).pathname,
       "@powerrr/math": new URL("./packages/math/src/index.ts", import.meta.url)
         .pathname,
-      "@powerrr/fixtures": new URL(
-        "./packages/fixtures/src/index.ts",
-        import.meta.url,
-      ).pathname,
-      "@powerrr/portfolio": new URL(
-        "./packages/portfolio/src/index.ts",
+      "@powerrr/configs": new URL(
+        "./packages/configs/src/index.ts",
         import.meta.url,
       ).pathname,
       "@powerrr/protocol-adapters": new URL(
         "./packages/protocol-adapters/src/index.ts",
-        import.meta.url,
-      ).pathname,
-      "@powerrr/own-underwriter": new URL(
-        "./packages/own-underwriter/src/index.ts",
         import.meta.url,
       ).pathname,
     },

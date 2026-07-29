@@ -1,21 +1,20 @@
 # Curated Ethereum asset registry
 
-The static public application uses a second, broader registry,
-`ethereum-own-top100-2026-07-21-r2`. It contains exactly 100 ERC-20 contracts and
-is read through the connected wallet's EIP-1193 provider using Multicall3. All
-entries are eligible to appear in a locally prepared OWN request. Only entries
-whose checked-in onchain route returns a valid price contribute to instant
-indicative capacity; missing routes and failed prices remain visible as manual
-review items.
+The static application uses the checked-in registry
+`ethereum-top250-2026-07-29-v1`. It contains a dated market-cap snapshot of 250
+verified Ethereum ERC-20 contracts plus any required protocol collateral that
+falls outside the ranking. Balances are read through the connected wallet's
+EIP-1193 provider using chunked Multicall3 calls.
 
 The static registry is bundled into the application. It is never fetched from
 a token-list server at runtime, and symbols, decimals, icons, or prices are not
 trusted from arbitrary wallet tokens.
 
-Live wallet discovery is deliberately finite. Version
-`ethereum-blue-chip-v1` queries native ETH plus the ERC-20 contracts below and
-never enumerates arbitrary wallet tokens. Additions require explicit review,
-tests, and a new registry version.
+Live wallet discovery is deliberately finite and never enumerates arbitrary
+wallet tokens. The browser first uses reviewed protocol oracles, then a fresh
+Chainlink USD feed, then a liquid Uniswap V3 30-minute TWAP. A high-liquidity
+spot route is displayed only with low confidence. Failed routes remain visible
+with an asset-specific reason.
 
 | Category       | Symbol | Canonical Ethereum address                   |
 | -------------- | ------ | -------------------------------------------- |
@@ -37,7 +36,7 @@ tests, and a new registry version.
 | Stablecoin     | GHO    | `0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f` |
 | Stablecoin     | PYUSD  | `0x6c3ea9036406852006290770BEdFcAbA0e23A0e8` |
 | Governance     | LINK   | `0x514910771AF9Ca656af840dff83E8264EcF986CA` |
-| Governance     | AAVE   | `0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2dDAE9` |
+| Governance     | AAVE   | `0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9` |
 | Governance     | UNI    | `0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984` |
 | Governance     | MKR    | `0x9f8F72aA9304c8B593d555F12ef6589cC3A579A2` |
 | Governance     | LDO    | `0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32` |
@@ -52,9 +51,9 @@ before including collateral.
 Native ETH is modeled as WETH-equivalent at 1:1, and stETH uses the live
 `getWstETHByStETH` conversion. Both retain their original wallet balance plus
 explicit protocol token, converted raw balance, rate, and `requiredAction:
-"wrap"` metadata. They are shown as wrapping-required and are not included in
-OWN unless a future versioned OWN policy explicitly supports that conversion.
+"wrap"` metadata. They are shown as wrapping-required.
 
-Balances are read in one JSON-RPC batch at the resolved block. Oracle and
-conversion reads happen only for positive balances. Unsupported tokens are
-omitted by design; there is no token indexer or portfolio API fallback.
+Balances are read in deterministic JSON-RPC chunks at the resolved block.
+Oracle and DEX reads happen only for positive balances. Unsupported and
+unpriced positive balances remain visible; there is no token indexer or
+portfolio API fallback.

@@ -28,21 +28,28 @@ function assetValueUsd(asset: PortfolioAsset): number {
     ? balance * asset.marketPriceUsd
     : 0;
 }
-
-function eligibleProviderCount(asset: PortfolioAsset): number {
-  const families = [
-    asset.protocolEligible["aave-v3"] || asset.protocolEligible["aave-v4"],
-    asset.protocolEligible.sparklend,
-    asset.protocolEligible["compound-iii"],
-    asset.protocolEligible["morpho-blue"],
-  ];
-  return families.filter(Boolean).length;
-}
-
-function eligibleProviderLabel(asset: PortfolioAsset): string {
-  const count = eligibleProviderCount(asset);
-  return `${count} ${count === 1 ? "provider" : "providers"}`;
-}
+const smallAssets = computed(() =>
+  props.assets.filter(
+    (asset) => asset.marketPriceUsd && assetValueUsd(asset) < 5,
+  ),
+);
+const unpricedAssets = computed(() =>
+  props.assets.filter((asset) => !asset.marketPriceUsd),
+);
+const pricedAssets = computed(() =>
+  props.assets.filter((asset) => Boolean(asset.marketPriceUsd)),
+);
+const regularAssets = computed(() => {
+  const regular = pricedAssets.value.filter(
+    (asset) => assetValueUsd(asset) >= 5,
+  );
+  return regular.length ? regular : pricedAssets.value;
+});
+const hideSmallAssets = computed(
+  () =>
+    regularAssets.value.length > 0 &&
+    regularAssets.value.length < pricedAssets.value.length,
+);
 
 function assetIcon(asset: PortfolioAsset): string | null {
   const iconKey = ethereumAssetMetadataByAddress(asset.token)?.iconKey;
@@ -63,7 +70,7 @@ function formatBalance(asset: PortfolioAsset): string {
     <div class="border-b border-line px-5 py-5 sm:px-6">
       <div>
         <p class="text-xs font-bold uppercase tracking-[0.14em] text-river">
-          Step 1 of 3
+          Step 1 of 2
         </p>
         <h2 id="assets-title" class="mt-1 text-xl font-semibold">
           Choose collateral
@@ -71,12 +78,27 @@ function formatBalance(asset: PortfolioAsset): string {
       </div>
     </div>
 
+    <div v-if="!assets.length" class="px-5 py-12 text-center sm:px-6">
+      <h3 class="font-semibold">No tracked assets found</h3>
+      <p class="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate">
+        This address has no positive balances in the reviewed Ethereum token
+        registry.
+      </p>
+      <button
+        type="button"
+        class="focus-ring mt-5 min-h-11 rounded-lg border border-line px-4 text-sm font-semibold text-river hover:border-river"
+        @click="emit('changeAddress')"
+      >
+        Try another address
+      </button>
+    </div>
+
     <div
-      v-if="assets.length"
+      v-if="regularAssets.length"
       class="grid gap-3 p-5 sm:grid-cols-2 sm:p-6 lg:grid-cols-3"
     >
       <button
-        v-for="asset in assets"
+        v-for="asset in regularAssets"
         :key="asset.token"
         type="button"
         class="focus-ring relative flex min-h-32 items-center gap-4 rounded-xl border p-4 text-left transition"
@@ -115,10 +137,14 @@ function formatBalance(asset: PortfolioAsset): string {
           <strong class="block text-base">{{ asset.symbol }}</strong>
           <span class="mt-1 block text-sm tabular-nums text-slate">
             {{ formatBalance(asset) }} ·
-            {{ formatUsdValue(assetValueUsd(asset)) }}
+            {{
+              asset.marketPriceUsd
+                ? formatUsdValue(assetValueUsd(asset))
+                : "Price unavailable"
+            }}
           </span>
           <span class="mt-1 block text-xs text-slate">
-            {{ eligibleProviderLabel(asset) }}
+            {{ asset.priceProvenance ?? "Protocol details explain support" }}
             <template v-if="asset.requiredAction === 'wrap'">
               · conversion required</template
             >
@@ -127,20 +153,79 @@ function formatBalance(asset: PortfolioAsset): string {
       </button>
     </div>
 
-    <div v-else class="px-5 py-12 text-center sm:px-6">
-      <h3 class="font-semibold">No provider-matched collateral found</h3>
-      <p class="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate">
-        The supported assets at this public address do not match the current
-        USDC collateral rules used by the compared providers.
-      </p>
-      <button
-        type="button"
-        class="focus-ring mt-5 min-h-11 rounded-lg border border-line px-4 text-sm font-semibold text-river hover:border-river"
-        @click="emit('changeAddress')"
+    <details
+      v-if="hideSmallAssets && smallAssets.length"
+      class="border-t border-line"
+    >
+      <summary
+        class="focus-ring cursor-pointer px-5 py-4 text-sm font-semibold sm:px-6"
       >
-        Try another address
-      </button>
-    </div>
+        Small balances ({{ smallAssets.length }})
+      </summary>
+      <div
+        class="grid gap-3 border-t border-line p-5 sm:grid-cols-2 sm:p-6 lg:grid-cols-3"
+      >
+        <button
+          v-for="asset in smallAssets"
+          :key="asset.token"
+          type="button"
+          class="focus-ring rounded-xl border p-4 text-left"
+          :class="
+            isSelected(asset)
+              ? 'border-river bg-info-surface ring-1 ring-river'
+              : 'border-line bg-surface hover:border-river/60'
+          "
+          :aria-pressed="isSelected(asset)"
+          @click="emit('toggle', asset.token, !isSelected(asset))"
+        >
+          <strong>{{ asset.symbol }}</strong>
+          <span class="mt-1 block text-sm text-slate"
+            >{{ formatBalance(asset) }} ·
+            {{ formatUsdValue(assetValueUsd(asset)) }}</span
+          >
+        </button>
+      </div>
+    </details>
+
+    <details
+      v-if="unpricedAssets.length"
+      class="border-t border-line"
+      :open="!pricedAssets.length"
+    >
+      <summary
+        class="focus-ring cursor-pointer px-5 py-4 text-sm font-semibold sm:px-6"
+      >
+        Price unavailable ({{ unpricedAssets.length }})
+      </summary>
+      <div
+        class="grid gap-3 border-t border-line p-5 sm:grid-cols-2 sm:p-6 lg:grid-cols-3"
+      >
+        <button
+          v-for="asset in unpricedAssets"
+          :key="asset.token"
+          type="button"
+          class="focus-ring rounded-xl border p-4 text-left"
+          :class="
+            isSelected(asset)
+              ? 'border-river bg-info-surface ring-1 ring-river'
+              : 'border-line bg-surface hover:border-river/60'
+          "
+          :aria-pressed="isSelected(asset)"
+          @click="emit('toggle', asset.token, !isSelected(asset))"
+        >
+          <strong>{{ asset.symbol }}</strong>
+          <span class="mt-1 block text-sm text-slate">
+            {{ formatBalance(asset) }} · Price unavailable
+          </span>
+          <span class="mt-1 block text-xs leading-5 text-slate">
+            {{
+              asset.valuationReason ??
+              "No safe onchain USD route was available at the pinned block."
+            }}
+          </span>
+        </button>
+      </div>
+    </details>
 
     <div
       v-if="assets.length"
@@ -158,7 +243,7 @@ function formatBalance(asset: PortfolioAsset): string {
         :disabled="!selectedTokens.length || loading"
         @click="emit('continue')"
       >
-        {{ loading ? "Recalculating…" : "Continue to amount" }}
+        {{ loading ? "Recalculating…" : "Compare borrowing paths" }}
       </button>
     </div>
   </section>

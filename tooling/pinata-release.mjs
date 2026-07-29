@@ -1,51 +1,59 @@
 import { File } from "node:buffer";
-import { appendFile, readFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { appendFile, lstat, readFile, readdir } from "node:fs/promises";
+import { basename, relative, resolve, sep } from "node:path";
 
 const API_ROOT = "https://api.pinata.cloud";
-const UPLOAD_ROOT = "https://uploads.pinata.cloud";
 const RELEASE_PREFIX = "powerrr-release-";
+const DEFAULT_ARTIFACT = "apps/website/.output/public";
 
 const [command, argument] = process.argv.slice(2);
 const token = process.env.PINATA_JWT;
 if (!token) throw new Error("PINATA_JWT is required.");
 
-if (command === "upload-car") {
-  const carPath = resolve(argument ?? "build.car");
-  const result = await uploadCar(carPath, token);
+if (command === "upload-directory") {
+  const artifactPath = resolve(argument ?? DEFAULT_ARTIFACT);
+  const result = await uploadDirectory(artifactPath, token);
   await emitOutput("cid", result.cid);
   await emitOutput("ipfs_url", `https://${result.cid}.ipfs.dweb.link/`);
-  await emitOutput("pinata_file_id", result.id);
   console.log(`Pinned ${result.size} bytes as ${result.cid}.`);
 } else if (command === "prune") {
   await pruneReleases(token, Number(argument ?? 3));
 } else {
   throw new Error(
-    "Usage: node tooling/pinata-release.mjs <upload-car [path]|prune [count]>",
+    "Usage: node tooling/pinata-release.mjs <upload-directory [path]|prune [count]>",
   );
 }
 
-async function uploadCar(carPath, jwt) {
-  const contents = await readFile(carPath);
-  const gitSha = process.env.GITHUB_SHA ?? "local";
-  const releaseName = `${RELEASE_PREFIX}${gitSha}`;
-  const form = new FormData();
-  form.append("network", "public");
-  form.append(
-    "file",
-    new File([contents], basename(carPath), {
-      type: "application/vnd.ipld.car",
-    }),
-    basename(carPath),
-  );
-  form.append("name", releaseName);
-  form.append(
-    "keyvalues",
-    JSON.stringify({ project: "powerrr", git_sha: gitSha }),
-  );
-  form.append("car", "true");
+async function uploadDirectory(artifactPath, jwt) {
+  const files = await walkFiles(artifactPath);
+  if (!files.length) throw new Error("The static artifact is empty.");
+  await verifyChecksums(artifactPath, files);
 
-  const response = await fetch(`${UPLOAD_ROOT}/v3/files`, {
+  const sourceRef = getSourceRef();
+  const releaseName = `${RELEASE_PREFIX}${sourceRef}`;
+  const form = new FormData();
+  let totalSize = 0;
+
+  for (const path of files) {
+    const contents = await readFile(path);
+    const relativePath = relative(artifactPath, path).split(sep).join("/");
+    const uploadPath = `${basename(artifactPath)}/${relativePath}`;
+    totalSize += contents.byteLength;
+    form.append("file", new File([contents], uploadPath), uploadPath);
+  }
+
+  form.append(
+    "pinataMetadata",
+    JSON.stringify({
+      name: releaseName,
+      keyvalues: { project: "powerrr", source_ref: sourceRef },
+    }),
+  );
+  form.append("pinataOptions", JSON.stringify({ cidVersion: 1 }));
+
+  const response = await fetch(`${API_ROOT}/pinning/pinFileToIPFS`, {
     method: "POST",
     headers: { Authorization: `Bearer ${jwt}` },
     body: form,
@@ -53,14 +61,12 @@ async function uploadCar(carPath, jwt) {
   const body = await response.text();
   if (!response.ok) {
     throw new Error(
-      `Pinata CAR upload failed (${response.status}): ${body.slice(0, 1_000)}`,
+      `Pinata directory upload failed (${response.status}): ${body.slice(0, 1_000)}`,
     );
   }
-  const result = JSON.parse(body).data;
-  if (!result?.cid || !result?.id) {
-    throw new Error("Pinata returned no CID or file ID.");
-  }
-  return result;
+  const result = JSON.parse(body);
+  if (!result?.IpfsHash) throw new Error("Pinata returned no CID.");
+  return { cid: result.IpfsHash, size: result.PinSize ?? totalSize };
 }
 
 async function pruneReleases(jwt, retainCount) {
@@ -68,44 +74,57 @@ async function pruneReleases(jwt, retainCount) {
     throw new Error("Retention count must be a positive integer.");
   }
   const rows = (await listPublicFiles(jwt))
-    .filter((row) => row.name?.startsWith(RELEASE_PREFIX) && row.cid)
+    .filter(
+      (row) =>
+        row.metadata?.name?.startsWith(RELEASE_PREFIX) && row.ipfs_pin_hash,
+    )
     .sort(
       (left, right) =>
-        new Date(right.created_at).getTime() -
-        new Date(left.created_at).getTime(),
+        new Date(right.date_pinned).getTime() -
+        new Date(left.date_pinned).getTime(),
     );
 
   const uniqueRows = rows.filter(
     (row, index) =>
-      rows.findIndex((candidate) => candidate.cid === row.cid) === index,
+      rows.findIndex(
+        (candidate) => candidate.ipfs_pin_hash === row.ipfs_pin_hash,
+      ) === index,
   );
 
   await emitOutput(
     "rollback_cids",
-    JSON.stringify(uniqueRows.slice(1, retainCount).map((row) => row.cid)),
+    JSON.stringify(
+      uniqueRows.slice(1, retainCount).map((row) => row.ipfs_pin_hash),
+    ),
   );
 
   for (const row of uniqueRows.slice(retainCount)) {
     const deleteResponse = await fetch(
-      `${API_ROOT}/v3/files/public/${encodeURIComponent(row.id)}`,
+      `${API_ROOT}/pinning/unpin/${encodeURIComponent(row.ipfs_pin_hash)}`,
       { method: "DELETE", headers: { Authorization: `Bearer ${jwt}` } },
     );
     if (!deleteResponse.ok) {
       throw new Error(
-        `Could not delete old release ${row.cid} (${deleteResponse.status}).`,
+        `Could not delete old release ${row.ipfs_pin_hash} (${deleteResponse.status}).`,
       );
     }
-    console.log(`Removed old Powerrr release ${row.cid} from Pinata.`);
+    console.log(
+      `Removed old Powerrr release ${row.ipfs_pin_hash} from Pinata.`,
+    );
   }
 }
 
 async function listPublicFiles(jwt) {
   const rows = [];
-  let pageToken;
+  let pageOffset = 0;
   do {
-    const query = new URLSearchParams({ limit: "100", order: "DESC" });
-    if (pageToken) query.set("pageToken", pageToken);
-    const response = await fetch(`${API_ROOT}/v3/files/public?${query}`, {
+    const query = new URLSearchParams({
+      status: "pinned",
+      pageLimit: "1000",
+      pageOffset: String(pageOffset),
+      includeCount: "false",
+    });
+    const response = await fetch(`${API_ROOT}/data/pinList?${query}`, {
       headers: { Authorization: `Bearer ${jwt}` },
     });
     const body = await response.text();
@@ -114,15 +133,70 @@ async function listPublicFiles(jwt) {
         `Pinata list failed (${response.status}): ${body.slice(0, 1_000)}`,
       );
     }
-    const data = JSON.parse(body).data ?? {};
-    rows.push(...(data.files ?? []));
-    pageToken = data.next_page_token;
-  } while (pageToken);
+    const page = JSON.parse(body).rows ?? [];
+    rows.push(...page);
+    pageOffset += page.length;
+    if (page.length < 1000) break;
+  } while (true);
   return rows;
+}
+
+async function verifyChecksums(artifactPath, files) {
+  const checksumPath = resolve(artifactPath, "SHA256SUMS");
+  const expected = await readFile(checksumPath, "utf8");
+  const actual = [];
+
+  for (const path of files) {
+    if (path === checksumPath) continue;
+    const contents = await readFile(path);
+    const uploadPath = relative(artifactPath, path).split(sep).join("/");
+    actual.push(
+      `${createHash("sha256").update(contents).digest("hex")}  ${uploadPath}`,
+    );
+  }
+
+  actual.sort();
+  if (`${actual.join("\n")}\n` !== expected) {
+    throw new Error(
+      "Static artifact checksums do not match SHA256SUMS. Rebuild before deployment.",
+    );
+  }
+}
+
+async function walkFiles(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const output = [];
+  for (const entry of entries.sort((left, right) =>
+    left.name.localeCompare(right.name),
+  )) {
+    const path = resolve(directory, entry.name);
+    const details = await lstat(path);
+    if (details.isSymbolicLink()) {
+      throw new Error(`Static artifacts cannot contain symlinks: ${path}`);
+    }
+    if (details.isDirectory()) output.push(...(await walkFiles(path)));
+    else if (details.isFile()) output.push(path);
+  }
+  return output;
 }
 
 async function emitOutput(key, value) {
   if (process.env.GITHUB_OUTPUT) {
     await appendFile(process.env.GITHUB_OUTPUT, `${key}=${value}\n`, "utf8");
+  }
+}
+
+function getSourceRef() {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
+  try {
+    const revision = execFileSync("git", ["rev-parse", "--short=12", "HEAD"], {
+      encoding: "utf8",
+    }).trim();
+    const dirty = execFileSync("git", ["status", "--porcelain"], {
+      encoding: "utf8",
+    }).trim();
+    return dirty ? `${revision}-dirty` : revision;
+  } catch {
+    return "local";
   }
 }

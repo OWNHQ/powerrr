@@ -1,4 +1,4 @@
-import { ethereumOwnTokenRegistryV1 } from "@powerrr/configs";
+import { ethereumTokenRegistryV1 } from "@powerrr/configs";
 import {
   decodeFunctionData,
   encodeFunctionData,
@@ -75,7 +75,7 @@ const multicall3Abi = [
 ] as const;
 
 describe("static connected-wallet discovery", () => {
-  it("sends 100 balanceOf calls through Multicall3 and values positive WETH", async () => {
+  it("scans the complete reviewed registry through Multicall3 and values positive WETH", async () => {
     const mock = createMockProvider({ positiveWeth: true });
     const result = await scanConnectedWallet({
       provider: mock.provider,
@@ -84,11 +84,11 @@ describe("static connected-wallet discovery", () => {
       now: new Date(timestamp * 1_000 + 30_000),
     });
 
-    expect(ethereumOwnTokenRegistryV1).toHaveLength(100);
-    expect(mock.multicallSizes[0]).toBe(100);
+    expect(ethereumTokenRegistryV1.length).toBeGreaterThanOrEqual(250);
+    expect(mock.multicallSizes[0]).toBe(ethereumTokenRegistryV1.length);
     expect(result.receipt).toMatchObject({
-      callsAttempted: 100,
-      callsSucceeded: 100,
+      callsAttempted: ethereumTokenRegistryV1.length,
+      callsSucceeded: ethereumTokenRegistryV1.length,
       callsFailed: 0,
       postedToPowerrr: false,
       multicallAddress: MULTICALL3_ADDRESS,
@@ -99,7 +99,6 @@ describe("static connected-wallet discovery", () => {
       balance: "2",
       marketPriceUsd: 3_000,
       valuationStatus: "available",
-      ownCapacityContributionUsd: 5_472,
     });
     expect(mock.methods).not.toContain("personal_sign");
     expect(mock.methods).not.toContain("eth_sendTransaction");
@@ -114,13 +113,11 @@ describe("static connected-wallet discovery", () => {
       now: new Date(timestamp * 1_000 + 30_000),
     });
 
-    expect(mock.multicallSizes.slice(0, 7)).toEqual([
-      100, 50, 25, 25, 50, 25, 25,
-    ]);
-    expect(result.receipt.callsSucceeded).toBe(100);
-    expect(result.receipt.chunkSizes.slice(0, 7)).toEqual([
-      100, 50, 25, 25, 50, 25, 25,
-    ]);
+    expect(mock.multicallSizes[0]).toBe(ethereumTokenRegistryV1.length);
+    expect(mock.multicallSizes.slice(1).every((size) => size <= 50)).toBe(true);
+    expect(mock.multicallSizes.some((size) => size === 25)).toBe(true);
+    expect(result.receipt.callsSucceeded).toBe(ethereumTokenRegistryV1.length);
+    expect(result.receipt.chunkSizes).toEqual(mock.multicallSizes);
   });
 
   it("maps native ETH to the WETH reserve for wallet-estimate protocol reads", async () => {

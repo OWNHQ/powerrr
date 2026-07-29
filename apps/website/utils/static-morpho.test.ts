@@ -195,7 +195,6 @@ function receiptFixture(): ReadReceipt {
     blockTimestamp: "2027-01-15T08:00:00.000Z",
     blockAgeSeconds: 20,
     registryVersion: "test",
-    policyVersion: "test",
     multicallAddress: "0xcA11bde05977b3631167028862bE2a173976CA11",
     callsAttempted: 100,
     callsSucceeded: 100,

@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { isAddress } from "viem";
 import {
+  AAVE_V3_ORACLE,
   ETHEREUM_ASSET_REGISTRY_VERSION,
   ETHEREUM_NATIVE_TOKEN,
   ETHEREUM_MORPHO_USDC_MARKET_MANIFEST_VERSION,
-  ETHEREUM_OWN_TOKEN_REGISTRY_VERSION,
+  ETHEREUM_TOKEN_REGISTRY_VERSION,
+  MORPHO_BLUE,
+  SPARK_ORACLE,
   ethereumAssetRegistryV1,
   ethereumMorphoUsdcMarketsV1,
-  ethereumOwnTokenRegistryV1,
+  ethereumTokenRegistryV1,
 } from "./index.js";
 
 describe("Ethereum blue-chip registry", () => {
@@ -58,39 +62,90 @@ describe("Ethereum blue-chip registry", () => {
       conversion: { kind: "one-to-one" },
     });
   });
+
+  it("contains only valid Ethereum address values", () => {
+    const addresses: Array<[string, string]> = [
+      ["Aave oracle", AAVE_V3_ORACLE],
+      ["Spark oracle", SPARK_ORACLE],
+      ["Morpho Blue", MORPHO_BLUE],
+    ];
+
+    for (const asset of ethereumAssetRegistryV1) {
+      addresses.push(
+        [`${asset.symbol} address`, asset.address],
+        [`${asset.symbol} price asset`, asset.priceSource.asset],
+        [`${asset.symbol} price oracle`, asset.priceSource.oracle],
+      );
+      if (asset.protocolAssetToken) {
+        addresses.push([
+          `${asset.symbol} protocol asset`,
+          asset.protocolAssetToken,
+        ]);
+      }
+      if (asset.conversion?.contract) {
+        addresses.push([
+          `${asset.symbol} conversion contract`,
+          asset.conversion.contract,
+        ]);
+      }
+    }
+
+    for (const token of ethereumTokenRegistryV1) {
+      addresses.push([`${token.symbol} discovery address`, token.address]);
+      if (token.priceRoute.kind === "aave-oracle") {
+        addresses.push(
+          [`${token.symbol} discovery price asset`, token.priceRoute.asset],
+          [`${token.symbol} discovery oracle`, token.priceRoute.oracle],
+        );
+      }
+    }
+
+    for (const market of ethereumMorphoUsdcMarketsV1) {
+      addresses.push(
+        [`${market.marketId} loan token`, market.loanToken],
+        [`${market.marketId} collateral token`, market.collateralToken],
+        [`${market.marketId} oracle`, market.oracle],
+        [`${market.marketId} IRM`, market.irm],
+      );
+    }
+
+    for (const [label, address] of addresses) {
+      expect(isAddress(address, { strict: true }), label).toBe(true);
+    }
+  });
 });
 
-describe("static OWN token registry", () => {
-  it("pins exactly 100 unique Ethereum ERC-20 contracts", () => {
-    expect(ETHEREUM_OWN_TOKEN_REGISTRY_VERSION).toBe(
-      "ethereum-own-top100-2026-07-21-r2",
+describe("static token registry", () => {
+  it("pins at least 250 unique Ethereum ERC-20 contracts", () => {
+    expect(ETHEREUM_TOKEN_REGISTRY_VERSION).toBe(
+      "ethereum-top250-2026-07-29-v1",
     );
-    expect(ethereumOwnTokenRegistryV1).toHaveLength(100);
+    expect(ethereumTokenRegistryV1.length).toBeGreaterThanOrEqual(250);
+    expect(ethereumTokenRegistryV1.length).toBeLessThanOrEqual(275);
     expect(
       new Set(
-        ethereumOwnTokenRegistryV1.map((token) => token.address.toLowerCase()),
+        ethereumTokenRegistryV1.map((token) => token.address.toLowerCase()),
       ).size,
-    ).toBe(100);
+    ).toBe(ethereumTokenRegistryV1.length);
   });
 
-  it("contains immutable metadata, price status, and an explicit OWN policy", () => {
-    for (const token of ethereumOwnTokenRegistryV1) {
+  it("contains immutable metadata and an explicit price status", () => {
+    for (const token of ethereumTokenRegistryV1) {
       expect(token.address).toMatch(/^0x[a-fA-F0-9]{40}$/);
       expect(token.decimals).toBeGreaterThan(0);
       expect(token.decimals).toBeLessThanOrEqual(36);
-      expect(token.ownPolicy.eligible).toBe(true);
-      expect(token.ownPolicy.advanceRate).toBeGreaterThan(0);
-      expect(token.ownPolicy.valuationHaircut).toBeGreaterThanOrEqual(0);
-      expect(token.ownPolicy.contributionCapUsd).toBeGreaterThan(0);
-      expect(["aave-oracle", "unavailable"]).toContain(token.priceRoute.kind);
+      expect(["aave-oracle", "automatic-onchain"]).toContain(
+        token.priceRoute.kind,
+      );
+      expect(token.snapshotDate).toBe("2026-07-29");
+      expect(token.rankingSource).toContain("CoinGecko");
     }
   });
 
   it("pins the current deployed GHO contract", () => {
     expect(
-      ethereumOwnTokenRegistryV1.find((token) => token.symbol === "GHO")
-        ?.address,
-    ).toBe("0x40d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f");
+      ethereumTokenRegistryV1.find((token) => token.symbol === "GHO")?.address,
+    ).toBe("0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f");
   });
 });
 

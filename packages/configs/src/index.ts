@@ -1,3 +1,5 @@
+import { ethereumTop250Snapshot } from "./ethereum-top250.js";
+
 export const supportedChains = [
   {
     chainId: 1,
@@ -201,13 +203,13 @@ export const ethereumAssetRegistryV1: readonly EthereumAssetRegistryEntry[] = [
   asset({
     symbol: "sUSDS",
     name: "Savings USDS",
-    address: "0xA3931d71877C0E7a3148CB7EB4463524feC27Fbd",
+    address: "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
     decimals: 18,
     category: "stablecoin",
     priceSource: {
       kind: "aave-oracle",
       oracle: SPARK_ORACLE,
-      asset: "0xA3931d71877C0E7a3148CB7EB4463524feC27Fbd",
+      asset: "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
     },
   }),
   asset({
@@ -234,7 +236,7 @@ export const ethereumAssetRegistryV1: readonly EthereumAssetRegistryEntry[] = [
   asset({
     symbol: "AAVE",
     name: "Aave Token",
-    address: "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2dDAE9",
+    address: "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9",
     decimals: 18,
     category: "governance",
   }),
@@ -248,7 +250,7 @@ export const ethereumAssetRegistryV1: readonly EthereumAssetRegistryEntry[] = [
   asset({
     symbol: "MKR",
     name: "Maker",
-    address: "0x9f8F72aA9304c8B593d555F12ef6589cC3A579A2",
+    address: "0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2",
     decimals: 18,
     category: "governance",
   }),
@@ -262,7 +264,7 @@ export const ethereumAssetRegistryV1: readonly EthereumAssetRegistryEntry[] = [
   asset({
     symbol: "ENS",
     name: "Ethereum Name Service",
-    address: "0xC18360217D8F7Ab5e7c516566761ea12Ce7F9D72",
+    address: "0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72",
     decimals: 18,
     category: "governance",
   }),
@@ -289,34 +291,27 @@ export type OnchainPriceRoute =
       asset: `0x${string}`;
     }
   | {
-      kind: "unavailable";
-      reason: string;
+      kind: "automatic-onchain";
     };
 
-export type OwnTokenPolicy = {
-  eligible: true;
-  advanceRate: number;
-  valuationHaircut: number;
-  contributionCapUsd: number;
-  concentrationFamily: "CORE_ETH" | "CORE_BTC" | "CORE_USD" | "NON_CORE";
-  provisional: boolean;
-};
-
-export type EthereumOwnTokenRegistryEntry = {
+export type EthereumTokenRegistryEntry = {
   chainId: 1;
   address: `0x${string}`;
   symbol: string;
   name: string;
   decimals: number;
   iconKey: string;
+  snapshotRank?: number;
+  marketId?: string;
+  rankingSource: string;
+  snapshotDate: string;
   priceRoute: OnchainPriceRoute;
-  ownPolicy: OwnTokenPolicy;
 };
 
-export const ETHEREUM_OWN_TOKEN_REGISTRY_VERSION =
-  "ethereum-own-top100-2026-07-21-r2";
-export const ETHEREUM_OWN_TOKEN_REGISTRY_SOURCE =
-  "Vendored Uniswap Ethereum token-list snapshot reviewed 2026-07-21";
+export const ETHEREUM_TOKEN_REGISTRY_VERSION = "ethereum-top250-2026-07-29-v1";
+export const ETHEREUM_TOKEN_REGISTRY_SOURCE =
+  "Vendored CoinGecko Ethereum-ecosystem market-cap snapshot joined to the CoinGecko Uniswap token list; reviewed 2026-07-29";
+export const ETHEREUM_TOKEN_REGISTRY_SNAPSHOT_DATE = "2026-07-29";
 
 type ReviewedToken = readonly [
   address: `0x${string}`,
@@ -325,7 +320,7 @@ type ReviewedToken = readonly [
   decimals: number,
 ];
 
-const reviewedOwnTokens: readonly ReviewedToken[] = [
+const reviewedTokens: readonly ReviewedToken[] = [
   ["0x111111111117dC0aa78b770fA6A738034120C302", "1INCH", "1inch", 18],
   ["0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9", "AAVE", "Aave", 18],
   ["0xEd04915c23f00A313a544955524EB7DBD823143d", "ACH", "Alchemy Pay", 8],
@@ -430,7 +425,7 @@ const reviewedOwnTokens: readonly ReviewedToken[] = [
   ["0xBBbbCA6A901c926F240b89EacB641d8Aec7AEafD", "LRC", "Loopring", 18],
   ["0x5f98805A4E8be255a32880FDeC7F6728C6568bA0", "LUSD", "Liquity USD", 18],
   ["0x0F5D2fB29fb7d3CFeE444a200298f468908cC942", "MANA", "Decentraland", 18],
-  ["0x7d1AfA7B718fb893dB30A3aBc0Cfc608AaCfebb0", "MATIC", "Polygon", 18],
+  ["0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0", "MATIC", "Polygon", 18],
   ["0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2", "MKR", "Maker", 18],
   ["0xfAbA6f8e4a5E8Ab82F62fe7C39859FA577269BE3", "ONDO", "Ondo Finance", 18],
   ["0x808507121B80c02388fAd14726482e061B8da827", "PENDLE", "Pendle", 18],
@@ -458,7 +453,7 @@ const reviewedOwnTokens: readonly ReviewedToken[] = [
     18,
   ],
   ["0x6B3595068778DD592e39A122f4f5a5cF09C90fE2", "SUSHI", "Sushi", 18],
-  ["0xA3931d71877C0E7a3148CB7EB4463524feC27Fbd", "sUSDS", "Savings USDS", 18],
+  ["0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD", "sUSDS", "Savings USDS", 18],
   ["0x18084fbA666a33d37592fA2633fD49a74DD93a88", "tBTC", "tBTC", 18],
   ["0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984", "UNI", "Uniswap", 18],
   ["0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "USDC", "USD Coin", 6],
@@ -473,67 +468,45 @@ const reviewedOwnTokens: readonly ReviewedToken[] = [
   ["0xE41d2489571d322189246DaFA5ebDe1F4699F498", "ZRX", "0x Protocol", 18],
 ] as const;
 
-const coreOwnPolicy: Record<
-  string,
-  Omit<OwnTokenPolicy, "eligible" | "provisional">
-> = {
-  WETH: {
-    advanceRate: 0.95,
-    valuationHaircut: 0.04,
-    contributionCapUsd: 500_000,
-    concentrationFamily: "CORE_ETH",
-  },
-  wstETH: {
-    advanceRate: 0.95,
-    valuationHaircut: 0.04,
-    contributionCapUsd: 500_000,
-    concentrationFamily: "CORE_ETH",
-  },
-  WBTC: {
-    advanceRate: 0.95,
-    valuationHaircut: 0.06,
-    contributionCapUsd: 500_000,
-    concentrationFamily: "CORE_BTC",
-  },
-  cbBTC: {
-    advanceRate: 0.95,
-    valuationHaircut: 0.06,
-    contributionCapUsd: 500_000,
-    concentrationFamily: "CORE_BTC",
-  },
-  USDC: {
-    advanceRate: 0.95,
-    valuationHaircut: 0.02,
-    contributionCapUsd: 500_000,
-    concentrationFamily: "CORE_USD",
-  },
-  DAI: {
-    advanceRate: 0.95,
-    valuationHaircut: 0.02,
-    contributionCapUsd: 500_000,
-    concentrationFamily: "CORE_USD",
-  },
-  USDS: {
-    advanceRate: 0.95,
-    valuationHaircut: 0.02,
-    contributionCapUsd: 500_000,
-    concentrationFamily: "CORE_USD",
-  },
-};
+const top250Tokens: readonly ReviewedToken[] = ethereumTop250Snapshot.map(
+  ({ address, symbol, name, decimals }) => [address, symbol, name, decimals],
+);
 
-export const ethereumOwnTokenRegistryV1: readonly EthereumOwnTokenRegistryEntry[] =
-  reviewedOwnTokens.map(([address, symbol, name, decimals]) => {
+const protocolRequiredTokens = reviewedTokens.filter(([address]) =>
+  ethereumAssetRegistryV1.some(
+    (asset) =>
+      asset.assetKind !== "native" &&
+      asset.address.toLowerCase() === address.toLowerCase(),
+  ),
+);
+
+const allReviewedTokens = [...top250Tokens, ...protocolRequiredTokens].filter(
+  (token, index, all) =>
+    all.findIndex(
+      (candidate) => candidate[0].toLowerCase() === token[0].toLowerCase(),
+    ) === index,
+);
+
+export const ethereumTokenRegistryV1: readonly EthereumTokenRegistryEntry[] =
+  allReviewedTokens.map(([address, symbol, name, decimals]) => {
     const existing = ethereumAssetRegistryV1.find(
       (asset) => asset.address.toLowerCase() === address.toLowerCase(),
     );
-    const corePolicy = coreOwnPolicy[symbol];
+    const ranked = ethereumTop250Snapshot.find(
+      (token) => token.address.toLowerCase() === address.toLowerCase(),
+    );
     return {
       chainId: 1,
-      address: address.toLowerCase() as `0x${string}`,
+      address,
       symbol,
       name,
       decimals,
       iconKey: existing?.iconKey ?? symbol.toLowerCase(),
+      ...(ranked
+        ? { snapshotRank: ranked.snapshotRank, marketId: ranked.marketId }
+        : {}),
+      rankingSource: ETHEREUM_TOKEN_REGISTRY_SOURCE,
+      snapshotDate: ETHEREUM_TOKEN_REGISTRY_SNAPSHOT_DATE,
       priceRoute:
         existing && existing.assetKind !== "convertible"
           ? {
@@ -542,27 +515,15 @@ export const ethereumOwnTokenRegistryV1: readonly EthereumOwnTokenRegistryEntry[
               asset: existing.priceSource.asset,
             }
           : {
-              kind: "unavailable" as const,
-              reason:
-                "No reviewed manipulation-resistant onchain USD route is pinned in this registry version.",
+              kind: "automatic-onchain" as const,
             },
-      ownPolicy: corePolicy
-        ? { eligible: true as const, provisional: false, ...corePolicy }
-        : {
-            eligible: true as const,
-            advanceRate: 0.2,
-            valuationHaircut: 0.5,
-            contributionCapUsd: 50_000,
-            concentrationFamily: "NON_CORE" as const,
-            provisional: true,
-          },
     };
   });
 
-export function ethereumOwnTokenByAddress(
+export function ethereumTokenByAddress(
   address: string,
-): EthereumOwnTokenRegistryEntry | undefined {
-  return ethereumOwnTokenRegistryV1.find(
+): EthereumTokenRegistryEntry | undefined {
+  return ethereumTokenRegistryV1.find(
     (token) => token.address.toLowerCase() === address.toLowerCase(),
   );
 }

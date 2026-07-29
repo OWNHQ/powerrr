@@ -52,11 +52,11 @@ malformed result, missing price, or provider failure is shown and fails closed.
 
 ## Registry updates
 
-`ethereum-own-top100-2026-07-21-r2` is checked into `@powerrr/configs`. Updating it
-requires a new version string, a dated source note, 100 unique mainnet contract
-addresses, immutable symbol/decimal metadata, an explicit valuation route or
-unavailable reason, OWN policy metadata, tests, and human review. The build must
-not fetch token metadata or icons from the network.
+`ethereum-top250-2026-07-29-v1` is checked into `@powerrr/configs`. Updating it
+requires a new version string, a dated source snapshot, at least 250 unique
+checksummed mainnet contracts, immutable symbol/decimal metadata, tests, and
+human review. The deployed application must not fetch token metadata, rankings,
+or icons from the network. Run `pnpm report:token-coverage` before release.
 
 ## Content-addressed distribution
 

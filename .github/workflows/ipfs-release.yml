@@ -54,25 +54,11 @@ jobs:
           path: apps/website/.output/public
       - name: Recheck downloaded artifact
         run: node tooling/verify-static-artifact.mjs
-      - name: Create deterministic CID and CAR
-        id: ipfs
-        uses: ipfs/ipfs-deploy-action@v2
-        with:
-          path-to-deploy: apps/website/.output/public
-          github-token: ${{ github.token }}
-          cid-profile: ""
-          ipfs-add-options: "--cid-version 1"
-          car-file-name: powerrr-${{ github.sha }}.car
       - name: Pin verified site to IPFS
         id: pinata
         env:
           PINATA_JWT: ${{ secrets.PINATA_JWT }}
-        run: node tooling/pinata-release.mjs upload-car "${{ steps.ipfs.outputs.car-path }}"
-      - name: Confirm Pinata pinned the verified DAG
-        env:
-          EXPECTED_CID: ${{ steps.ipfs.outputs.cid }}
-          PINATA_CID: ${{ steps.pinata.outputs.cid }}
-        run: test "$EXPECTED_CID" = "$PINATA_CID"
+        run: node tooling/pinata-release.mjs upload-directory
       - uses: pnpm/action-setup@v4
         with:
           version: 10.15.1
@@ -101,14 +87,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CID: ${{ steps.pinata.outputs.cid }}
           IPFS_URL: ${{ steps.pinata.outputs.ipfs_url }}
-          CAR_PATH: ${{ steps.ipfs.outputs.car-path }}
         run: |
           TAG="ipfs-${GITHUB_SHA::12}"
           gh release create "$TAG" \
             --target "$GITHUB_SHA" \
             --title "Powerrr IPFS ${GITHUB_SHA::12}" \
             --notes-file release-notes.md \
-            "$CAR_PATH" SHA256SUMS release-metadata.json
+            SHA256SUMS release-metadata.json
       - name: Publish link in workflow summary
         env:
           CID: ${{ steps.pinata.outputs.cid }}

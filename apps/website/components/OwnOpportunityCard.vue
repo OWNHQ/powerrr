@@ -1,20 +1,44 @@
 <script setup lang="ts">
-import type { BorrowOpportunity } from "@powerrr/shared-types";
+import { formatUsdValue } from "../utils/estimator-ux";
 
-defineProps<{
-  opportunity: BorrowOpportunity;
+const props = defineProps<{
+  selected: boolean;
+  amountUsd: number;
+  assetCount: number;
 }>();
+
+const emit = defineEmits<{
+  select: [];
+}>();
+
+const collateralLabel = computed(
+  () =>
+    `${props.assetCount} selected ${props.assetCount === 1 ? "asset" : "assets"}`,
+);
 </script>
 
 <template>
   <section
-    class="mt-5 border-y border-line bg-surface"
+    class="mt-5 overflow-hidden rounded-xl border bg-surface transition"
+    :class="selected ? 'border-own ring-1 ring-own' : 'border-line'"
     aria-labelledby="own-option-title"
   >
-    <div
-      class="grid w-full gap-4 rounded-lg px-4 py-4 text-left sm:grid-cols-[minmax(12rem,1.15fr)_minmax(10rem,0.8fr)_minmax(12rem,0.9fr)] sm:items-center"
+    <button
+      type="button"
+      role="radio"
+      class="focus-ring grid w-full gap-4 px-4 py-4 text-left sm:grid-cols-[minmax(12rem,1.15fr)_minmax(10rem,0.8fr)_minmax(12rem,0.9fr)] sm:items-center"
+      :aria-checked="selected"
+      aria-label="OWN fixed-term assessment"
+      @click="emit('select')"
     >
       <span class="flex min-w-0 items-center gap-3">
+        <span
+          data-selection-indicator
+          class="grid h-5 w-5 shrink-0 place-items-center rounded-full border"
+          :class="selected ? 'border-own' : 'border-slate/40'"
+        >
+          <span v-if="selected" class="h-2.5 w-2.5 rounded-full bg-own"></span>
+        </span>
         <span class="w-14 shrink-0 text-own">
           <OwnLogo decorative />
         </span>
@@ -33,10 +57,12 @@ defineProps<{
           Status
         </span>
         <span class="mt-1 block text-sm font-semibold text-ink">
-          Policy review required
+          {{
+            selected ? "Selected for assessment" : "Available for assessment"
+          }}
         </span>
         <span class="mt-1 block text-xs text-slate">
-          Numeric capacity is not published.
+          Any selected collateral asset can be reviewed.
         </span>
       </span>
 
@@ -49,12 +75,20 @@ defineProps<{
         <span
           class="mt-1 block text-lg font-semibold tabular-nums tracking-tight"
         >
-          Request assessment
+          {{ formatUsdValue(amountUsd) }} requested
         </span>
         <span class="mt-1 block text-xs leading-5 text-slate">
-          Advance rates, repayment terms, and funding require approval.
+          {{ collateralLabel }} · capacity, terms, and funding require approval.
         </span>
       </span>
-    </div>
+    </button>
+    <p
+      v-if="selected"
+      class="border-t border-line bg-ownsoft/55 px-4 py-3 text-xs leading-5 text-slate"
+    >
+      OWN is selected as the fixed-term assessment path. Selection does not
+      publish or imply an approved capacity, rate, repayment total, or funding
+      commitment.
+    </p>
   </section>
 </template>

@@ -7,20 +7,18 @@
     "build": "turbo run build",
     "build:static": "pnpm --filter @powerrr/website build && node tooling/verify-static-artifact.mjs --write-checksums",
     "dev": "pnpm --filter @powerrr/website dev",
-    "dev:engine": "pnpm --filter @powerrr/engine dev",
     "dev:website": "pnpm --filter @powerrr/website dev",
-    "dev:internal-underwriter": "pnpm --filter @powerrr/internal-underwriter dev",
-    "start:engine": "pnpm --filter @powerrr/engine start",
-    "build:internal-underwriter": "pnpm --filter @powerrr/internal-underwriter build",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "lint": "turbo run lint && node tooling/check-boundaries.mjs",
+    "lint": "turbo run lint",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
     "typecheck": "turbo run typecheck",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test",
-    "verify:static": "node tooling/verify-static-artifact.mjs"
+    "verify:static": "node tooling/verify-static-artifact.mjs",
+    "report:token-coverage": "node tooling/report-token-coverage.mjs",
+    "deploy:pinata": "pnpm build:static && pnpm verify:static && node --env-file=.env tooling/pinata-release.mjs upload-directory"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
@@ -28,10 +26,14 @@
     "@types/node": "^22.10.2",
     "@vitest/coverage-v8": "^4.1.10",
     "prettier": "^3.9.5",
-    "tsx": "^4.19.2",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2",
     "viem": "^2.55.4",
     "vitest": "^4.1.10"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": "^8.5.18"
+    }
   }
 }

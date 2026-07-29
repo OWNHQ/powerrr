@@ -1,6 +1,4 @@
 export type HexAddress = `0x${string}`;
-export type ChainId = 1;
-
 export type QuoteMode = "wallet-estimate" | "existing-position";
 export type RiskLevel = "low" | "medium" | "high" | "unknown";
 export type Confidence = "high" | "medium" | "low";
@@ -8,35 +6,12 @@ export type SafetyProfile = "max" | "balanced" | "conservative";
 export type RateType = "fixed" | "variable" | "mixed" | "unknown";
 export type AnnualRateConvention = "apr" | "apy";
 export type FreshnessStatus = "fresh" | "stale" | "unknown";
-export type RuntimeTier = "fixture" | "public-rpc-preview" | "production";
 
 export type WalletProviderDescriptor = {
   uuid: string;
   name: string;
   rdns: string;
   icon?: string;
-};
-
-export type OnchainPriceRoute =
-  | { kind: "aave-oracle"; oracle: HexAddress; asset: HexAddress }
-  | { kind: "unavailable"; reason: string };
-
-export type TokenRegistryEntry = {
-  chainId: 1;
-  address: HexAddress;
-  symbol: string;
-  name: string;
-  decimals: number;
-  iconKey: string;
-  priceRoute: OnchainPriceRoute;
-  ownPolicy: {
-    eligible: true;
-    advanceRate: number;
-    valuationHaircut: number;
-    contributionCapUsd: number;
-    concentrationFamily: string;
-    provisional: boolean;
-  };
 };
 
 export type DiscoveryProgress = {
@@ -54,7 +29,6 @@ export type ReadReceipt = {
   blockTimestamp: string;
   blockAgeSeconds: number;
   registryVersion: string;
-  policyVersion: string;
   multicallAddress: HexAddress;
   callsAttempted: number;
   callsSucceeded: number;
@@ -62,21 +36,6 @@ export type ReadReceipt = {
   chunkSizes: number[];
   priceSources: string[];
   postedToPowerrr: false;
-};
-export type LiquidationRisk =
-  | "none-assumed-own"
-  | "health-factor"
-  | "ltv-threshold"
-  | "vault-specific"
-  | "unknown";
-
-export type AddressInput = {
-  chainId: number;
-  input: string;
-  resolvedAddress: HexAddress;
-  resolvedEnsName?: string;
-  blockNumber?: string;
-  blockTimestamp?: string;
 };
 
 export type PortfolioAsset = {
@@ -105,21 +64,62 @@ export type PortfolioAsset = {
   valuationStatus?: "available" | "manual-review" | "failed";
   valuationReason?: string;
   priceProvenance?: string;
-  ownEligible?: boolean;
-  ownAdvanceRate?: number;
-  ownValuationHaircut?: number;
-  ownContributionCapUsd?: number;
-  ownCapacityContributionUsd?: number;
+  priceConfidence?: "high" | "medium" | "low";
+  priceRoute?: string;
+  priceObservationSeconds?: number;
+  priceLiquidityUsd?: number;
   observedBlockNumber?: string;
 };
 
-export type PortfolioSummary = {
-  totalValueUsd: number;
-  eligibleCollateralUsd: number;
-  discoveredAssets: number;
-  supportedWalletValueUsd?: number;
-  matchedCollateralUsd?: number;
-  matchedAssetCount?: number;
+export type ProtocolAssetReasonCode =
+  | "INCLUDED"
+  | "SUPPORTED_NOT_SELECTED"
+  | "NOT_LISTED"
+  | "COLLATERAL_DISABLED"
+  | "INACTIVE"
+  | "FROZEN"
+  | "PAUSED"
+  | "ISOLATION_MODE_UNMODELED"
+  | "ZERO_LTV"
+  | "SUPPLY_CAP_REACHED"
+  | "PRICE_UNAVAILABLE"
+  | "CONVERSION_REQUIRED"
+  | "NO_REVIEWED_MARKET"
+  | "MARKET_STATE_UNAVAILABLE"
+  | "SOURCE_UNAVAILABLE";
+
+export type ProtocolAssetEvaluation = {
+  token: HexAddress;
+  symbol: string;
+  balanceUsd?: number;
+  selectionStatus: "selected" | "not-selected" | "unselectable";
+  eligibilityStatus:
+    | "included"
+    | "supported"
+    | "unsupported"
+    | "temporarily-unavailable"
+    | "unknown";
+  reasonCodes: ProtocolAssetReasonCode[];
+  reason: string;
+  ltv?: number;
+  liquidationThreshold?: number;
+  contributionUsd?: number;
+  requiredAction?: string;
+};
+
+export type ProtocolCapacityBreakdown = {
+  collateralValueUsd: number;
+  protocolBorrowLimitUsd: number;
+  safetyAdjustedLimitUsd: number;
+  liquidityLimitUsd?: number;
+  minimumBorrowUsd?: number;
+  recommendedMaxUsd: number;
+  bindingConstraint:
+    | "collateral"
+    | "safety-buffer"
+    | "liquidity"
+    | "minimum-borrow"
+    | "no-eligible-collateral";
 };
 
 export type CollateralUsed = {
@@ -142,18 +142,6 @@ export type QuoteProvenance = {
   observedAt?: string;
   blockNumber?: string;
   blockTimestamp?: string;
-};
-
-export type SourceObservation = {
-  sourceId: string;
-  sourceLabel: string;
-  sourceType: QuoteProvenance["sourceType"];
-  fetchedAt: string;
-  observedAt?: string;
-  blockNumber?: string;
-  blockTimestamp?: string;
-  ageSeconds?: number;
-  freshness: FreshnessStatus;
 };
 
 export type AnnualRate = {
@@ -180,8 +168,11 @@ export type ProtocolBorrowQuote = {
   indicativeApr?: number | null;
   annualRate?: AnnualRate | null;
   termMonths?: number | null;
-  liquidationRisk: LiquidationRisk;
+  liquidationRisk:
+    "health-factor" | "ltv-threshold" | "vault-specific" | "unknown";
   collateralUsed: CollateralUsed[];
+  assetEvaluations?: ProtocolAssetEvaluation[];
+  capacityBreakdown?: ProtocolCapacityBreakdown;
   healthFactor?: number | null;
   riskLevel: RiskLevel;
   confidence: Confidence;
@@ -193,81 +184,17 @@ export type ProtocolBorrowQuote = {
   provenance: QuoteProvenance[];
 };
 
-export type ProtocolMetadata = {
-  id: string;
-  label: string;
-  familyId: string;
-  familyLabel: string;
-  supports: number[];
-  targetBorrowAssets: string[];
-  rateType: RateType;
-  liquidationRisk: LiquidationRisk;
-  dataPriority: string[];
-  caveats: string[];
-  status: "fixture-mode" | "live-ready" | "disabled";
-};
-
 export type ProtocolAdapterInput = {
   address: HexAddress;
   chainId: number;
   mode: QuoteMode;
   portfolio: PortfolioAsset[];
+  selectedCollateralTokens?: HexAddress[];
   targetBorrowAssets: string[];
   safetyProfile: SafetyProfile;
   asOfBlock?: string;
   blockTimestamp?: string;
   now?: Date;
-};
-
-export interface ProtocolAdapter {
-  id: string;
-  label: string;
-  metadata: ProtocolMetadata;
-  supports(chainId: number): boolean;
-  quote(input: ProtocolAdapterInput): Promise<ProtocolBorrowQuote[]>;
-}
-
-export type QuoteRequest = {
-  chainId: number;
-  input: {
-    address?: string | undefined;
-    ensName?: string | undefined;
-  };
-  mode: QuoteMode;
-  targetBorrowAssets?: string[];
-  collateralTokens?: HexAddress[];
-  safetyProfile?: SafetyProfile;
-  includeProtocols?: string[];
-  asOfBlock?: string | null;
-};
-
-export type QuoteResponse = {
-  requestId: string;
-  resolvedAddress: HexAddress;
-  resolvedEnsName?: string;
-  chainId: number;
-  mode: QuoteMode;
-  blockNumber: string;
-  blockTimestamp?: string;
-  calculatedAt: string;
-  servedAt: string;
-  generatedAt: string;
-  dataMode: "fixtures" | "live";
-  runtimeTier: RuntimeTier;
-  sourcePolicySatisfied: boolean;
-  completeness: "complete" | "partial";
-  cache: {
-    status: "hit" | "miss";
-    ageSeconds: number;
-  };
-  productionSafe: boolean;
-  observations: SourceObservation[];
-  quotes: ProtocolBorrowQuote[];
-  opportunities?: BorrowOpportunity[];
-  portfolio: PortfolioResponse;
-  portfolioSummary: PortfolioSummary;
-  protocolAvailability: ProtocolAvailability[];
-  warnings: string[];
 };
 
 export type ProtocolAvailability = {
@@ -278,53 +205,6 @@ export type ProtocolAvailability = {
     | "DEADLINE_EXCEEDED"
     | "SOURCE_READ_FAILED"
     | "UNSUPPORTED";
-  reason?: string;
-};
-
-export type BorrowOpportunity = {
-  id: "own";
-  label: "OWN";
-  rail: "own";
-  kind: "indicative-request";
-  potentialBorrowUsd: number;
-  availableNowUsd: number;
-  fundingStatus:
-    "available-now" | "limited" | "request-required" | "unavailable";
-  indicativeApr: number;
-  termMonths: number;
-  collateralUsed: CollateralUsed[];
-  policyVersion: string;
-  riskModel: "maturity-default";
-  assumptions: string[];
-  warnings: string[];
-};
-
-export type OwnLeadCollateral = {
-  symbol: string;
-  valueUsd: number;
-};
-
-export type OwnLeadRequest = {
-  idempotencyKey: string;
-  email: string;
-  wallet: string;
-  requestedAmountUsd: number;
-  creditAsset: "USDC";
-  termMonths: number;
-  collateral: OwnLeadCollateral[];
-  policyVersion: string;
-  consent: true;
-  website?: string;
-};
-
-export type OwnLeadResponse = {
-  accepted: true;
-  requestId: string;
-  delivery: "webhook" | "development-mock" | "honeypot";
-};
-
-export type OwnLeadStatusResponse = {
-  enabled: boolean;
   reason?: string;
 };
 
@@ -348,317 +228,6 @@ export type WebsiteQuoteRow = {
   availableLiquidityUsd: number | null;
   cta: {
     label: string;
-    action: "open-drawer" | "open-apply-flow";
+    action: "open-drawer";
   };
-};
-
-export type ResolveRequest = {
-  chainId: number;
-  input: {
-    address?: string | undefined;
-    ensName?: string | undefined;
-  };
-};
-
-export type ResolveResponse = AddressInput;
-
-export type PortfolioRequest = ResolveRequest;
-
-export type PortfolioResponse = {
-  resolvedAddress: HexAddress;
-  resolvedEnsName?: string;
-  chainId: number;
-  assets: PortfolioAsset[];
-  summary: PortfolioSummary;
-  completeness?: "complete" | "partial";
-  provenance: QuoteProvenance[];
-  warnings: string[];
-};
-
-export type OwnRiskRequest = {
-  chainId: number;
-  input: {
-    address?: string | undefined;
-    ensName?: string | undefined;
-  };
-  requestedPrincipalUsd?: number;
-  termMonths?: 12 | 24 | 36;
-};
-
-export type OwnRiskMetric = {
-  name: string;
-  value: number;
-  unit: "usd" | "ratio" | "percent";
-  explanation: string;
-};
-
-export type OwnRiskResponse = {
-  resolvedAddress: HexAddress;
-  termMonths: 12 | 24 | 36;
-  offeredPrincipalUsd: number;
-  requestedPrincipalUsd: number | null;
-  fixedApr: number;
-  monthlyPaymentUsd: number;
-  endingBalanceUsd: number;
-  metrics: OwnRiskMetric[];
-  assumptions: string[];
-  warnings: string[];
-};
-
-export type ScenarioId =
-  | "eth-btc-spot-shock"
-  | "lst-lrt-basis-widening"
-  | "stablecoin-depeg"
-  | "oracle-divergence-staleness"
-  | "liquidity-withdrawal"
-  | "rate-spike"
-  | "combined-crash"
-  | "own-delinquency-lag";
-
-export type ScenarioDefinition = {
-  id: ScenarioId;
-  label: string;
-  description: string;
-  collateralShock: Record<string, number>;
-  liquidityMultiplier: number;
-  aprShockBps: number;
-  confidencePenalty: number;
-  protocolSafeBorrowMultiplier?: Record<string, number>;
-};
-
-export type ScenarioQuoteResult = {
-  scenarioId: ScenarioId;
-  scenarioLabel: string;
-  protocolId: string;
-  protocolLabel: string;
-  baseSafeBorrowUsd: number | null;
-  stressedSafeBorrowUsd: number | null;
-  baseHealthFactor?: number | null;
-  stressedHealthFactor?: number | null;
-  confidence: Confidence;
-  warnings: string[];
-};
-
-export type SimulationRequest = QuoteRequest & {
-  scenarioIds?: ScenarioId[];
-};
-
-export type SimulationResponse = {
-  requestId: string;
-  resolvedAddress: HexAddress;
-  generatedAt: string;
-  results: ScenarioQuoteResult[];
-  assumptions: string[];
-};
-
-export type ApiErrorCode =
-  | "INVALID_INPUT"
-  | "UNSUPPORTED_CHAIN"
-  | "ENS_RESOLUTION_FAILED"
-  | "PORTFOLIO_UNAVAILABLE"
-  | "PROTOCOL_SOURCE_UNAVAILABLE"
-  | "STALE_QUOTE_ONLY"
-  | "SIMULATION_FAILED"
-  | "RATE_LIMITED"
-  | "SERVICE_UNAVAILABLE"
-  | "UNAUTHORIZED"
-  | "INTERNAL_ERROR";
-
-export type ApiError = {
-  code: ApiErrorCode;
-  message: string;
-  requestId?: string;
-  details?: unknown;
-};
-
-export type EvidenceStatus = "verified" | "stated" | "missing";
-export type EmploymentStatus =
-  | "employed"
-  | "self-employed"
-  | "contract"
-  | "retired"
-  | "unemployed"
-  | "other";
-export type AssessmentRecommendation =
-  "within-policy" | "counteroffer" | "manual-review" | "outside-policy";
-export type BorrowerRiskBand = "low" | "moderate" | "high" | "very-high";
-export type CalibrationStatus = "uncalibrated" | "validated";
-export type DecisionReasonSeverity = "info" | "warning" | "critical";
-export type BorrowerScenarioId =
-  | "collateral-crash"
-  | "income-loss"
-  | "rate-shock"
-  | "liquidity-freeze"
-  | "combined-stress";
-
-export type BorrowerFinancialProfile = {
-  annualGrossIncomeUsd: number;
-  monthlyNetIncomeUsd?: number;
-  monthlyDebtPaymentsUsd: number;
-  monthlyLivingExpensesUsd: number;
-  employmentStatus: EmploymentStatus;
-  incomeEvidence: EvidenceStatus;
-};
-
-export type BorrowerCreditProfile = {
-  creditScore?: number;
-  creditScoreScale?: string;
-  missedPayments24m: number;
-  defaultsOrCollections: number;
-  activeBankruptcy: boolean;
-  creditEvidence: EvidenceStatus;
-};
-
-export type RiskFacility = {
-  requestedPrincipalUsd: number;
-  annualRate: number;
-  durationMonths: number;
-  repaymentType: "amortizing";
-  creditToken: string;
-};
-
-export type RiskCollateral = {
-  asset: string;
-  amount: number;
-  spotPriceUsd: number;
-  annualVolatility: number;
-  maxDrawdown365d: number;
-  volume24hUsd: number;
-  custodyModel: "self-custody" | "qualified-custodian" | "third-party";
-  oracleModel: "protocol-native" | "multi-source" | "single-source" | "manual";
-  hedgeFloorUsd?: number;
-  marketEvidence: EvidenceStatus;
-};
-
-export type BorrowerRiskAssessmentRequest = {
-  applicationId?: string;
-  borrower: {
-    financials: BorrowerFinancialProfile;
-    credit: BorrowerCreditProfile;
-  };
-  facility: RiskFacility;
-  collateral: RiskCollateral;
-  policyVersion?: string;
-};
-
-export type DecisionReason = {
-  code: string;
-  severity: DecisionReasonSeverity;
-  title: string;
-  explanation: string;
-  observed?: number | string | boolean;
-  threshold?: number | string | boolean;
-};
-
-export type RiskPolicy = {
-  version: string;
-  effectiveAt: string;
-  status: "provisional" | "validated";
-  methodology: "transparent-scorecard-pd-lgd-ead";
-  maxTotalDebtServiceRatio: number;
-  minimumMonthlyResidualIncomeUsd: number;
-  minimumCureMonths: number;
-  rateStressBps: number;
-  incomeStress: number;
-  collateralAdvanceRateFloor: number;
-  collateralAdvanceRateCeiling: number;
-  maximumTermMonths: number;
-  supportedCollateral: string[];
-  supportedCreditTokens: string[];
-};
-
-export type BorrowerRiskAssessment = {
-  schemaVersion: "2026-07-15";
-  assessmentId: string;
-  applicationId: string | null;
-  generatedAt: string;
-  policy: Pick<
-    RiskPolicy,
-    "version" | "effectiveAt" | "status" | "methodology"
-  >;
-  calibrationStatus: CalibrationStatus;
-  recommendation: AssessmentRecommendation;
-  riskBand: BorrowerRiskBand;
-  riskScore: number;
-  topRisks: DecisionReason[];
-  reasons: DecisionReason[];
-  affordability: {
-    monthlyGrossIncomeUsd: number;
-    monthlyNetIncomeUsd: number | null;
-    proposedMonthlyPaymentUsd: number;
-    stressedMonthlyPaymentUsd: number;
-    totalDebtServiceRatio: number;
-    monthlyResidualIncomeUsd: number;
-    maxAffordablePrincipalUsd: number;
-  };
-  collateral: {
-    spotValueUsd: number;
-    liquidationValueUsd: number;
-    stressedValueUsd: number;
-    effectiveRecoveryValueUsd: number;
-    requestedLtv: number;
-    maximumLtv: number;
-    stressedLtv: number;
-    cureMonths: number;
-    haircuts: Record<
-      | "liquidity"
-      | "custody"
-      | "oracle"
-      | "liquidationDelay"
-      | "volatility"
-      | "drawdown",
-      number
-    >;
-  };
-  facility: {
-    requestedPrincipalUsd: number;
-    supportedPrincipalUsd: number;
-    counterofferPrincipalUsd: number | null;
-    annualRate: number;
-    durationMonths: number;
-  };
-  loss: {
-    probabilityOfDefault: number | null;
-    exposureAtDefaultUsd: number;
-    lossGivenDefault: number;
-    expectedLossUsd: number | null;
-  };
-  dataQuality: {
-    complete: boolean;
-    evidence: Record<"income" | "credit" | "market", EvidenceStatus>;
-  };
-  methodology: string[];
-  warnings: string[];
-};
-
-export type BorrowerRiskScenarioRequest = {
-  assessment: BorrowerRiskAssessmentRequest;
-  scenarioIds?: BorrowerScenarioId[];
-};
-
-export type BorrowerRiskScenarioResult = {
-  scenarioId: BorrowerScenarioId;
-  label: string;
-  description: string;
-  base: Pick<
-    BorrowerRiskAssessment,
-    "recommendation" | "riskBand" | "riskScore"
-  > & {
-    supportedPrincipalUsd: number;
-  };
-  stressed: Pick<
-    BorrowerRiskAssessment,
-    "recommendation" | "riskBand" | "riskScore"
-  > & {
-    supportedPrincipalUsd: number;
-    stressedLtv: number;
-    monthlyResidualIncomeUsd: number;
-  };
-  mainRisks: DecisionReason[];
-};
-
-export type BorrowerRiskScenarioResponse = {
-  generatedAt: string;
-  policyVersion: string;
-  results: BorrowerRiskScenarioResult[];
 };

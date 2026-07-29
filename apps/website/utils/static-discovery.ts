@@ -1,13 +1,12 @@
 import {
   AAVE_V3_ORACLE,
   ETHEREUM_NATIVE_TOKEN,
-  ETHEREUM_OWN_TOKEN_REGISTRY_SOURCE,
-  ETHEREUM_OWN_TOKEN_REGISTRY_VERSION,
+  ETHEREUM_TOKEN_REGISTRY_SOURCE,
+  ETHEREUM_TOKEN_REGISTRY_VERSION,
   ethereumAssetMetadataByAddress,
-  ethereumOwnTokenRegistryV1,
-  type EthereumOwnTokenRegistryEntry,
+  ethereumTokenRegistryV1,
+  type EthereumTokenRegistryEntry,
 } from "@powerrr/configs";
-import { OWN_OPPORTUNITY_POLICY_VERSION } from "@powerrr/own-underwriter";
 import type {
   DiscoveryProgress,
   HexAddress,
@@ -26,6 +25,15 @@ import {
 export const MULTICALL3_ADDRESS =
   "0xcA11bde05977b3631167028862bE2a173976CA11" as const;
 const WETH_ADDRESS = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" as const;
+const CHAINLINK_FEED_REGISTRY =
+  "0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf" as const;
+const CHAINLINK_USD = "0x0000000000000000000000000000000000000348" as const;
+const UNISWAP_V3_FACTORY =
+  "0x1F98431c8aD98523631AE4a59f267346ea31F984" as const;
+const UNISWAP_V3_FEES = [100, 500, 3_000, 10_000] as const;
+const UNISWAP_TWAP_SECONDS = 1_800;
+const MIN_TWAP_LIQUIDITY_USD = 25_000;
+const MIN_SPOT_LIQUIDITY_USD = 100_000;
 export const MAX_BLOCK_AGE_SECONDS = 300;
 
 export type Eip1193Request = {
@@ -77,6 +85,97 @@ const oracleAbi = [
     outputs: [{ name: "price", type: "uint256" }],
   },
 ] as const;
+
+const chainlinkFeedRegistryAbi = [
+  {
+    type: "function",
+    name: "decimals",
+    stateMutability: "view",
+    inputs: [
+      { name: "base", type: "address" },
+      { name: "quote", type: "address" },
+    ],
+    outputs: [{ name: "value", type: "uint8" }],
+  },
+  {
+    type: "function",
+    name: "latestRoundData",
+    stateMutability: "view",
+    inputs: [
+      { name: "base", type: "address" },
+      { name: "quote", type: "address" },
+    ],
+    outputs: [
+      { name: "roundId", type: "uint80" },
+      { name: "answer", type: "int256" },
+      { name: "startedAt", type: "uint256" },
+      { name: "updatedAt", type: "uint256" },
+      { name: "answeredInRound", type: "uint80" },
+    ],
+  },
+] as const;
+
+const uniswapFactoryAbi = [
+  {
+    type: "function",
+    name: "getPool",
+    stateMutability: "view",
+    inputs: [
+      { name: "tokenA", type: "address" },
+      { name: "tokenB", type: "address" },
+      { name: "fee", type: "uint24" },
+    ],
+    outputs: [{ name: "pool", type: "address" }],
+  },
+] as const;
+
+const uniswapPoolAbi = [
+  {
+    type: "function",
+    name: "observe",
+    stateMutability: "view",
+    inputs: [{ name: "secondsAgos", type: "uint32[]" }],
+    outputs: [
+      { name: "tickCumulatives", type: "int56[]" },
+      {
+        name: "secondsPerLiquidityCumulativeX128s",
+        type: "uint160[]",
+      },
+    ],
+  },
+  {
+    type: "function",
+    name: "slot0",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      { name: "sqrtPriceX96", type: "uint160" },
+      { name: "tick", type: "int24" },
+      { name: "observationIndex", type: "uint16" },
+      { name: "observationCardinality", type: "uint16" },
+      { name: "observationCardinalityNext", type: "uint16" },
+      { name: "feeProtocol", type: "uint8" },
+      { name: "unlocked", type: "bool" },
+    ],
+  },
+  {
+    type: "function",
+    name: "liquidity",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "value", type: "uint128" }],
+  },
+] as const;
+
+type OnchainPriceResult = {
+  priceUsd?: number;
+  source?: string;
+  reason?: string;
+  confidence?: "high" | "medium" | "low";
+  route?: string;
+  observationSeconds?: number;
+  liquidityUsd?: number;
+};
 
 const multicall3Abi = [
   {
@@ -194,10 +293,10 @@ export async function scanConnectedWallet(input: {
   input.onProgress?.({
     phase: "balances",
     completed: 0,
-    total: ethereumOwnTokenRegistryV1.length,
-    message: `Reading ${ethereumOwnTokenRegistryV1.length} ERC-20 balances in one Multicall3 request.`,
+    total: ethereumTokenRegistryV1.length,
+    message: `Reading ${ethereumTokenRegistryV1.length} ERC-20 balances in one Multicall3 request.`,
   });
-  const balanceCalls = ethereumOwnTokenRegistryV1.map((token) => ({
+  const balanceCalls = ethereumTokenRegistryV1.map((token) => ({
     target: token.address as Address,
     allowFailure: true,
     callData: encodeFunctionData({
@@ -218,7 +317,7 @@ export async function scanConnectedWallet(input: {
     params: [account, blockNumberHex],
   });
   const nativeBalance = BigInt(nativeBalanceHex);
-  const decodedBalances = ethereumOwnTokenRegistryV1.map((token, index) => ({
+  const decodedBalances = ethereumTokenRegistryV1.map((token, index) => ({
     token,
     ...decodeBalance(balanceResults[index]),
   }));
@@ -227,8 +326,8 @@ export async function scanConnectedWallet(input: {
   );
   input.onProgress?.({
     phase: "balances",
-    completed: ethereumOwnTokenRegistryV1.length,
-    total: ethereumOwnTokenRegistryV1.length,
+    completed: ethereumTokenRegistryV1.length,
+    total: ethereumTokenRegistryV1.length,
     message: `Found ${positive.length} positive ERC-20 balances.`,
   });
 
@@ -242,6 +341,7 @@ export async function scanConnectedWallet(input: {
     provider,
     positive.map((item) => item.token),
     blockNumberHex,
+    Number(BigInt(block.timestamp)),
     chunkSizes,
   );
   const assets: PortfolioAsset[] = decodedBalances.flatMap((item) => {
@@ -258,6 +358,7 @@ export async function scanConnectedWallet(input: {
         price?.priceUsd,
         price?.source,
         price?.reason,
+        price,
       ),
     ];
   });
@@ -282,20 +383,17 @@ export async function scanConnectedWallet(input: {
       valuationReason:
         wethPrice?.reason ??
         (wethPrice?.priceUsd ? undefined : "WETH oracle price unavailable."),
-      priceProvenance: wethPrice?.source,
-      ownEligible: true,
-      ownAdvanceRate: 0.95,
-      ownValuationHaircut: 0.04,
-      ownContributionCapUsd: 500_000,
-      ownCapacityContributionUsd: wethPrice?.priceUsd
-        ? Math.min(
-            Number(formatUnits(nativeBalance, 18)) *
-              wethPrice.priceUsd *
-              0.95 *
-              0.96,
-            500_000,
-          )
-        : 0,
+      ...(wethPrice?.source ? { priceProvenance: wethPrice.source } : {}),
+      ...(wethPrice?.confidence
+        ? { priceConfidence: wethPrice.confidence }
+        : {}),
+      ...(wethPrice?.route ? { priceRoute: wethPrice.route } : {}),
+      ...(wethPrice?.observationSeconds
+        ? { priceObservationSeconds: wethPrice.observationSeconds }
+        : {}),
+      ...(wethPrice?.liquidityUsd
+        ? { priceLiquidityUsd: wethPrice.liquidityUsd }
+        : {}),
       observedBlockNumber: blockNumber,
       assetKind: "native",
       requiredAction: "wrap",
@@ -320,7 +418,7 @@ export async function scanConnectedWallet(input: {
   });
   return {
     assets,
-    registrySource: ETHEREUM_OWN_TOKEN_REGISTRY_SOURCE,
+    registrySource: ETHEREUM_TOKEN_REGISTRY_SOURCE,
     receipt: {
       walletName: input.walletName,
       account,
@@ -328,12 +426,11 @@ export async function scanConnectedWallet(input: {
       blockNumber,
       blockTimestamp: blockTimestamp.toISOString(),
       blockAgeSeconds,
-      registryVersion: ETHEREUM_OWN_TOKEN_REGISTRY_VERSION,
-      policyVersion: OWN_OPPORTUNITY_POLICY_VERSION,
+      registryVersion: ETHEREUM_TOKEN_REGISTRY_VERSION,
       multicallAddress: MULTICALL3_ADDRESS,
-      callsAttempted: ethereumOwnTokenRegistryV1.length,
+      callsAttempted: ethereumTokenRegistryV1.length,
       callsSucceeded: succeeded,
-      callsFailed: ethereumOwnTokenRegistryV1.length - succeeded,
+      callsFailed: ethereumTokenRegistryV1.length - succeeded,
       chunkSizes,
       priceSources,
       postedToPowerrr: false,
@@ -343,36 +440,22 @@ export async function scanConnectedWallet(input: {
 
 async function loadPrices(
   provider: Eip1193Provider,
-  tokens: EthereumOwnTokenRegistryEntry[],
+  tokens: EthereumTokenRegistryEntry[],
   blockTag: Hex,
+  blockTimestampSeconds: number,
   chunkSizes: number[],
-): Promise<
-  Map<string, { priceUsd?: number; source?: string; reason?: string }>
-> {
-  const result = new Map<
-    string,
-    { priceUsd?: number; source?: string; reason?: string }
-  >();
-  const priced = tokens.filter(
+): Promise<Map<string, OnchainPriceResult>> {
+  const result = new Map<string, OnchainPriceResult>();
+  const oracleTokens = tokens.filter(
     (token) => token.priceRoute.kind === "aave-oracle",
   );
-  const weth = ethereumOwnTokenRegistryV1.find(
-    (token) => token.symbol === "WETH",
-  );
-  if (weth && !priced.some((token) => token.symbol === "WETH"))
-    priced.push(weth);
-  for (const token of tokens) {
-    if (token.priceRoute.kind === "unavailable") {
-      result.set(token.address.toLowerCase(), {
-        reason: token.priceRoute.reason,
-      });
-    }
-  }
-  if (!priced.length) return result;
+  const weth = ethereumTokenRegistryV1.find((token) => token.symbol === "WETH");
+  if (weth && !oracleTokens.some((token) => token.symbol === "WETH"))
+    oracleTokens.push(weth);
 
   const oracles = [
     ...new Set(
-      priced.flatMap((token) =>
+      oracleTokens.flatMap((token) =>
         token.priceRoute.kind === "aave-oracle"
           ? [token.priceRoute.oracle.toLowerCase()]
           : [],
@@ -388,7 +471,7 @@ async function loadPrices(
         functionName: "BASE_CURRENCY_UNIT",
       }),
     })),
-    ...priced.map((token) => ({
+    ...oracleTokens.map((token) => ({
       target: (token.priceRoute.kind === "aave-oracle"
         ? token.priceRoute.oracle
         : AAVE_V3_ORACLE) as Address,
@@ -415,7 +498,7 @@ async function loadPrices(
     const value = decodeUint(responses[index], "BASE_CURRENCY_UNIT");
     if (value && value > 0n) baseUnits.set(oracle, value);
   });
-  priced.forEach((token, index) => {
+  oracleTokens.forEach((token, index) => {
     if (token.priceRoute.kind !== "aave-oracle") return;
     const raw = decodeUint(responses[oracles.length + index], "getAssetPrice");
     const unit = baseUnits.get(token.priceRoute.oracle.toLowerCase());
@@ -428,9 +511,338 @@ async function loadPrices(
     result.set(token.address.toLowerCase(), {
       priceUsd: Number(raw) / Number(unit),
       source: `Onchain oracle ${token.priceRoute.oracle}`,
+      confidence: "high",
+      route: `${token.symbol}/USD protocol oracle`,
     });
   });
+
+  const automaticTokens = tokens.filter(
+    (token) => !result.get(token.address.toLowerCase())?.priceUsd,
+  );
+  if (automaticTokens.length) {
+    await loadChainlinkPrices(
+      provider,
+      automaticTokens,
+      blockTag,
+      blockTimestampSeconds,
+      chunkSizes,
+      result,
+    );
+  }
+  const dexTokens = tokens.filter(
+    (token) => !result.get(token.address.toLowerCase())?.priceUsd,
+  );
+  if (dexTokens.length) {
+    await loadUniswapPrices(provider, dexTokens, blockTag, chunkSizes, result);
+  }
+  for (const token of tokens) {
+    if (!result.get(token.address.toLowerCase())?.priceUsd) {
+      result.set(token.address.toLowerCase(), {
+        reason: `${token.symbol} has no fresh reviewed oracle feed or sufficiently liquid Uniswap V3 route at the pinned block.`,
+      });
+    }
+  }
   return result;
+}
+
+async function loadChainlinkPrices(
+  provider: Eip1193Provider,
+  tokens: EthereumTokenRegistryEntry[],
+  blockTag: Hex,
+  blockTimestampSeconds: number,
+  chunkSizes: number[],
+  output: Map<string, OnchainPriceResult>,
+): Promise<void> {
+  const calls: Call[] = tokens.flatMap((token) => [
+    {
+      target: CHAINLINK_FEED_REGISTRY,
+      allowFailure: true,
+      callData: encodeFunctionData({
+        abi: chainlinkFeedRegistryAbi,
+        functionName: "decimals",
+        args: [token.address as Address, CHAINLINK_USD],
+      }),
+    },
+    {
+      target: CHAINLINK_FEED_REGISTRY,
+      allowFailure: true,
+      callData: encodeFunctionData({
+        abi: chainlinkFeedRegistryAbi,
+        functionName: "latestRoundData",
+        args: [token.address as Address, CHAINLINK_USD],
+      }),
+    },
+  ]);
+  const responses = await multicallWithDeterministicRetry(
+    provider,
+    calls,
+    blockTag,
+    chunkSizes,
+  );
+  tokens.forEach((token, index) => {
+    try {
+      const decimalsResult = responses[index * 2];
+      const roundResult = responses[index * 2 + 1];
+      if (!decimalsResult?.success || !roundResult?.success) return;
+      const decimals = decodeFunctionResult({
+        abi: chainlinkFeedRegistryAbi,
+        functionName: "decimals",
+        data: decimalsResult.returnData,
+      });
+      const round = decodeFunctionResult({
+        abi: chainlinkFeedRegistryAbi,
+        functionName: "latestRoundData",
+        data: roundResult.returnData,
+      });
+      const answer = round[1];
+      const updatedAt = Number(round[3]);
+      const ageSeconds = blockTimestampSeconds - updatedAt;
+      if (
+        answer <= 0n ||
+        !Number.isFinite(ageSeconds) ||
+        ageSeconds < 0 ||
+        ageSeconds > 36 * 60 * 60
+      ) {
+        return;
+      }
+      const priceUsd = Number(answer) / 10 ** Number(decimals);
+      if (!Number.isFinite(priceUsd) || priceUsd <= 0) return;
+      output.set(token.address.toLowerCase(), {
+        priceUsd,
+        source: `Chainlink Feed Registry ${CHAINLINK_FEED_REGISTRY}`,
+        confidence: "high",
+        route: `${token.symbol}/USD Chainlink feed`,
+      });
+    } catch {
+      // A missing feed is an expected route miss; Uniswap is attempted next.
+    }
+  });
+}
+
+async function loadUniswapPrices(
+  provider: Eip1193Provider,
+  tokens: EthereumTokenRegistryEntry[],
+  blockTag: Hex,
+  chunkSizes: number[],
+  output: Map<string, OnchainPriceResult>,
+): Promise<void> {
+  const quoteTokens = ethereumTokenRegistryV1.filter(
+    (token) =>
+      ["WETH", "USDC", "USDT", "DAI"].includes(token.symbol) &&
+      Boolean(output.get(token.address.toLowerCase())?.priceUsd),
+  );
+  const routes = tokens.flatMap((token) =>
+    quoteTokens
+      .filter(
+        (quote) => quote.address.toLowerCase() !== token.address.toLowerCase(),
+      )
+      .flatMap((quote) =>
+        UNISWAP_V3_FEES.map((fee) => ({ token, quote, fee })),
+      ),
+  );
+  if (!routes.length) return;
+  const poolResults = await multicallWithDeterministicRetry(
+    provider,
+    routes.map((route) => ({
+      target: UNISWAP_V3_FACTORY,
+      allowFailure: true,
+      callData: encodeFunctionData({
+        abi: uniswapFactoryAbi,
+        functionName: "getPool",
+        args: [
+          route.token.address as Address,
+          route.quote.address as Address,
+          route.fee,
+        ],
+      }),
+    })),
+    blockTag,
+    chunkSizes,
+  );
+  const pools = routes.flatMap((route, index) => {
+    const response = poolResults[index];
+    if (!response?.success) return [];
+    try {
+      const pool = decodeFunctionResult({
+        abi: uniswapFactoryAbi,
+        functionName: "getPool",
+        data: response.returnData,
+      });
+      return /^0x0{40}$/i.test(pool) ? [] : [{ ...route, pool }];
+    } catch {
+      return [];
+    }
+  });
+  if (!pools.length) return;
+  const stateResults = await multicallWithDeterministicRetry(
+    provider,
+    pools.flatMap((route) => [
+      {
+        target: route.pool,
+        allowFailure: true,
+        callData: encodeFunctionData({
+          abi: uniswapPoolAbi,
+          functionName: "observe",
+          args: [[UNISWAP_TWAP_SECONDS, 0]],
+        }),
+      },
+      {
+        target: route.pool,
+        allowFailure: true,
+        callData: encodeFunctionData({
+          abi: uniswapPoolAbi,
+          functionName: "slot0",
+        }),
+      },
+      {
+        target: route.pool,
+        allowFailure: true,
+        callData: encodeFunctionData({
+          abi: uniswapPoolAbi,
+          functionName: "liquidity",
+        }),
+      },
+    ]),
+    blockTag,
+    chunkSizes,
+  );
+  const candidates = pools.flatMap((route, index) => {
+    const observeResult = stateResults[index * 3];
+    const slotResult = stateResults[index * 3 + 1];
+    const liquidityResult = stateResults[index * 3 + 2];
+    if (!slotResult?.success || !liquidityResult?.success) return [];
+    try {
+      const slot = decodeFunctionResult({
+        abi: uniswapPoolAbi,
+        functionName: "slot0",
+        data: slotResult.returnData,
+      });
+      const currentLiquidity = decodeFunctionResult({
+        abi: uniswapPoolAbi,
+        functionName: "liquidity",
+        data: liquidityResult.returnData,
+      });
+      let tick = Number(slot[1]);
+      let routeLiquidity = currentLiquidity;
+      let confidence: "medium" | "low" = "low";
+      let observationSeconds: number | undefined;
+      if (observeResult?.success) {
+        const observed = decodeFunctionResult({
+          abi: uniswapPoolAbi,
+          functionName: "observe",
+          data: observeResult.returnData,
+        });
+        const tickDelta = observed[0][1]! - observed[0][0]!;
+        tick = floorDiv(tickDelta, BigInt(UNISWAP_TWAP_SECONDS));
+        const liquidityDelta = observed[1][1]! - observed[1][0]!;
+        if (liquidityDelta > 0n) {
+          routeLiquidity =
+            (BigInt(UNISWAP_TWAP_SECONDS) << 128n) / liquidityDelta;
+        }
+        confidence = "medium";
+        observationSeconds = UNISWAP_TWAP_SECONDS;
+      }
+      const quoteUsd = output.get(route.quote.address.toLowerCase())?.priceUsd;
+      if (!quoteUsd) return [];
+      const quotePerToken = quotePerBaseFromTick(
+        tick,
+        route.token,
+        route.quote,
+      );
+      const priceUsd = quotePerToken * quoteUsd;
+      const liquidityUsd = estimateQuoteLiquidityUsd(
+        routeLiquidity,
+        slot[0],
+        route.token,
+        route.quote,
+        quoteUsd,
+      );
+      const threshold =
+        confidence === "medium"
+          ? MIN_TWAP_LIQUIDITY_USD
+          : MIN_SPOT_LIQUIDITY_USD;
+      if (
+        !Number.isFinite(priceUsd) ||
+        priceUsd <= 0 ||
+        !Number.isFinite(liquidityUsd) ||
+        liquidityUsd < threshold
+      ) {
+        return [];
+      }
+      return [
+        {
+          token: route.token,
+          quote: route.quote,
+          fee: route.fee,
+          priceUsd,
+          liquidityUsd,
+          confidence,
+          observationSeconds,
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
+  for (const token of tokens) {
+    const best = candidates
+      .filter(
+        (candidate) =>
+          candidate.token.address.toLowerCase() === token.address.toLowerCase(),
+      )
+      .sort((left, right) => {
+        if (left.confidence !== right.confidence)
+          return left.confidence === "medium" ? -1 : 1;
+        return right.liquidityUsd - left.liquidityUsd;
+      })[0];
+    if (!best) continue;
+    const kind = best.confidence === "medium" ? "30-minute TWAP" : "spot";
+    output.set(token.address.toLowerCase(), {
+      priceUsd: best.priceUsd,
+      source: `Uniswap V3 ${kind}`,
+      confidence: best.confidence,
+      route: `${token.symbol}/${best.quote.symbol} ${best.fee / 10_000}% pool`,
+      ...(best.observationSeconds
+        ? { observationSeconds: best.observationSeconds }
+        : {}),
+      liquidityUsd: best.liquidityUsd,
+    });
+  }
+}
+
+function floorDiv(numerator: bigint, denominator: bigint): number {
+  let quotient = numerator / denominator;
+  if (numerator < 0n && numerator % denominator !== 0n) quotient -= 1n;
+  return Number(quotient);
+}
+
+function quotePerBaseFromTick(
+  tick: number,
+  base: EthereumTokenRegistryEntry,
+  quote: EthereumTokenRegistryEntry,
+): number {
+  const rawToken1PerToken0 = Math.pow(1.0001, tick);
+  const baseIsToken0 = BigInt(base.address) < BigInt(quote.address);
+  const rawQuotePerBase = baseIsToken0
+    ? rawToken1PerToken0
+    : 1 / rawToken1PerToken0;
+  return rawQuotePerBase * 10 ** (base.decimals - quote.decimals);
+}
+
+function estimateQuoteLiquidityUsd(
+  liquidity: bigint,
+  sqrtPriceX96: bigint,
+  base: EthereumTokenRegistryEntry,
+  quote: EthereumTokenRegistryEntry,
+  quoteUsd: number,
+): number {
+  if (liquidity <= 0n || sqrtPriceX96 <= 0n) return 0;
+  const q96 = 2 ** 96;
+  const baseIsToken0 = BigInt(base.address) < BigInt(quote.address);
+  const quoteRaw = baseIsToken0
+    ? Number(liquidity) * (Number(sqrtPriceX96) / q96)
+    : Number(liquidity) * (q96 / Number(sqrtPriceX96));
+  return (quoteRaw / 10 ** quote.decimals) * quoteUsd;
 }
 
 async function multicallWithDeterministicRetry(
@@ -518,23 +930,15 @@ function decodeUint(
 }
 
 function portfolioAsset(
-  token: EthereumOwnTokenRegistryEntry,
+  token: EthereumTokenRegistryEntry,
   balanceRaw: bigint,
   blockNumber: string,
   priceUsd?: number,
   priceSource?: string,
   valuationReason?: string,
+  price?: OnchainPriceResult,
 ): PortfolioAsset {
   const balance = formatUnits(balanceRaw, token.decimals);
-  const contribution = priceUsd
-    ? Math.min(
-        Number(balance) *
-          priceUsd *
-          token.ownPolicy.advanceRate *
-          (1 - token.ownPolicy.valuationHaircut),
-        token.ownPolicy.contributionCapUsd,
-      )
-    : 0;
   return {
     chainId: 1,
     token: getAddress(token.address) as HexAddress,
@@ -550,18 +954,19 @@ function portfolioAsset(
     valuationStatus: priceUsd ? "available" : "manual-review",
     ...(valuationReason ? { valuationReason } : {}),
     ...(priceSource ? { priceProvenance: priceSource } : {}),
-    ownEligible: true,
-    ownAdvanceRate: token.ownPolicy.advanceRate,
-    ownValuationHaircut: token.ownPolicy.valuationHaircut,
-    ownContributionCapUsd: token.ownPolicy.contributionCapUsd,
-    ownCapacityContributionUsd: contribution,
+    ...(price?.confidence ? { priceConfidence: price.confidence } : {}),
+    ...(price?.route ? { priceRoute: price.route } : {}),
+    ...(price?.observationSeconds
+      ? { priceObservationSeconds: price.observationSeconds }
+      : {}),
+    ...(price?.liquidityUsd ? { priceLiquidityUsd: price.liquidityUsd } : {}),
     observedBlockNumber: blockNumber,
     assetKind: "erc20",
   };
 }
 
 function failedAsset(
-  token: EthereumOwnTokenRegistryEntry,
+  token: EthereumTokenRegistryEntry,
   blockNumber: string,
 ): PortfolioAsset {
   return {
@@ -578,11 +983,6 @@ function failedAsset(
     balanceReadReason: "balanceOf reverted or returned malformed data.",
     valuationStatus: "failed",
     valuationReason: "Balance was not readable, so Powerrr did not value it.",
-    ownEligible: true,
-    ownAdvanceRate: token.ownPolicy.advanceRate,
-    ownValuationHaircut: token.ownPolicy.valuationHaircut,
-    ownContributionCapUsd: token.ownPolicy.contributionCapUsd,
-    ownCapacityContributionUsd: 0,
     observedBlockNumber: blockNumber,
     assetKind: "erc20",
   };
@@ -590,10 +990,8 @@ function failedAsset(
 
 function protocolEligibility(token: string): Record<string, boolean> {
   const metadata = ethereumAssetMetadataByAddress(token);
-  return Object.fromEntries([
-    ["own", true],
-    ...(metadata?.candidateProviders.map(
-      (provider) => [provider, true] as const,
-    ) ?? []),
-  ]);
+  return Object.fromEntries(
+    metadata?.candidateProviders.map((provider) => [provider, true] as const) ??
+      [],
+  );
 }

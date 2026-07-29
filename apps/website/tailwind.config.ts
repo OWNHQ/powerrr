@@ -8,7 +8,6 @@ export default {
     "./components/**/*.{vue,ts}",
     "./composables/**/*.ts",
     "./pages/**/*.vue",
-    "./server/**/*.ts",
   ],
   theme: {
     extend: {

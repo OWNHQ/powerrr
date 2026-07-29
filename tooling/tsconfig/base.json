@@ -17,14 +17,9 @@
     "baseUrl": "../..",
     "paths": {
       "@powerrr/shared-types": ["packages/shared-types/src/index.ts"],
-      "@powerrr/schemas": ["packages/schemas/src/index.ts"],
       "@powerrr/math": ["packages/math/src/index.ts"],
-      "@powerrr/fixtures": ["packages/fixtures/src/index.ts"],
-      "@powerrr/portfolio": ["packages/portfolio/src/index.ts"],
       "@powerrr/protocol-adapters": ["packages/protocol-adapters/src/index.ts"],
-      "@powerrr/engine-sdk": ["packages/engine-sdk/src/index.ts"],
-      "@powerrr/own-underwriter": ["packages/own-underwriter/src/index.ts"],
-      "@powerrr/clients": ["packages/clients/src/index.ts"]
+      "@powerrr/configs": ["packages/configs/src/index.ts"]
     }
   }
 }

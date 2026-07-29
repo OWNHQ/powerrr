@@ -1,18 +1,13 @@
 <script setup lang="ts">
 import { PhInfo, PhShieldCheck, PhWarningCircle } from "@phosphor-icons/vue";
-import type { BorrowOpportunity } from "@powerrr/shared-types";
 import type { PooledBorrowPreview } from "../utils/borrow-preview";
 import { formatUsdValue } from "../utils/estimator-ux";
 
 const props = defineProps<{
   amountUsd: number;
   maximumUsd: number;
-  selectedProviderId: string;
   riskTitle: string;
   riskDescription: string;
-  ownFundingClass: string;
-  ownFundingLabel: string;
-  ownOpportunity: BorrowOpportunity | null;
   pooledPreview: PooledBorrowPreview | null;
   pooledRateLabel: string;
   announcement: string;
@@ -61,14 +56,10 @@ function formatHealth(value: number | null | undefined): string {
       <div class="flex min-w-0 items-start gap-4">
         <span
           class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-surface shadow-sm"
-          :class="
-            selectedProviderId === 'own' ? 'text-river' : pooledStatusClass()
-          "
+          :class="pooledStatusClass()"
         >
           <PhShieldCheck
-            v-if="
-              selectedProviderId === 'own' || pooledPreview?.riskBand === 'wide'
-            "
+            v-if="pooledPreview?.riskBand === 'wide'"
             :size="25"
             weight="fill"
             aria-hidden="true"
@@ -86,21 +77,10 @@ function formatHealth(value: number | null | undefined): string {
             <h3
               id="risk-title"
               class="text-lg font-semibold"
-              :class="
-                selectedProviderId === 'own'
-                  ? 'text-river'
-                  : pooledStatusClass()
-              "
+              :class="pooledStatusClass()"
             >
               {{ riskTitle }}
             </h3>
-            <span
-              v-if="selectedProviderId === 'own'"
-              class="rounded-full px-2.5 py-1 text-xs font-semibold"
-              :class="ownFundingClass"
-            >
-              {{ ownFundingLabel }}
-            </span>
           </div>
           <p class="mt-1 max-w-2xl text-sm leading-6 text-slate">
             {{ riskDescription }}
@@ -121,27 +101,7 @@ function formatHealth(value: number | null | undefined): string {
       </div>
     </div>
 
-    <p
-      v-if="selectedProviderId === 'own' && ownOpportunity"
-      class="bg-surface px-5 pt-4 text-xs font-bold uppercase tracking-[0.12em] text-slate"
-    >
-      Illustrative terms
-    </p>
-    <dl
-      v-if="selectedProviderId === 'own' && ownOpportunity"
-      aria-label="Illustrative terms"
-      class="grid grid-cols-2 divide-x divide-line bg-surface"
-    >
-      <div class="p-4 sm:p-5">
-        <dt>Assessment status</dt>
-        <dd>Policy review required</dd>
-      </div>
-      <div class="p-4 sm:p-5">
-        <dt>Repayment projection</dt>
-        <dd>Not published</dd>
-      </div>
-    </dl>
-    <template v-else-if="pooledPreview">
+    <template v-if="pooledPreview">
       <p
         class="bg-surface px-5 pt-4 text-xs font-bold uppercase tracking-[0.12em] text-slate"
       >
@@ -243,27 +203,18 @@ function formatHealth(value: number | null | undefined): string {
     </template>
 
     <p class="border-t border-line px-5 py-4 text-xs leading-5 text-slate">
-      <template v-if="selectedProviderId === 'own'">
-        Collateral price changes alone do not trigger liquidation. Missing the
-        agreed repayment schedule can cause default, after which lenders may
-        claim collateral. Numeric capacity and repayment projections remain
-        disabled until the production policy is approved.
+      Projected values assume the collateral listed by this path is supplied and
+      the reviewed amount is borrowed.
+      <template v-if="pooledPreview?.mode === 'wallet-estimate'">
+        This new-position estimate does not include any existing protocol debt.
       </template>
-      <template v-else>
-        Projected values assume the collateral listed by this path is supplied
-        and the reviewed amount is borrowed.
-        <template v-if="pooledPreview?.mode === 'wallet-estimate'">
-          This new-position estimate does not include any existing protocol
-          debt.
-        </template>
-        Borrow and liquidation limits are value-weighted across that collateral;
-        some protocols use the same factor for both. Powerrr’s estimated path
-        limit includes a safety buffer and available liquidity, so it can be
-        lower than the protocol borrow limit. Rates, oracle prices, factors, and
-        liquidity can change before execution. The wide, reduced, and thin
-        labels describe proximity to the current 1.00 boundary; they are not a
-        probability or personalized safety advice.
-      </template>
+      Borrow and liquidation limits are value-weighted across that collateral;
+      some protocols use the same factor for both. Powerrr’s estimated path
+      limit includes a safety buffer and available liquidity, so it can be lower
+      than the protocol borrow limit. Rates, oracle prices, factors, and
+      liquidity can change before execution. The wide, reduced, and thin labels
+      describe proximity to the current 1.00 boundary; they are not a
+      probability or personalized safety advice.
     </p>
     <p class="sr-only" aria-live="polite">{{ announcement }}</p>
   </section>

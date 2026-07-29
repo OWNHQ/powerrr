@@ -1,15 +1,18 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 import { encodeFunctionData, encodeFunctionResult, parseAbi } from "viem";
-import { ethereumOwnTokenRegistryV1 } from "../../packages/configs/src/index.ts";
+import { ethereumTokenRegistryV1 } from "../../packages/configs/src/index.ts";
 import {
   ENS_UNIVERSAL_RESOLVER,
   GNS_NAME_NFT,
 } from "../../apps/website/utils/static-names.ts";
 
 const account = "0x00000000000000000000000000000000000000A1";
-const wethIndex = ethereumOwnTokenRegistryV1.findIndex(
+const wethIndex = ethereumTokenRegistryV1.findIndex(
   (token) => token.symbol === "WETH",
+);
+const unpricedIndex = ethereumTokenRegistryV1.findIndex(
+  (token) => token.priceRoute.kind === "automatic-onchain",
 );
 const weth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" as const;
 const usdc = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as const;
@@ -114,12 +117,22 @@ const wethBalance = encodeFunctionResult({
   functionName: "balanceOf",
   result: 2_000_000_000_000_000_000n,
 });
+const unpricedBalance = encodeFunctionResult({
+  abi: erc20Abi,
+  functionName: "balanceOf",
+  result: 1_000_000_000_000_000_000n,
+});
 const balanceResponse = encodeFunctionResult({
   abi: multicall3Abi,
   functionName: "aggregate3",
-  result: ethereumOwnTokenRegistryV1.map((_, index) => ({
+  result: ethereumTokenRegistryV1.map((_, index) => ({
     success: true,
-    returnData: index === wethIndex ? wethBalance : zeroBalance,
+    returnData:
+      index === wethIndex
+        ? wethBalance
+        : index === unpricedIndex
+          ? unpricedBalance
+          : zeroBalance,
   })),
 });
 const priceResponse = encodeFunctionResult({
@@ -501,8 +514,17 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
 
   await expect(page.getByText("WETH", { exact: true })).toBeVisible();
   await expect(page.getByText(/\$6,000/).first()).toBeVisible();
+  const unavailablePrices = page.getByText("Price unavailable (1)", {
+    exact: true,
+  });
+  await expect(unavailablePrices).toBeVisible();
+  await expect(unavailablePrices.locator("..")).not.toHaveAttribute("open");
   await page.getByText("How this was calculated").click();
-  await expect(page.getByText("100/100 succeeded")).toBeVisible();
+  await expect(
+    page.getByText(
+      `${ethereumTokenRegistryV1.length}/${ethereumTokenRegistryV1.length} succeeded`,
+    ),
+  ).toBeVisible();
   await expect(page.locator("time[datetime]")).toContainText("Loaded");
   await expect(page.getByText(/s old$/)).toHaveCount(0);
   await expect(
@@ -525,106 +547,69 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
   expect(rpcMethods).not.toContain("eth_sendTransaction");
   expect(requests.some((url) => /\/api\/v[12]\//.test(url))).toBe(false);
 
-  const callsAfterInitialScan = await page.evaluate(
-    () =>
-      (window as typeof window & { __ethCallCount?: number }).__ethCallCount ??
-      0,
-  );
-  await page.getByRole("button", { name: "Continue to amount" }).click();
+  await page.getByRole("button", { name: "Compare borrowing paths" }).click();
   await expect(
-    page.getByRole("heading", { name: "Set your borrowing amount" }),
+    page.getByRole("heading", { name: "Compare borrowing paths" }),
   ).toBeVisible();
   await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("1,844");
-  const halfShortcut = page.getByRole("button", { name: /50%/ });
-  await expect(page.getByRole("button", { name: /100%/ })).toBeVisible();
-  await expect(halfShortcut).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('input[type="range"]')).toHaveCount(1);
   await page.getByLabel("Borrow amount in USDC").fill("1000");
-  await expect(halfShortcut).toHaveAttribute("aria-pressed", "false");
-  await page.getByLabel("Borrow amount in USDC").fill("1844");
-  await expect(halfShortcut).toHaveAttribute("aria-pressed", "true");
-  expect(
-    await page.evaluate(
-      () =>
-        (window as typeof window & { __ethCallCount?: number })
-          .__ethCallCount ?? 0,
-    ),
-  ).toBe(callsAfterInitialScan);
+  await expect(page.getByText("Comparing $1,000")).toBeVisible();
 });
 
 test("pooled risk responds to the selected amount without an always-green state", async ({
   page,
 }) => {
   await connectAndScan(page);
-  await page.getByRole("button", { name: "Continue to amount" }).click();
-  await expect(page.getByText(/Estimated provider limit: up to/)).toBeVisible();
-  await expect(
-    page.getByText(/OWN fixed-term capacity is not published/),
-  ).toBeVisible();
-  await expect(page.getByText("Amount shortcuts")).toBeVisible();
-  await page.getByLabel("Borrow amount in USDC").fill("1000");
   await page.getByRole("button", { name: "Compare borrowing paths" }).click();
-  const providerGroup = page.getByRole("radiogroup", {
-    name: "Immediately available providers",
-  });
-  const providerLabels = await providerGroup
-    .locator("[data-provider-label]")
-    .allTextContents();
-  expect(providerLabels).toEqual(["Aave", "Spark", "Morpho", "Compound"]);
-  const aave = providerGroup.getByRole("radio", { name: /Aave/i });
+  await expect(
+    page.getByText(/comparison range, not approved credit/i),
+  ).toBeVisible();
+  await expect(page.getByText("Amount shortcuts")).toHaveCount(0);
+  await page.getByLabel("Borrow amount in USDC").fill("1000");
+  const aave = page.locator('[data-protocol-id="aave"]');
   await expect(aave).toBeVisible();
-  await expect(aave).toBeEnabled();
-  await expect(providerGroup.getByRole("radio", { name: /OWN/i })).toHaveCount(
-    0,
-  );
-  await aave.click();
+  await aave.getByRole("button").first().click();
   await expect(
-    page.getByRole("heading", { name: "Wide liquidation buffer" }),
+    aave.getByRole("heading", { name: "Why this limit" }),
   ).toBeVisible();
   await expect(
-    page.getByText("Projected health factor", { exact: true }),
+    aave.getByRole("heading", { name: "Your assets" }),
   ).toBeVisible();
-  await expect(page.getByText("Liquidation headroom")).toBeVisible();
-  await expect(page.getByText("Recommended limit used")).toBeVisible();
-  const amountSlider = page.getByLabel("Borrow amount");
+  await expect(
+    aave.getByText("Liquidation threshold", { exact: true }),
+  ).toBeVisible();
+  const amountSlider = page.getByLabel("Borrow amount comparison range");
   await expect(amountSlider).toBeVisible();
   await amountSlider.fill("0");
   await expect(
-    page.getByRole("heading", { name: "No debt selected" }),
-  ).toBeVisible();
+    aave.locator("a", { hasText: "Review on Aave" }),
+  ).toHaveAttribute("aria-disabled", "true");
+  await amountSlider.fill("1000");
   await expect(
-    page.getByRole("button", { name: "Review on Aave" }),
-  ).toBeDisabled();
-  await page.getByRole("button", { name: "100%", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Reduced liquidation buffer" }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Projected health factor", { exact: true }).locator(".."),
-  ).toContainText("1.35");
-  await expect(
-    page.getByRole("button", { name: "Review on Aave" }),
-  ).toBeEnabled();
+    aave.getByRole("link", { name: "Review on Aave" }),
+  ).toHaveAttribute("aria-disabled", "false");
 });
 
-test("OWN stays visible but exposes no unapproved capacity or repayment number", async ({
+test("OWN appears only above $5,000 and links to its public borrow form", async ({
   page,
 }) => {
   await connectAndScan(page);
-  await page.getByRole("button", { name: "Continue to amount" }).click();
-  await page.getByLabel("Borrow amount in USDC").fill("1000");
   await page.getByRole("button", { name: "Compare borrowing paths" }).click();
-  const ownOption = page.locator('section[aria-labelledby="own-option-title"]');
-  await expect(ownOption.getByText("Policy review required")).toBeVisible();
-  await expect(ownOption.getByText("Request assessment")).toBeVisible();
-  await expect(ownOption.getByText(/Up to \$/)).toHaveCount(0);
-  await expect(
-    ownOption.getByRole("button", { name: "Select OWN fixed-term option" }),
-  ).toHaveCount(0);
+  await page.getByLabel("Borrow amount in USDC").fill("5000");
+  await expect(page.locator('[data-protocol-id="own"]')).toHaveCount(0);
+  await page.getByLabel("Borrow amount in USDC").fill("5001");
+  const ownOption = page.locator('[data-protocol-id="own"]');
+  await expect(ownOption).toBeVisible();
+  await ownOption.getByRole("button").click();
+  await expect(ownOption.getByText("Universal asset assessment")).toBeVisible();
+  await expect(ownOption.getByText("$5,001")).toBeVisible();
   await expect(page.getByText("Estimated total repayment")).toHaveCount(0);
   await expect(page.getByText("Illustrative terms")).toHaveCount(0);
-  await expect(
-    page.getByRole("link", { name: "Request with OWN" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Contact OWN" })).toHaveAttribute(
+    "href",
+    "https://own.casa/borrow#contact",
+  );
 });
 
 test("the static result remains usable on a phone viewport", async ({
@@ -635,13 +620,13 @@ test("the static result remains usable on a phone viewport", async ({
   await expect(
     page.getByRole("heading", { name: "Choose collateral" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Continue to amount" }).click();
-  await page.getByLabel("Borrow amount in USDC").fill("1000");
   await page.getByRole("button", { name: "Compare borrowing paths" }).click();
-  await expect(page.getByText("Request assessment")).toBeVisible();
-  await page.getByRole("radio", { name: /Aave/i }).click();
+  await page.getByLabel("Borrow amount in USDC").fill("1000");
+  await expect(page.locator('[data-protocol-id="own"]')).toHaveCount(0);
+  const aave = page.locator('[data-protocol-id="aave"]');
+  await aave.getByRole("button").first().click();
   await expect(
-    page.getByRole("button", { name: "Review on Aave" }),
+    aave.getByRole("link", { name: "Review on Aave" }),
   ).toBeVisible();
   expect(
     await page.evaluate(
@@ -675,16 +660,13 @@ test("dark mode remains accessible through the pooled risk review flow", async (
     ),
   ).toBe("rgb(11, 20, 21)");
 
-  await page.getByRole("button", { name: "Continue to amount" }).click();
-  await page.getByLabel("Borrow amount in USDC").fill("1000");
   await page.getByRole("button", { name: "Compare borrowing paths" }).click();
-  expect(
-    await page
-      .locator('section[aria-labelledby="own-option-title"] .own-logo')
-      .evaluate((element) => getComputedStyle(element).backgroundColor),
-  ).toBe("rgb(98, 184, 183)");
-  await page.getByRole("radio", { name: /Aave/i }).click();
-  await expect(page.getByText("Projected position")).toBeVisible();
+  await page.getByLabel("Borrow amount in USDC").fill("1000");
+  const aave = page.locator('[data-protocol-id="aave"]');
+  await aave.getByRole("button").first().click();
+  await expect(
+    aave.getByRole("heading", { name: "Why this limit" }),
+  ).toBeVisible();
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag22aa"])
     .analyze();

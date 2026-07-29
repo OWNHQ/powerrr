@@ -1,7 +1,6 @@
 export default defineNuxtConfig({
   compatibilityDate: "2026-07-01",
   ssr: false,
-  serverDir: "static-server",
   app: {
     head: {
       title: "Powerrr — private Ethereum collateral scan",

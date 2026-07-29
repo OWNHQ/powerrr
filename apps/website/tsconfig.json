@@ -2,10 +2,5 @@
   "extends": "./.nuxt/tsconfig.json",
   "compilerOptions": {
     "types": ["@types/node"]
-  },
-  "exclude": [
-    "server",
-    "composables/useEstimatorState.ts",
-    "composables/usePowerrrApi.ts"
-  ]
+  }
 }

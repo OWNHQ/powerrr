@@ -9,10 +9,10 @@ import {
 } from "./quote-row.js";
 
 const quote: ProtocolBorrowQuote = {
-  protocolId: "own",
-  protocolLabel: "OWN",
-  familyId: "own",
-  familyLabel: "OWN",
+  protocolId: "compound-iii",
+  protocolLabel: "Compound III",
+  familyId: "compound-iii",
+  familyLabel: "Compound III",
   chainId: 1,
   mode: "wallet-estimate",
   theoreticalBorrowUsd: 50_000,
@@ -23,7 +23,7 @@ const quote: ProtocolBorrowQuote = {
   rateType: "fixed",
   indicativeApr: 0.095,
   termMonths: 24,
-  liquidationRisk: "none-assumed-own",
+  liquidationRisk: "ltv-threshold",
   collateralUsed: [
     {
       token: "0x0000000000000000000000000000000000000001",
@@ -54,7 +54,7 @@ const quote: ProtocolBorrowQuote = {
   warnings: [],
   provenance: [
     {
-      source: "OWN assumptions",
+      source: "Compound fixture",
       sourceType: "assumption",
       freshnessSeconds: 0,
     },
@@ -65,13 +65,13 @@ describe("website quote row mapping", () => {
   it("maps protocol quote output to the required website row fields", () => {
     const row = toWebsiteQuoteRow(quote);
 
-    expect(row.protocolLabel).toBe("OWN");
+    expect(row.protocolLabel).toBe("Compound III");
     expect(row.amountDisplay).toBe("$42,500.00");
     expect(row.eligibleCollateralUsd).toBe(60_000);
     expect(row.eligibleCollateralDisplay).toBe("WETH, WBTC +1");
     expect(row.termLabel).toBe("24 month");
     expect(row.freshnessLabel).toBe("Assumption");
-    expect(row.cta.action).toBe("open-apply-flow");
+    expect(row.cta.action).toBe("open-drawer");
   });
 
   it("formats freshness, collateral, and term helpers", () => {

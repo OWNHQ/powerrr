@@ -9,10 +9,6 @@
       "dependsOn": ["^build"],
       "outputs": [".output/**", ".nuxt/**"]
     },
-    "@powerrr/internal-underwriter#build": {
-      "dependsOn": ["^build"],
-      "outputs": [".output/**", ".nuxt/**"]
-    },
     "dev": {
       "cache": false,
       "persistent": true

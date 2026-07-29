@@ -1,9 +1,10 @@
-import { buildPortfolioAsset } from "@powerrr/fixtures";
+import type { PortfolioAsset } from "@powerrr/shared-types";
 import { describe, expect, it } from "vitest";
 import {
   decodeFunctionData,
   encodeFunctionResult,
   parseAbi,
+  parseUnits,
   type Address,
   type Hex,
 } from "viem";
@@ -37,6 +38,24 @@ const wbtc = "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599" as const;
 const wethPriceFeed = "0x00000000000000000000000000000000000000A1" as const;
 const wbtcPriceFeed = "0x00000000000000000000000000000000000000B1" as const;
 const utilization = 250_000_000_000_000_000n;
+
+function buildPortfolioAsset(
+  symbol: "WETH" | "WBTC",
+  balance: number,
+): PortfolioAsset {
+  const token = symbol === "WETH" ? weth : wbtc;
+  const decimals = symbol === "WETH" ? 18 : 8;
+  return {
+    chainId: 1,
+    token,
+    symbol,
+    name: symbol === "WETH" ? "Wrapped Ether" : "Wrapped Bitcoin",
+    decimals,
+    balance: String(balance),
+    balanceRaw: parseUnits(String(balance), decimals).toString(),
+    protocolEligible: { "compound-iii": true },
+  };
+}
 
 describe("Compound III live Comet snapshot source", () => {
   it("builds a wallet-estimate snapshot from Comet factors, prices, and wallet balances", async () => {

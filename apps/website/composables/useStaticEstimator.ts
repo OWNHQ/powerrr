@@ -1,4 +1,3 @@
-import { calculateOwnOpportunity } from "@powerrr/own-underwriter";
 import {
   AAVE_V3_ETHEREUM,
   SPARKLEND_ETHEREUM,
@@ -8,7 +7,6 @@ import {
   type LiveQuoteSnapshot,
 } from "@powerrr/protocol-adapters";
 import type {
-  BorrowOpportunity,
   DiscoveryProgress,
   PortfolioAsset,
   ProtocolAvailability,
@@ -21,6 +19,7 @@ import {
   scanConnectedWallet,
   type Eip1193Provider,
 } from "../utils/static-discovery";
+import { filterSmallBalances } from "../utils/estimator-ux";
 import { loadStaticMorphoSnapshot } from "../utils/static-morpho";
 import { resolveWalletNames, type WalletNames } from "../utils/static-names";
 
@@ -57,11 +56,13 @@ export function useStaticEstimator() {
   let fallbackTimer: number | null = null;
 
   const valuedAssets = computed(() =>
-    assets.value.filter(
-      (asset) =>
-        asset.balanceReadStatus === "success" &&
-        Number(asset.balance) > 0 &&
-        asset.valuationStatus === "available",
+    filterSmallBalances(
+      assets.value.filter(
+        (asset) =>
+          asset.balanceReadStatus === "success" &&
+          Number(asset.balance) > 0 &&
+          asset.valuationStatus === "available",
+      ),
     ),
   );
   const manualReviewAssets = computed(() =>
@@ -88,9 +89,6 @@ export function useStaticEstimator() {
   });
   const selectedCollateralKey = computed(() =>
     collateralSelectionKey(selectedCollateralTokens.value),
-  );
-  const ownOpportunity = computed<BorrowOpportunity | null>(() =>
-    receipt.value ? calculateOwnOpportunity(selectedAssets.value) : null,
   );
   const totalValuedUsd = computed(() =>
     valuedAssets.value.reduce(
@@ -162,14 +160,14 @@ export function useStaticEstimator() {
           progress.value = next;
         },
       });
-      const defaultCollateralTokens = result.assets
-        .filter(
+      const defaultCollateralTokens = filterSmallBalances(
+        result.assets.filter(
           (asset) =>
             asset.balanceReadStatus === "success" &&
             Number(asset.balance) > 0 &&
             asset.valuationStatus === "available",
-        )
-        .map((asset) => asset.token);
+        ),
+      ).map((asset) => asset.token);
       progress.value = {
         phase: "providers",
         completed: 0,
@@ -198,11 +196,11 @@ export function useStaticEstimator() {
       };
       const comparisons = await loadProviderComparisons(
         connectedProvider,
-        result.assets.filter((asset) =>
-          defaultCollateralTokens.some(
-            (token) => token.toLowerCase() === asset.token.toLowerCase(),
-          ),
+        result.assets.filter(
+          (asset) =>
+            asset.balanceReadStatus === "success" && Number(asset.balance) > 0,
         ),
+        defaultCollateralTokens,
         result.receipt,
       );
       quotes.value = comparisons.quotes;
@@ -279,7 +277,11 @@ export function useStaticEstimator() {
     try {
       const comparisons = await loadProviderComparisons(
         connectedProvider,
-        selectedAssets.value,
+        assets.value.filter(
+          (asset) =>
+            asset.balanceReadStatus === "success" && Number(asset.balance) > 0,
+        ),
+        selectedCollateralTokens.value,
         receipt.value,
       );
       quotes.value = comparisons.quotes;
@@ -391,7 +393,6 @@ export function useStaticEstimator() {
     selectedCollateralTokens,
     receipt,
     registrySource,
-    ownOpportunity,
     totalValuedUsd,
     quotes,
     providerStatuses,
@@ -418,6 +419,7 @@ function collateralSelectionKey(tokens: string[]): string {
 async function loadProviderComparisons(
   provider: Eip1193Provider,
   portfolio: PortfolioAsset[],
+  selectedCollateralTokens: string[],
   receipt: ReadReceipt,
 ): Promise<{ quotes: ProtocolBorrowQuote[]; statuses: ProviderStatus[] }> {
   const statuses: ProviderStatus[] = [];
@@ -427,6 +429,7 @@ async function loadProviderComparisons(
     chainId: 1 as const,
     mode: "wallet-estimate" as const,
     portfolio,
+    selectedCollateralTokens: selectedCollateralTokens as `0x${string}`[],
     targetBorrowAssets: ["USDC"],
     safetyProfile: "balanced" as const,
     asOfBlock: receipt.blockNumber,
@@ -454,7 +457,13 @@ async function loadProviderComparisons(
     {
       id: "morpho-blue",
       label: "Morpho",
-      run: () => loadStaticMorphoSnapshot({ provider, portfolio, receipt }),
+      run: () =>
+        loadStaticMorphoSnapshot({
+          provider,
+          portfolio,
+          selectedCollateralTokens,
+          receipt,
+        }),
     },
   ];
   for (const loader of loaders) {

@@ -1,5 +1,11 @@
-import { ethereumAssetMetadataByAddress } from "@powerrr/configs";
-import type { ProtocolAdapterInput } from "@powerrr/shared-types";
+import {
+  ethereumAssetMetadataByAddress,
+  ethereumTokenByAddress,
+} from "@powerrr/configs";
+import type {
+  ProtocolAdapterInput,
+  ProtocolAssetEvaluation,
+} from "@powerrr/shared-types";
 import {
   decodeFunctionResult,
   encodeFunctionData,
@@ -132,6 +138,12 @@ export async function loadCompoundUsdcCometSnapshot(
       ),
     ),
   );
+  const selectedTokens = new Set(
+    (
+      input.selectedCollateralTokens ??
+      input.portfolio.map((asset) => asset.token)
+    ).map((token) => token.toLowerCase()),
+  );
   const collateral = (
     await Promise.all(
       assets.map(async (asset) => {
@@ -215,6 +227,79 @@ export async function loadCompoundUsdcCometSnapshot(
     formatUnits(baseBorrowMinRaw, decimalsFromScale(baseScale)),
   );
   const indicativeApr = Number(formatUnits(borrowRate, 18)) * SECONDS_PER_YEAR;
+  const assetEvaluations = input.portfolio.map((portfolioAsset) => {
+    const listed = assets.find((asset) =>
+      isAddressEqual(
+        asset.asset,
+        (portfolioAsset.protocolAssetToken ?? portfolioAsset.token) as Address,
+      ),
+    );
+    const selected = selectedTokens.has(portfolioAsset.token.toLowerCase());
+    const selectionStatus = portfolioAsset.requiredAction
+      ? "unselectable"
+      : selected
+        ? "selected"
+        : "not-selected";
+    const balanceUsd =
+      Number(portfolioAsset.balance) *
+      Math.max(0, portfolioAsset.marketPriceUsd ?? 0);
+    if (!listed) {
+      return {
+        token: portfolioAsset.token,
+        symbol: portfolioAsset.symbol,
+        ...(balanceUsd > 0 ? { balanceUsd } : {}),
+        selectionStatus,
+        eligibilityStatus: "unsupported",
+        reasonCodes: ["NOT_LISTED"],
+        reason: `${portfolioAsset.symbol} is not a collateral asset in this Compound market.`,
+      } satisfies ProtocolAssetEvaluation;
+    }
+    const included = collateral.find((item) =>
+      isAddressEqual(item.token as Address, listed.asset),
+    );
+    const factorsValid =
+      listed.borrowCollateralFactor > ZERO_BIGINT &&
+      listed.liquidateCollateralFactor > ZERO_BIGINT;
+    const supported = factorsValid && !portfolioAsset.requiredAction;
+    const temporarilyUnavailable = selected && supported && !included;
+    return {
+      token: portfolioAsset.token,
+      symbol: portfolioAsset.symbol,
+      ...(balanceUsd > 0 ? { balanceUsd } : {}),
+      selectionStatus,
+      eligibilityStatus: !supported
+        ? "unsupported"
+        : temporarilyUnavailable
+          ? "temporarily-unavailable"
+          : selected
+            ? "included"
+            : "supported",
+      reasonCodes: !supported
+        ? [portfolioAsset.requiredAction ? "CONVERSION_REQUIRED" : "ZERO_LTV"]
+        : temporarilyUnavailable
+          ? ["MARKET_STATE_UNAVAILABLE"]
+          : [selected ? "INCLUDED" : "SUPPORTED_NOT_SELECTED"],
+      reason: !supported
+        ? portfolioAsset.requiredAction
+          ? "This asset must be converted before it can be supplied."
+          : "This market currently assigns the asset a zero collateral factor."
+        : temporarilyUnavailable
+          ? "The asset is listed, but protocol price or supply-cap checks prevented inclusion."
+          : selected
+            ? "Included in this protocol estimate."
+            : "Supported by this protocol, but not selected as collateral.",
+      ltv: Number(formatUnits(listed.borrowCollateralFactor, 18)),
+      liquidationThreshold: Number(
+        formatUnits(listed.liquidateCollateralFactor, 18),
+      ),
+      ...(included ? { contributionUsd: included.valueUsd } : {}),
+      ...(portfolioAsset.requiredAction
+        ? {
+            requiredAction: `Convert ${portfolioAsset.symbol} before supplying collateral.`,
+          }
+        : {}),
+    } satisfies ProtocolAssetEvaluation;
+  });
 
   return {
     kind: "compound",
@@ -264,6 +349,7 @@ export async function loadCompoundUsdcCometSnapshot(
     },
     safetyProfile: input.safetyProfile,
     minimumBorrowUsd,
+    assetEvaluations,
     collateral,
   };
 }
@@ -339,6 +425,16 @@ function walletBalanceFor(input: ProtocolAdapterInput, asset: Address): bigint {
     isAddressEqual((item.protocolAssetToken ?? item.token) as Address, asset),
   );
 
+  if (
+    match &&
+    input.selectedCollateralTokens &&
+    !input.selectedCollateralTokens.some(
+      (token) => token.toLowerCase() === match.token.toLowerCase(),
+    )
+  ) {
+    return ZERO_BIGINT;
+  }
+
   return match
     ? BigInt(match.protocolBalanceRaw ?? match.balanceRaw)
     : ZERO_BIGINT;
@@ -349,15 +445,16 @@ function tokenMetadataFor(asset: Address): {
   decimals: number;
 } {
   const token = ethereumAssetMetadataByAddress(asset);
-  if (!token) {
+  const registryToken = ethereumTokenByAddress(asset);
+  if (!token && !registryToken) {
     throw new Error(
       `Compound returned collateral outside the reviewed registry: ${asset}`,
     );
   }
 
   return {
-    symbol: token.symbol,
-    decimals: token.decimals,
+    symbol: token?.symbol ?? registryToken!.symbol,
+    decimals: token?.decimals ?? registryToken!.decimals,
   };
 }
 

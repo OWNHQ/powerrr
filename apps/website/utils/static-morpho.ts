@@ -4,8 +4,15 @@ import {
   ethereumMorphoUsdcMarketsV1,
   type EthereumMorphoUsdcMarket,
 } from "@powerrr/configs";
-import type { MorphoLiveSnapshot } from "@powerrr/protocol-adapters";
-import type { PortfolioAsset, ReadReceipt } from "@powerrr/shared-types";
+import type {
+  MorphoLiveMarketSnapshot,
+  MorphoLiveSnapshot,
+} from "@powerrr/protocol-adapters";
+import type {
+  PortfolioAsset,
+  ProtocolAssetEvaluation,
+  ReadReceipt,
+} from "@powerrr/shared-types";
 import {
   decodeFunctionResult,
   encodeFunctionData,
@@ -107,15 +114,23 @@ type MarketState = {
 export async function loadStaticMorphoSnapshot(input: {
   provider: Eip1193Provider;
   portfolio: PortfolioAsset[];
+  selectedCollateralTokens?: string[];
   receipt: ReadReceipt;
 }): Promise<MorphoLiveSnapshot & { kind: "morpho" }> {
   const blockTag = toHex(BigInt(input.receipt.blockNumber));
-  const markets = [];
+  const markets: MorphoLiveMarketSnapshot[] = [];
+  const selectedTokens = new Set(
+    (
+      input.selectedCollateralTokens ??
+      input.portfolio.map((asset) => asset.token)
+    ).map((token) => token.toLowerCase()),
+  );
 
   for (const manifest of ethereumMorphoUsdcMarketsV1) {
     const walletAssets = input.portfolio.filter(
       (asset) =>
         positiveRawBalance(asset) &&
+        selectedTokens.has(asset.token.toLowerCase()) &&
         isAddressEqual(
           (asset.protocolAssetToken ?? asset.token) as Address,
           manifest.collateralToken,
@@ -182,11 +197,69 @@ export async function loadStaticMorphoSnapshot(input: {
     });
   }
 
-  if (!markets.length) {
-    throw new Error(
-      "No checked-in USDC market matched the selected collateral with readable onchain state.",
+  const assetEvaluations = input.portfolio.map((asset) => {
+    const manifest = ethereumMorphoUsdcMarketsV1.find((market) =>
+      isAddressEqual(
+        (asset.protocolAssetToken ?? asset.token) as Address,
+        market.collateralToken,
+      ),
     );
-  }
+    const selected = selectedTokens.has(asset.token.toLowerCase());
+    const selectedMarket = markets.find((market) =>
+      isAddressEqual(market.token as Address, asset.token as Address),
+    );
+    const balanceUsd =
+      Number(asset.balance) * Math.max(0, asset.marketPriceUsd ?? 0);
+    if (!manifest) {
+      return {
+        token: asset.token,
+        symbol: asset.symbol,
+        ...(balanceUsd > 0 ? { balanceUsd } : {}),
+        selectionStatus: selected ? "selected" : "not-selected",
+        eligibilityStatus: "unsupported",
+        reasonCodes: ["NO_REVIEWED_MARKET"],
+        reason: "No reviewed USDC Morpho market is pinned for this collateral.",
+      } satisfies ProtocolAssetEvaluation;
+    }
+    const conversionRequired = Boolean(asset.requiredAction);
+    return {
+      token: asset.token,
+      symbol: asset.symbol,
+      ...(balanceUsd > 0 ? { balanceUsd } : {}),
+      selectionStatus: conversionRequired
+        ? "unselectable"
+        : selected
+          ? "selected"
+          : "not-selected",
+      eligibilityStatus: conversionRequired
+        ? "unsupported"
+        : selected
+          ? selectedMarket
+            ? "included"
+            : "temporarily-unavailable"
+          : "supported",
+      reasonCodes: conversionRequired
+        ? ["CONVERSION_REQUIRED"]
+        : selected
+          ? selectedMarket
+            ? ["INCLUDED"]
+            : ["MARKET_STATE_UNAVAILABLE"]
+          : ["SUPPORTED_NOT_SELECTED"],
+      reason: conversionRequired
+        ? `Convert ${asset.symbol} to ${manifest.collateralSymbol} before supplying collateral.`
+        : selected
+          ? selectedMarket
+            ? "Included in this market estimate."
+            : "The reviewed market did not expose usable liquidity and price state."
+          : "A reviewed market supports this asset, but it is not selected.",
+      ltv: Number(manifest.lltv) / Number(WAD),
+      liquidationThreshold: Number(manifest.lltv) / Number(WAD),
+      ...(selectedMarket ? { contributionUsd: selectedMarket.valueUsd } : {}),
+      ...(conversionRequired
+        ? { requiredAction: `Convert to ${manifest.collateralSymbol}` }
+        : {}),
+    } satisfies ProtocolAssetEvaluation;
+  });
 
   return {
     kind: "morpho",
@@ -203,9 +276,9 @@ export async function loadStaticMorphoSnapshot(input: {
     annualRateConvention: "apy",
     rateSourceId: "morpho-blue:adaptive-curve-irm",
     existingDebtUsd: 0,
-    availableLiquidityUsd: Math.max(
-      ...markets.map((market) => market.availableLiquidityUsd ?? 0),
-    ),
+    availableLiquidityUsd: markets.length
+      ? Math.max(...markets.map((market) => market.availableLiquidityUsd ?? 0))
+      : 0,
     source: "Morpho Blue market, oracle, and IRM onchain reads",
     sourceType: "on-chain",
     freshnessSeconds: input.receipt.blockAgeSeconds,
@@ -228,6 +301,7 @@ export async function loadStaticMorphoSnapshot(input: {
       liquidityPenalty: 0,
     },
     safetyProfile: "balanced",
+    assetEvaluations,
     markets,
   };
 }

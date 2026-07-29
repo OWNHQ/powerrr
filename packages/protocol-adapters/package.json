@@ -12,9 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@powerrr/clients": "workspace:*",
     "@powerrr/configs": "workspace:*",
-    "@powerrr/fixtures": "workspace:*",
     "@powerrr/math": "workspace:*",
     "@powerrr/shared-types": "workspace:*",
     "viem": "^2.55.4"

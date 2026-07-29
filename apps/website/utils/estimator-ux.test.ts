@@ -2,10 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   amountForUtilization,
   amountInputStep,
+  filterSmallBalances,
   formatUsdValue,
   friendlyEstimatorError,
-  ownFundingStatusLabel,
-  ownSupportsRequestedAmount,
   providerRateLabel,
   sortAssetsByUsdValue,
   summarizeEstimatorCapacity,
@@ -73,37 +72,18 @@ describe("estimator UX helpers", () => {
     expect(amountInputStep(100_000)).toBe(100);
   });
 
-  it("keeps available provider capacity separate from OWN request potential", () => {
-    expect(summarizeEstimatorCapacity([40_000, 75_000, 0], 100_000)).toEqual({
+  it("summarizes available provider capacity", () => {
+    expect(summarizeEstimatorCapacity([40_000, 75_000, 0])).toEqual({
       providerMaximumUsd: 75_000,
-      ownPotentialUsd: 100_000,
-      maximumRequestableUsd: 100_000,
       providerPathCount: 2,
     });
   });
 
-  it("allows an OWN-sized request when providers have no capacity", () => {
-    expect(summarizeEstimatorCapacity([0, Number.NaN], 25_000)).toEqual({
+  it("returns zero capacity when providers have no capacity", () => {
+    expect(summarizeEstimatorCapacity([0, Number.NaN])).toEqual({
       providerMaximumUsd: 0,
-      ownPotentialUsd: 25_000,
-      maximumRequestableUsd: 25_000,
       providerPathCount: 0,
     });
-  });
-
-  it.each([
-    ["request-required", "Request required"],
-    ["limited", "Limited availability"],
-    ["available-now", "Funding available"],
-    ["unavailable", "Unavailable"],
-  ] as const)("labels the %s OWN state", (status, expected) => {
-    expect(ownFundingStatusLabel(status)).toBe(expected);
-  });
-
-  it("requires positive OWN potential that covers the requested amount", () => {
-    expect(ownSupportsRequestedAmount(25_000, 10_000)).toBe(true);
-    expect(ownSupportsRequestedAmount(5_000, 10_000)).toBe(false);
-    expect(ownSupportsRequestedAmount(0, 0)).toBe(false);
   });
 
   it("sorts assets by descending USD value without mutating registry order", () => {
@@ -121,6 +101,31 @@ describe("estimator UX helpers", () => {
       "WETH",
       "LINK",
     ]);
+  });
+
+  it("hides balances below $5 when the account has a larger balance", () => {
+    const assets = [
+      { symbol: "USDC", balance: "4.99", marketPriceUsd: 1 },
+      { symbol: "DAI", balance: "5", marketPriceUsd: 1 },
+      { symbol: "WETH", balance: "0.01", marketPriceUsd: 3_000 },
+    ];
+
+    expect(filterSmallBalances(assets).map((asset) => asset.symbol)).toEqual([
+      "DAI",
+      "WETH",
+    ]);
+  });
+
+  it("shows every positive balance when the $5 filter would empty the account", () => {
+    const smallAccount = [
+      { symbol: "USDC", balance: "4", marketPriceUsd: 1 },
+      { symbol: "DAI", balance: "3", marketPriceUsd: 1 },
+      { symbol: "USDT", balance: "3", marketPriceUsd: 1 },
+    ];
+
+    expect(
+      filterSmallBalances(smallAccount).map((asset) => asset.symbol),
+    ).toEqual(["USDC", "DAI", "USDT"]);
   });
 
   it("formats small positive balances without turning them into zero", () => {

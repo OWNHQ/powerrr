@@ -1,4 +1,7 @@
-import type { ProtocolAdapterInput } from "@powerrr/shared-types";
+import type {
+  ProtocolAdapterInput,
+  ProtocolAssetEvaluation,
+} from "@powerrr/shared-types";
 import {
   decodeFunctionResult,
   encodeFunctionData,
@@ -145,6 +148,12 @@ export async function loadAaveLikeSnapshot(
       getAddress((asset.protocolAssetToken ?? asset.token) as Address),
       asset,
     ]),
+  );
+  const selectedTokens = new Set(
+    (
+      input.selectedCollateralTokens ??
+      input.portfolio.map((asset) => asset.token)
+    ).map((token) => token.toLowerCase()),
   );
   const candidateReserves =
     input.mode === "wallet-estimate"
@@ -298,12 +307,18 @@ export async function loadAaveLikeSnapshot(
       const walletAsset = [...walletAssets.entries()].find(([token]) =>
         isAddressEqual(token, reserve.tokenAddress),
       )?.[1];
-      const balanceRaw =
+      const walletBalanceRaw =
         input.mode === "existing-position"
           ? (userReserve?.[0] ?? ZERO)
           : BigInt(
               walletAsset?.protocolBalanceRaw ?? walletAsset?.balanceRaw ?? "0",
             );
+      const selected =
+        input.mode === "existing-position" ||
+        Boolean(
+          walletAsset && selectedTokens.has(walletAsset.token.toLowerCase()),
+        );
+      const balanceRaw = selected ? walletBalanceRaw : ZERO;
       const debtRaw =
         input.mode === "existing-position"
           ? (userReserve?.[1] ?? ZERO) + (userReserve?.[2] ?? ZERO)
@@ -316,6 +331,9 @@ export async function loadAaveLikeSnapshot(
       return {
         reserve,
         configuration,
+        walletAsset,
+        walletBalanceRaw,
+        selected,
         balanceRaw,
         debtRaw,
         priceUsd,
@@ -356,6 +374,70 @@ export async function loadAaveLikeSnapshot(
       ltv: Number(row.configuration[1]) / BPS,
       liquidationThreshold: Number(row.configuration[2]) / BPS,
     }));
+  const assetEvaluations = input.portfolio.map((asset) => {
+    const row = reserveRows.find((candidate) =>
+      isAddressEqual(
+        candidate.reserve.tokenAddress,
+        (asset.protocolAssetToken ?? asset.token) as Address,
+      ),
+    );
+    const selected = selectedTokens.has(asset.token.toLowerCase());
+    const selectionStatus = asset.requiredAction
+      ? "unselectable"
+      : selected
+        ? "selected"
+        : "not-selected";
+    const balanceUsd =
+      Number(asset.balance) * Math.max(0, asset.marketPriceUsd ?? 0);
+    if (!row) {
+      return {
+        token: asset.token,
+        symbol: asset.symbol,
+        ...(balanceUsd > 0 ? { balanceUsd } : {}),
+        selectionStatus,
+        eligibilityStatus: "unsupported",
+        reasonCodes: ["NOT_LISTED"],
+        reason: `${asset.symbol} is not listed as collateral in this deployment.`,
+        ...(asset.requiredAction
+          ? { requiredAction: "Convert to a supported wrapped asset" }
+          : {}),
+      } satisfies ProtocolAssetEvaluation;
+    }
+    const reasons = aaveExclusionReasons(row);
+    if (asset.requiredAction) reasons.unshift("CONVERSION_REQUIRED");
+    const eligible = reasons.length === 0;
+    return {
+      token: asset.token,
+      symbol: asset.symbol,
+      ...(balanceUsd > 0 ? { balanceUsd } : {}),
+      selectionStatus,
+      eligibilityStatus: eligible
+        ? selected
+          ? "included"
+          : "supported"
+        : reasons.some((reason) =>
+              ["FROZEN", "PAUSED", "SUPPLY_CAP_REACHED"].includes(reason),
+            )
+          ? "temporarily-unavailable"
+          : "unsupported",
+      reasonCodes: eligible
+        ? [selected ? "INCLUDED" : "SUPPORTED_NOT_SELECTED"]
+        : reasons,
+      reason: eligible
+        ? selected
+          ? "Included in this protocol estimate."
+          : "Supported by this protocol, but not selected as collateral."
+        : aaveReasonLabel(reasons[0]),
+      ltv: Number(row.configuration[1]) / BPS,
+      liquidationThreshold: Number(row.configuration[2]) / BPS,
+      ...(eligible && selected ? { contributionUsd: row.valueUsd } : {}),
+      ...(asset.requiredAction
+        ? {
+            requiredAction: `Convert ${asset.symbol} before supplying collateral.`,
+          }
+        : {}),
+    } satisfies ProtocolAssetEvaluation;
+  });
   const targetDecimals = Number(targetConfiguration[0]);
   const borrowCapRemainingRaw =
     targetCaps[0] === ZERO
@@ -427,8 +509,60 @@ export async function loadAaveLikeSnapshot(
     },
     safetyProfile: input.safetyProfile,
     targetHealthFactor: input.deployment.targetHealthFactor,
+    assetEvaluations,
     collateral,
   };
+}
+
+function aaveExclusionReasons(row: {
+  configuration: Configuration;
+  reserveData: ReserveData;
+  reserveCaps: ReserveCaps;
+  walletBalanceRaw: bigint;
+  paused: boolean;
+  debtCeiling: bigint;
+  priceUsd: number;
+}): ProtocolAssetEvaluation["reasonCodes"] {
+  const reasons: ProtocolAssetEvaluation["reasonCodes"] = [];
+  if (!row.configuration[5]) reasons.push("COLLATERAL_DISABLED");
+  if (!row.configuration[8]) reasons.push("INACTIVE");
+  if (row.configuration[9]) reasons.push("FROZEN");
+  if (row.paused) reasons.push("PAUSED");
+  if (row.debtCeiling > ZERO) reasons.push("ISOLATION_MODE_UNMODELED");
+  if (row.configuration[1] <= ZERO) reasons.push("ZERO_LTV");
+  if (row.priceUsd <= 0) reasons.push("PRICE_UNAVAILABLE");
+  const supplyCapRaw = row.reserveCaps[1] * BigInt(10) ** row.configuration[0];
+  if (
+    row.reserveCaps[1] > ZERO &&
+    row.reserveData[2] + row.walletBalanceRaw > supplyCapRaw
+  ) {
+    reasons.push("SUPPLY_CAP_REACHED");
+  }
+  return reasons;
+}
+
+function aaveReasonLabel(
+  reason: ProtocolAssetEvaluation["reasonCodes"][number] | undefined,
+): string {
+  const labels: Partial<
+    Record<ProtocolAssetEvaluation["reasonCodes"][number], string>
+  > = {
+    COLLATERAL_DISABLED: "This reserve is not enabled as collateral.",
+    INACTIVE: "This reserve is inactive.",
+    FROZEN: "This reserve is currently frozen.",
+    PAUSED: "This reserve is currently paused.",
+    ISOLATION_MODE_UNMODELED:
+      "Isolation-mode collateral is not included in this estimate.",
+    ZERO_LTV: "This reserve currently has a zero borrowing LTV.",
+    SUPPLY_CAP_REACHED: "Supplying this balance would exceed the reserve cap.",
+    PRICE_UNAVAILABLE: "The protocol oracle did not return a usable price.",
+    CONVERSION_REQUIRED:
+      "This asset must be converted before it can be supplied.",
+  };
+  return (
+    labels[reason ?? "MARKET_STATE_UNAVAILABLE"] ??
+    "This asset is not available as collateral."
+  );
 }
 
 function sourceAgeSeconds(
