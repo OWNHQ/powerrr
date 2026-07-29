@@ -23,10 +23,10 @@
     "@powerrr/protocol-adapters": "workspace:*",
     "@powerrr/schemas": "workspace:*",
     "@powerrr/shared-types": "workspace:*",
-    "@tanstack/vue-query": "^5.62.7",
-    "nuxt": "^4.5.0",
-    "viem": "^2.55.4",
-    "vue": "^3.5.13"
+    "@tanstack/vue-query": "^5.101.4",
+    "nuxt": "^4.5.1",
+    "viem": "^2.55.10",
+    "vue": "^3.5.40"
   },
   "devDependencies": {
     "@nuxt/eslint": "^1.16.0",

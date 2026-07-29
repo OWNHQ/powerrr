@@ -17,6 +17,6 @@
     "@powerrr/protocol-adapters": "workspace:*",
     "@powerrr/schemas": "workspace:*",
     "@powerrr/shared-types": "workspace:*",
-    "zod": "^3.24.1"
+    "zod": "^4.4.3"
   }
 }

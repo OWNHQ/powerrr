@@ -17,6 +17,6 @@
     "@powerrr/fixtures": "workspace:*",
     "@powerrr/math": "workspace:*",
     "@powerrr/shared-types": "workspace:*",
-    "viem": "^2.55.4"
+    "viem": "^2.55.10"
   }
 }
