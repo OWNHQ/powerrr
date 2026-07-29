@@ -14,10 +14,10 @@ This file identifies what is observed, what is policy, and what remains a modell
 - ENS support uses the registry and resolver `addr(bytes32)` path. Names requiring CCIP Read are rejected until an audited Universal Resolver flow is added.
 - Live quote mode supports Aave v3, Morpho Blue, Compound III, and SparkLend. Aave v4 and Euler V2 are unavailable in live mode.
 - OWN is returned separately as an `indicative-request` opportunity in fixture and live modes. It never enters executable `quotes` or affects `productionSafe`.
-- OWN potential capacity uses policy `own-collateral-v1-2026-07-15`: eligible collateral, explicit advance rates and haircuts, a $500,000 per-family contribution limit, and a $750,000 maximum ticket.
+- The provisional OWN collateral model remains available for internal policy work, but the public app publishes no numeric OWN capacity or repayment projection until that policy is approved.
 - OWN verified liquidity defaults to $0. `availableNowUsd` is positive only when `OWN_AVAILABLE_LIQUIDITY_USD` is supplied by a verified server-side funding source.
-- Initial OWN terms are an indicative 9.5% fixed APR and 24-month duration. They are configurable, subject to review and lender matching, and are not an executable quote.
-- OWN risk is maturity default. Collateral price movement does not automatically trigger liquidation; collateral may be claimed after maturity/default under final documentation.
+- Initial OWN terms are an indicative 6.5% fixed APR and 24-month duration. They are configurable, subject to review and lender matching, and are not an executable quote.
+- OWN risk follows an onchain repayment schedule. Collateral price movement does not trigger liquidation by itself; failure to remain within the schedule can cause default, after which lenders may claim the collateral.
 - “Safer estimate” applies a configured operating buffer; it is not a guarantee of transaction success or protection from liquidation.
 - Public pooled-provider risk is threshold-only. The site does not estimate or display a probability of liquidation.
 

@@ -1,14 +1,11 @@
 <script setup lang="ts">
-import { PhShieldCheck, PhWarningCircle } from "@phosphor-icons/vue";
+import { PhInfo, PhShieldCheck, PhWarningCircle } from "@phosphor-icons/vue";
 import type { BorrowOpportunity } from "@powerrr/shared-types";
 import type { PooledBorrowPreview } from "../utils/borrow-preview";
-import {
-  amountForUtilization,
-  amountInputStep,
-  formatUsdValue,
-} from "../utils/estimator-ux";
+import { formatUsdValue } from "../utils/estimator-ux";
 
 const props = defineProps<{
+  amountUsd: number;
   maximumUsd: number;
   selectedProviderId: string;
   riskTitle: string;
@@ -16,39 +13,24 @@ const props = defineProps<{
   ownFundingClass: string;
   ownFundingLabel: string;
   ownOpportunity: BorrowOpportunity | null;
-  ownLtv: number;
-  ownTotalRepayment: number;
   pooledPreview: PooledBorrowPreview | null;
+  pooledRateLabel: string;
   announcement: string;
 }>();
 
-const amount = defineModel<number>("amount", { required: true });
-const utilization = defineModel<number>("utilization", { required: true });
-
-function onAmountInput(event: Event): void {
-  const value = Number((event.target as HTMLInputElement).value);
-  if (Number.isFinite(value)) {
-    amount.value = Math.max(0, Math.min(props.maximumUsd, value));
-  }
-}
-
-function setUtilization(percent: number): void {
-  utilization.value = percent;
-}
-
 function pooledStatusClass(): string {
-  if (props.pooledPreview?.status === "comfortable") return "text-moss";
-  if (props.pooledPreview?.status === "watch") return "text-amber-700";
-  return "text-coral";
-}
-
-function formatCompactUsd(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    notation: value >= 100_000 ? "compact" : "standard",
-    maximumFractionDigits: value >= 100_000 ? 1 : 0,
-  }).format(value);
+  switch (props.pooledPreview?.riskBand) {
+    case "wide":
+      return "text-river";
+    case "reduced":
+      return "text-warning";
+    case "thin":
+    case "at-boundary":
+    case "above-threshold":
+      return "text-coral";
+    default:
+      return "text-slate";
+  }
 }
 
 function formatPercent(value: number | null | undefined, digits = 1): string {
@@ -70,235 +52,219 @@ function formatHealth(value: number | null | undefined): string {
 
 <template>
   <section
-    id="amount"
-    class="panel mt-5 scroll-mt-36 overflow-hidden"
-    aria-labelledby="amount-title"
+    class="mt-4 overflow-hidden rounded-xl border border-line bg-mist/45"
+    aria-labelledby="risk-title"
   >
-    <div class="grid lg:grid-cols-[1fr_1.05fr]">
-      <div class="p-5 sm:p-6">
-        <h2 id="amount-title" class="text-lg font-semibold">
-          Set amount and review risk
-        </h2>
-        <p id="amount-help" class="mt-1 text-sm text-slate">
-          Enter an amount or adjust the percentage of estimated borrowing power.
-        </p>
-
-        <label
-          class="mt-6 block rounded-xl border border-line bg-white px-4 py-3"
+    <div
+      class="flex flex-col gap-4 border-b border-line px-5 py-5 sm:flex-row sm:items-start sm:justify-between"
+    >
+      <div class="flex min-w-0 items-start gap-4">
+        <span
+          class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-surface shadow-sm"
+          :class="
+            selectedProviderId === 'own' ? 'text-river' : pooledStatusClass()
+          "
         >
-          <span class="text-xs font-medium text-slate"
-            >Borrow amount (USDC)</span
-          >
-          <span class="mt-1 flex items-center gap-3">
-            <img
-              src="/tokens/usdc.png"
-              alt="USDC"
-              class="h-8 w-8 rounded-full"
-            />
-            <span class="text-3xl font-semibold text-slate" aria-hidden="true"
-              >$</span
-            >
-            <input
-              :value="amount"
-              type="number"
-              min="0"
-              :max="maximumUsd"
-              :step="amountInputStep(maximumUsd)"
-              inputmode="decimal"
-              class="min-w-0 flex-1 bg-transparent text-3xl font-semibold tracking-[-0.04em] outline-none"
-              aria-describedby="amount-help"
-              @input="onAmountInput"
-              @blur="amount = Math.max(0, Math.min(maximumUsd, amount))"
-            />
-          </span>
-        </label>
-
-        <input
-          v-model.number="utilization"
-          type="range"
-          min="0"
-          max="100"
-          step="1"
-          class="amount-range mt-6 w-full"
-          :class="{ 'amount-range-own': selectedProviderId === 'own' }"
-          :style="{ '--range-progress': `${utilization}%` }"
-          aria-label="Borrowing power used"
-          :aria-valuetext="`${Math.round(utilization)}% · ${formatUsdValue(amount)}`"
-          aria-describedby="amount-help"
-        />
-        <div class="mt-2 flex justify-between text-xs text-slate">
-          <span>0%</span>
-          <span class="tabular-nums"
-            >{{ formatCompactUsd(maximumUsd) }} max</span
-          >
-        </div>
-
-        <div class="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <button
-            v-for="percent in [25, 50, 75, 100]"
-            :key="percent"
-            type="button"
-            class="focus-ring min-h-14 rounded-lg border px-3 py-2 text-sm font-semibold"
-            :class="
-              Math.abs(utilization - percent) < 0.5
-                ? 'border-river bg-blue-50 text-river'
-                : 'border-line hover:border-river'
+          <PhShieldCheck
+            v-if="
+              selectedProviderId === 'own' || pooledPreview?.riskBand === 'wide'
             "
-            @click="setUtilization(percent)"
-          >
-            <span>{{ percent === 100 ? "Max" : `${percent}%` }}</span>
-            <span
-              class="mt-0.5 block tabular-nums text-xs font-medium text-slate"
-              >{{
-                formatUsdValue(amountForUtilization(maximumUsd, percent))
-              }}</span
+            :size="25"
+            weight="fill"
+            aria-hidden="true"
+          />
+          <PhInfo
+            v-else-if="pooledPreview?.riskBand === 'none'"
+            :size="25"
+            weight="fill"
+            aria-hidden="true"
+          />
+          <PhWarningCircle v-else :size="25" weight="fill" aria-hidden="true" />
+        </span>
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <h3
+              id="risk-title"
+              class="text-lg font-semibold"
+              :class="
+                selectedProviderId === 'own'
+                  ? 'text-river'
+                  : pooledStatusClass()
+              "
             >
-          </button>
+              {{ riskTitle }}
+            </h3>
+            <span
+              v-if="selectedProviderId === 'own'"
+              class="rounded-full px-2.5 py-1 text-xs font-semibold"
+              :class="ownFundingClass"
+            >
+              {{ ownFundingLabel }}
+            </span>
+          </div>
+          <p class="mt-1 max-w-2xl text-sm leading-6 text-slate">
+            {{ riskDescription }}
+          </p>
         </div>
       </div>
-
-      <aside class="border-t border-line bg-mist/55 lg:border-l lg:border-t-0">
-        <div
-          class="flex items-start gap-4 border-b border-line px-5 py-5 sm:px-6"
-        >
-          <span
-            class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white shadow-sm"
-            :class="
-              selectedProviderId === 'own' ? 'text-river' : pooledStatusClass()
-            "
-          >
-            <PhShieldCheck
-              v-if="
-                selectedProviderId === 'own' ||
-                pooledPreview?.status === 'comfortable'
-              "
-              :size="28"
-              weight="fill"
-              aria-hidden="true"
-            />
-            <PhWarningCircle
-              v-else
-              :size="28"
-              weight="fill"
-              aria-hidden="true"
-            />
-          </span>
-          <div>
-            <div class="flex flex-wrap items-center gap-2">
-              <h3
-                class="text-xl font-semibold"
-                :class="
-                  selectedProviderId === 'own'
-                    ? 'text-river'
-                    : pooledStatusClass()
-                "
-              >
-                {{ riskTitle }}
-              </h3>
-              <span
-                v-if="selectedProviderId === 'own'"
-                class="rounded-full px-2.5 py-1 text-xs font-semibold"
-                :class="ownFundingClass"
-                >{{ ownFundingLabel }}</span
-              >
-            </div>
-            <p class="mt-1 text-sm leading-6 text-slate">
-              {{ riskDescription }}
-            </p>
-          </div>
-        </div>
-
-        <dl
-          v-if="selectedProviderId === 'own' && ownOpportunity"
-          class="grid grid-cols-2 divide-x divide-y divide-line sm:grid-cols-4 sm:divide-y-0"
-        >
-          <div class="p-5">
-            <dt>Indicative LTV</dt>
-            <dd>
-              {{ formatPercent(ownLtv) }}
-              <span
-                class="mt-1 block text-xs font-normal leading-4 tracking-normal text-slate"
-                >Loan amount divided by pledged collateral.</span
-              >
-            </dd>
-          </div>
-          <div class="p-5">
-            <dt>Fixed APR</dt>
-            <dd>{{ formatPercent(ownOpportunity.indicativeApr) }}</dd>
-          </div>
-          <div class="p-5">
-            <dt>Duration</dt>
-            <dd>{{ ownOpportunity.termMonths }} mo</dd>
-          </div>
-          <div class="p-5">
-            <dt>Total due</dt>
-            <dd>{{ formatUsdValue(ownTotalRepayment) }}</dd>
-          </div>
-        </dl>
-        <dl
-          v-else-if="pooledPreview"
-          class="grid grid-cols-2 divide-x divide-y divide-line sm:grid-cols-4 sm:divide-y-0"
-        >
-          <div class="p-5">
-            <dt>{{ pooledPreview.healthMetricLabel }}</dt>
-            <dd>
-              {{ formatHealth(pooledPreview.healthMetric) }}
-              <span
-                class="mt-1 block text-xs font-normal leading-4 tracking-normal text-slate"
-                >Distance from the provider liquidation threshold.</span
-              >
-            </dd>
-          </div>
-          <div class="p-5">
-            <dt>Collateral decline</dt>
-            <dd>
-              {{
-                formatPercent(pooledPreview.collateralDeclineToLiquidation, 0)
-              }}
-              <span
-                class="mt-1 block text-xs font-normal leading-4 tracking-normal text-slate"
-                >Estimated price fall that would reach liquidation.</span
-              >
-            </dd>
-          </div>
-          <div class="p-5">
-            <dt>Current LTV</dt>
-            <dd>
-              {{ formatPercent(pooledPreview.ltv) }}
-              <span
-                class="mt-1 block text-xs font-normal leading-4 tracking-normal text-slate"
-                >Debt divided by the matched collateral value.</span
-              >
-            </dd>
-          </div>
-          <div class="p-5">
-            <dt>Borrowing power used</dt>
-            <dd>
-              {{ formatPercent(pooledPreview.borrowingPowerUsage, 0) }}
-              <span
-                class="mt-1 block text-xs font-normal leading-4 tracking-normal text-slate"
-                >Share of the provider’s estimated safe limit.</span
-              >
-            </dd>
-          </div>
-        </dl>
-
-        <div
-          class="border-t border-line px-5 py-4 text-xs leading-5 text-slate sm:px-6"
-        >
-          <template v-if="selectedProviderId === 'own'">
-            If the loan is not repaid by maturity and enters default, the lender
-            may claim the pledged collateral under the final agreement. Price
-            changes alone do not automatically liquidate an OWN position.
-          </template>
-          <template v-else>
-            Threshold preview only—this is not a prediction. Rates, oracle
-            prices, collateral factors, and liquidity can change before
-            execution.
-          </template>
-        </div>
-      </aside>
+      <div class="shrink-0 sm:text-right">
+        <p class="text-xs font-medium uppercase tracking-wide text-slate">
+          Amount reviewed
+        </p>
+        <p class="mt-1 text-xl font-semibold tabular-nums">
+          {{ formatUsdValue(amountUsd) }} USDC
+        </p>
+        <p class="mt-1 text-xs text-slate">
+          {{ formatPercent(amountUsd / maximumUsd, 0) }} of Powerrr’s estimated
+          path limit
+        </p>
+      </div>
     </div>
+
+    <p
+      v-if="selectedProviderId === 'own' && ownOpportunity"
+      class="bg-surface px-5 pt-4 text-xs font-bold uppercase tracking-[0.12em] text-slate"
+    >
+      Illustrative terms
+    </p>
+    <dl
+      v-if="selectedProviderId === 'own' && ownOpportunity"
+      aria-label="Illustrative terms"
+      class="grid grid-cols-2 divide-x divide-line bg-surface"
+    >
+      <div class="p-4 sm:p-5">
+        <dt>Assessment status</dt>
+        <dd>Policy review required</dd>
+      </div>
+      <div class="p-4 sm:p-5">
+        <dt>Repayment projection</dt>
+        <dd>Not published</dd>
+      </div>
+    </dl>
+    <template v-else-if="pooledPreview">
+      <p
+        class="bg-surface px-5 pt-4 text-xs font-bold uppercase tracking-[0.12em] text-slate"
+      >
+        Projected position
+      </p>
+      <dl
+        aria-label="Projected position"
+        class="grid grid-cols-2 divide-x divide-y divide-line bg-surface sm:grid-cols-3 sm:divide-y-0"
+      >
+        <div class="p-4 sm:p-5">
+          <dt>Collateral in estimate</dt>
+          <dd>{{ formatUsdValue(pooledPreview.collateralValueUsd) }}</dd>
+        </div>
+        <div class="p-4 sm:p-5">
+          <dt>
+            {{
+              pooledPreview.mode === "existing-position"
+                ? "Existing debt included"
+                : "Starting debt in scenario"
+            }}
+          </dt>
+          <dd>
+            {{ formatUsdValue(pooledPreview.startingDebtUsd) }}
+            <span class="mt-1 block text-[0.7rem] leading-4 text-slate">
+              {{
+                pooledPreview.mode === "existing-position"
+                  ? "Before this borrow"
+                  : "New-position estimate"
+              }}
+            </span>
+          </dd>
+        </div>
+        <div class="p-4 sm:p-5">
+          <dt>Projected total debt</dt>
+          <dd>{{ formatUsdValue(pooledPreview.projectedDebtUsd) }}</dd>
+        </div>
+        <div class="p-4 sm:p-5">
+          <dt>Liquidation headroom</dt>
+          <dd>
+            {{ formatUsdValue(pooledPreview.liquidationHeadroomUsd) }}
+            <span class="mt-1 block text-[0.7rem] leading-4 text-slate">
+              Capacity at threshold minus debt
+            </span>
+          </dd>
+        </div>
+        <div class="p-4 sm:p-5">
+          <dt>Recommended limit used</dt>
+          <dd>
+            {{ formatPercent(pooledPreview.recommendedLimitUtilization, 0) }}
+          </dd>
+        </div>
+        <div class="p-4 sm:p-5">
+          <dt>Borrow rate</dt>
+          <dd>
+            {{ pooledRateLabel }}
+            <span class="mt-1 block text-[0.7rem] leading-4 text-slate">
+              Indicative until executed
+            </span>
+          </dd>
+        </div>
+      </dl>
+
+      <p
+        class="border-t border-line bg-surface px-5 pt-4 text-xs font-bold uppercase tracking-[0.12em] text-slate"
+      >
+        Protocol thresholds
+      </p>
+      <dl
+        aria-label="Protocol thresholds"
+        class="grid grid-cols-2 divide-x divide-y divide-line bg-surface sm:grid-cols-4 sm:divide-y-0"
+      >
+        <div class="p-4 sm:p-5">
+          <dt>Projected LTV</dt>
+          <dd>
+            {{ formatPercent(pooledPreview.projectedLtv) }}
+            <span class="mt-1 block text-[0.7rem] leading-4 text-slate">
+              Projected debt ÷ collateral
+            </span>
+          </dd>
+        </div>
+        <div class="p-4 sm:p-5">
+          <dt>Borrow limit (weighted)</dt>
+          <dd>{{ formatPercent(pooledPreview.borrowLimitLtv) }}</dd>
+        </div>
+        <div class="p-4 sm:p-5">
+          <dt>Liquidation threshold (weighted)</dt>
+          <dd>{{ formatPercent(pooledPreview.liquidationThresholdLtv) }}</dd>
+        </div>
+        <div class="p-4 sm:p-5">
+          <dt>Projected health factor</dt>
+          <dd>
+            {{ formatHealth(pooledPreview.healthFactor) }}
+            <span class="mt-1 block text-[0.7rem] leading-4 text-slate">
+              1.00 = liquidation threshold
+            </span>
+          </dd>
+        </div>
+      </dl>
+    </template>
+
+    <p class="border-t border-line px-5 py-4 text-xs leading-5 text-slate">
+      <template v-if="selectedProviderId === 'own'">
+        Collateral price changes alone do not trigger liquidation. Missing the
+        agreed repayment schedule can cause default, after which lenders may
+        claim collateral. Numeric capacity and repayment projections remain
+        disabled until the production policy is approved.
+      </template>
+      <template v-else>
+        Projected values assume the collateral listed by this path is supplied
+        and the reviewed amount is borrowed.
+        <template v-if="pooledPreview?.mode === 'wallet-estimate'">
+          This new-position estimate does not include any existing protocol
+          debt.
+        </template>
+        Borrow and liquidation limits are value-weighted across that collateral;
+        some protocols use the same factor for both. Powerrr’s estimated path
+        limit includes a safety buffer and available liquidity, so it can be
+        lower than the protocol borrow limit. Rates, oracle prices, factors, and
+        liquidity can change before execution. The wide, reduced, and thin
+        labels describe proximity to the current 1.00 boundary; they are not a
+        probability or personalized safety advice.
+      </template>
+    </p>
     <p class="sr-only" aria-live="polite">{{ announcement }}</p>
   </section>
 </template>

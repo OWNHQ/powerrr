@@ -271,13 +271,24 @@ export function createPowerrrEngine(options: PowerrrEngineOptions = {}) {
         const body = QuoteRequestSchema.parse(request);
         const resolved = await dependencies.resolveAddress(body);
         const portfolio = await dependencies.getPortfolio(body, resolved);
+        const selectedCollateral = body.collateralTokens
+          ? new Set(body.collateralTokens.map((token) => token.toLowerCase()))
+          : null;
+        const quotePortfolio = selectedCollateral
+          ? {
+              ...portfolio,
+              assets: portfolio.assets.filter((asset) =>
+                selectedCollateral.has(asset.token.toLowerCase()),
+              ),
+            }
+          : portfolio;
         const generatedAt = dependencies.now();
         const execution = normalizeQuoteExecution(
           await dependencies.quoteAllProtocols({
             address: resolved.resolvedAddress,
             chainId: body.chainId,
             mode: body.mode,
-            portfolio: portfolio.assets,
+            portfolio: quotePortfolio.assets,
             targetBorrowAssets: body.targetBorrowAssets ?? ["USDC"],
             safetyProfile: body.safetyProfile ?? "balanced",
             ...((body.asOfBlock ?? resolved.blockNumber)
@@ -299,13 +310,16 @@ export function createPowerrrEngine(options: PowerrrEngineOptions = {}) {
         const sourcePolicySatisfied =
           dataMode === "live" && hasOnlyApprovedSources(quotes);
         const completeness =
-          portfolio.completeness !== "partial" &&
+          quotePortfolio.completeness !== "partial" &&
           execution.protocolAvailability.every(
             (item) => item.status === "available",
           )
             ? "complete"
             : "partial";
-        const portfolioWithMatches = applyConfirmedMatches(portfolio, quotes);
+        const portfolioWithMatches = applyConfirmedMatches(
+          quotePortfolio,
+          quotes,
+        );
         const portfolioSummary = summarizeConfirmedPortfolio(
           portfolioWithMatches.assets,
         );
@@ -357,10 +371,10 @@ export function createPowerrrEngine(options: PowerrrEngineOptions = {}) {
           warnings:
             dataMode === "live"
               ? [
-                  ...portfolio.warnings,
+                  ...quotePortfolio.warnings,
                   "Live estimates use public-rpc-preview infrastructure with no availability guarantee.",
                 ]
-              : portfolio.warnings,
+              : quotePortfolio.warnings,
         };
       });
     },

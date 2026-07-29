@@ -3,9 +3,89 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: light;
+    --color-ink: 16 34 35;
+    --color-paper: 246 248 248;
+    --color-surface: 255 255 255;
+    --color-mist: 228 241 241;
+    --color-line: 215 226 226;
+    --color-slate: 72 97 99;
+    --color-moss: 79 125 61;
+    --color-river: 11 93 95;
+    --color-own: 11 93 95;
+    --color-ownsoft: 228 241 241;
+    --color-coral: 216 95 73;
+    --color-gold: 181 139 42;
+    --color-accent-contrast: 255 255 255;
+    --color-overlay: 16 34 35;
+    --color-warning-text: 120 53 15;
+    --color-warning-surface: 255 251 235;
+    --color-warning-border: 253 230 138;
+    --color-info-text: 30 58 138;
+    --color-info-surface: 239 246 255;
+    --color-danger-text: 216 95 73;
+    --color-danger-surface: 254 242 242;
+    --shadow-panel: 0 8px 28px rgb(16 34 35 / 0.06);
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --color-ink: 237 247 247;
+    --color-paper: 11 20 21;
+    --color-surface: 17 31 32;
+    --color-mist: 23 43 44;
+    --color-line: 41 65 67;
+    --color-slate: 168 188 188;
+    --color-moss: 145 199 124;
+    --color-river: 98 184 183;
+    --color-own: 98 184 183;
+    --color-ownsoft: 23 43 44;
+    --color-coral: 255 143 120;
+    --color-gold: 217 184 91;
+    --color-accent-contrast: 11 20 21;
+    --color-overlay: 0 0 0;
+    --color-warning-text: 242 210 123;
+    --color-warning-surface: 42 35 21;
+    --color-warning-border: 92 73 32;
+    --color-info-text: 184 223 243;
+    --color-info-surface: 20 42 51;
+    --color-danger-text: 255 143 120;
+    --color-danger-surface: 50 27 26;
+    --shadow-panel: 0 12px 32px rgb(0 0 0 / 0.28);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+      color-scheme: dark;
+      --color-ink: 237 247 247;
+      --color-paper: 11 20 21;
+      --color-surface: 17 31 32;
+      --color-mist: 23 43 44;
+      --color-line: 41 65 67;
+      --color-slate: 168 188 188;
+      --color-moss: 145 199 124;
+      --color-river: 98 184 183;
+      --color-own: 98 184 183;
+      --color-ownsoft: 23 43 44;
+      --color-coral: 255 143 120;
+      --color-gold: 217 184 91;
+      --color-accent-contrast: 11 20 21;
+      --color-overlay: 0 0 0;
+      --color-warning-text: 242 210 123;
+      --color-warning-surface: 42 35 21;
+      --color-warning-border: 92 73 32;
+      --color-info-text: 184 223 243;
+      --color-info-surface: 20 42 51;
+      --color-danger-text: 255 143 120;
+      --color-danger-surface: 50 27 26;
+      --shadow-panel: 0 12px 32px rgb(0 0 0 / 0.28);
+    }
+  }
+
   html {
-    color: #102223;
-    background: #f6f8f8;
+    color: rgb(var(--color-ink));
+    background: rgb(var(--color-paper));
     scroll-behavior: smooth;
   }
 
@@ -39,11 +119,11 @@
   }
 
   .skip-link {
-    @apply fixed left-4 top-3 z-[60] -translate-y-24 rounded-lg bg-ink px-4 py-3 text-sm font-semibold text-white transition focus:translate-y-0;
+    @apply fixed left-4 top-3 z-[60] -translate-y-24 rounded-lg bg-river px-4 py-3 text-sm font-semibold text-accent-contrast transition focus:translate-y-0;
   }
 
   .panel {
-    @apply rounded-xl border border-line bg-white shadow-panel;
+    @apply rounded-xl border border-line bg-surface shadow-panel;
   }
 
   .field-label {
@@ -51,7 +131,7 @@
   }
 
   .field-control {
-    @apply focus-ring mt-2 h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink placeholder:text-slate/65;
+    @apply focus-ring mt-2 h-11 w-full rounded-lg border border-line bg-surface px-3 text-sm text-ink placeholder:text-slate/65;
   }
 
   .progress-step {
@@ -76,12 +156,12 @@
   }
 
   .progress-number {
-    @apply grid h-8 w-8 shrink-0 place-items-center rounded-full border border-line bg-white text-sm font-bold;
+    @apply grid h-8 w-8 shrink-0 place-items-center rounded-full border border-line bg-surface text-sm font-bold;
   }
 
   .progress-step-complete .progress-number,
   .progress-step-active .progress-number {
-    @apply border-river bg-river text-white;
+    @apply border-river bg-river text-accent-contrast;
   }
 
   .progress-step-complete::after {
@@ -89,7 +169,7 @@
   }
 
   .compact-step {
-    @apply focus-ring flex min-h-16 items-center gap-3 rounded-xl border border-line bg-white px-3 py-2 text-slate no-underline transition hover:border-river/60;
+    @apply focus-ring flex min-h-16 min-w-0 items-center gap-2 rounded-xl border border-line bg-surface px-2 py-2 text-slate no-underline transition hover:border-river/60 sm:gap-3 sm:px-3;
   }
 
   .compact-step strong {
@@ -102,11 +182,11 @@
 
   .compact-step-complete .progress-number,
   .compact-step-active .progress-number {
-    @apply border-river bg-river text-white;
+    @apply border-river bg-river text-accent-contrast;
   }
 
   .compact-step-active {
-    @apply border-river bg-blue-50/60;
+    @apply border-river bg-info-surface;
   }
 
   .compact-step[aria-disabled="true"] {
@@ -124,10 +204,10 @@
     border-radius: 999px;
     background: linear-gradient(
       90deg,
-      #0b5d5f 0%,
-      #0b5d5f var(--range-progress),
-      #d7e2e2 var(--range-progress),
-      #d7e2e2 100%
+      rgb(var(--color-river)) 0%,
+      rgb(var(--color-river)) var(--range-progress),
+      rgb(var(--color-line)) var(--range-progress),
+      rgb(var(--color-line)) 100%
     );
     cursor: pointer;
   }
@@ -135,10 +215,10 @@
   .amount-range-own {
     background: linear-gradient(
       90deg,
-      #0b5d5f 0%,
-      #0b5d5f var(--range-progress),
-      #d7e2e2 var(--range-progress),
-      #d7e2e2 100%
+      rgb(var(--color-river)) 0%,
+      rgb(var(--color-river)) var(--range-progress),
+      rgb(var(--color-line)) var(--range-progress),
+      rgb(var(--color-line)) 100%
     );
   }
 
@@ -147,22 +227,22 @@
     width: 28px;
     height: 28px;
     border-radius: 999px;
-    border: 2px solid #0b5d5f;
-    background: #fff;
-    box-shadow: 0 2px 7px rgb(16 34 35 / 0.18);
+    border: 2px solid rgb(var(--color-river));
+    background: rgb(var(--color-surface));
+    box-shadow: 0 2px 7px rgb(var(--color-overlay) / 0.22);
   }
 
   .amount-range::-moz-range-thumb {
     width: 28px;
     height: 28px;
     border-radius: 999px;
-    border: 2px solid #0b5d5f;
-    background: #fff;
-    box-shadow: 0 2px 7px rgb(16 34 35 / 0.18);
+    border: 2px solid rgb(var(--color-river));
+    background: rgb(var(--color-surface));
+    box-shadow: 0 2px 7px rgb(var(--color-overlay) / 0.22);
   }
 
   .amount-range:focus-visible {
-    outline: 2px solid #0b5d5f;
+    outline: 2px solid rgb(var(--color-river));
     outline-offset: 4px;
   }
 

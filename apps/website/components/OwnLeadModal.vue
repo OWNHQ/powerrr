@@ -17,6 +17,7 @@ const emit = defineEmits<{ close: [] }>();
 const api = usePowerrrApi();
 const email = ref("");
 const requestedAmountUsd = ref(props.amountUsd);
+const requestedAmountText = ref(formatAmount(props.amountUsd));
 const termMonths = ref(props.opportunity.termMonths);
 const consent = ref(false);
 const website = ref("");
@@ -56,6 +57,27 @@ onBeforeUnmount(() => {
 
 function close() {
   emit("close");
+}
+
+function onRequestedAmountInput(event: Event) {
+  requestedAmountText.value = (event.target as HTMLInputElement).value;
+  const parsed = Number(
+    requestedAmountText.value.replaceAll(",", "").replace("$", ""),
+  );
+  if (Number.isFinite(parsed)) requestedAmountUsd.value = parsed;
+  amountError.value = "";
+}
+
+function onRequestedAmountFocus() {
+  requestedAmountText.value = String(requestedAmountUsd.value);
+}
+
+function onRequestedAmountBlur() {
+  requestedAmountUsd.value = Math.max(
+    0,
+    Math.min(props.opportunity.potentialBorrowUsd, requestedAmountUsd.value),
+  );
+  requestedAmountText.value = formatAmount(requestedAmountUsd.value);
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -148,7 +170,7 @@ function apiErrorMessage(error: unknown): string {
     return "Too many requests were sent in a short time. Wait a moment and try again.";
   }
   if (statusCode === 503 || code.includes("UNAVAILABLE")) {
-    return "OWN requests are temporarily unavailable. Your details were not submitted—please try again later.";
+    return "We couldn’t send the request yet. Your details were not submitted—please try again later.";
   }
   return "The request could not be submitted. Check the form and try again.";
 }
@@ -160,12 +182,18 @@ function formatUsd(value: number): string {
     maximumFractionDigits: 0,
   }).format(value);
 }
+
+function formatAmount(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 0,
+  }).format(value);
+}
 </script>
 
 <template>
   <Teleport to="body">
     <div
-      class="fixed inset-0 z-50 grid place-items-center bg-ink/55 p-4 backdrop-blur-sm"
+      class="fixed inset-0 z-50 grid place-items-center bg-overlay/65 p-4 backdrop-blur-sm"
       role="presentation"
       @click.self="close"
     >
@@ -175,7 +203,7 @@ function formatUsd(value: number): string {
         aria-modal="true"
         aria-labelledby="own-lead-title"
         aria-describedby="own-lead-description"
-        class="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-line bg-white shadow-2xl"
+        class="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-line bg-surface shadow-2xl"
       >
         <header
           class="flex items-start justify-between gap-6 border-b border-line px-6 py-5"
@@ -188,15 +216,15 @@ function formatUsd(value: number): string {
               id="own-lead-title"
               class="mt-2 text-2xl font-semibold tracking-tight text-ink"
             >
-              {{ submitted ? "Request received" : "Request an OWN offer" }}
+              {{ submitted ? "Request received" : "Start an OWN request" }}
             </h2>
             <p
               v-if="!submitted"
               id="own-lead-description"
               class="mt-2 text-sm leading-6 text-slate"
             >
-              Send your indicative request to the OWN team for review and lender
-              matching.
+              Share your indicative request with the OWN team for review and
+              lender matching.
             </p>
             <p v-else id="own-lead-description" class="sr-only">
               Your indicative OWN offer request was received.
@@ -231,7 +259,7 @@ function formatUsd(value: number): string {
           </p>
           <button
             type="button"
-            class="focus-ring mt-7 rounded-lg bg-ink px-6 py-3 text-sm font-semibold text-white hover:bg-ink/90"
+            class="focus-ring mt-7 rounded-lg bg-river px-6 py-3 text-sm font-semibold text-accent-contrast hover:bg-river/90"
             @click="close"
           >
             Done
@@ -241,7 +269,7 @@ function formatUsd(value: number): string {
         <form v-else class="space-y-6 px-6 py-6" @submit.prevent="submit">
           <div
             v-if="!loadingStatus && !status?.enabled"
-            class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-900"
+            class="rounded-xl border border-warning-border bg-warning-surface p-4 text-sm leading-6 text-warning"
           >
             {{ status?.reason }}
           </div>
@@ -271,7 +299,7 @@ function formatUsd(value: number): string {
             </label>
 
             <label class="block sm:col-span-2">
-              <span class="field-label">Wallet or ENS</span>
+              <span class="field-label">Public address or ENS</span>
               <input
                 :value="wallet"
                 type="text"
@@ -283,16 +311,16 @@ function formatUsd(value: number): string {
             <label class="block">
               <span class="field-label">Requested amount (USDC)</span>
               <input
-                v-model.number="requestedAmountUsd"
-                type="number"
-                min="100"
-                :max="opportunity.potentialBorrowUsd"
-                step="1"
+                :value="requestedAmountText"
+                type="text"
+                inputmode="decimal"
                 required
                 class="field-control"
                 :aria-invalid="Boolean(amountError)"
                 aria-describedby="amount-error"
-                @input="amountError = ''"
+                @input="onRequestedAmountInput"
+                @focus="onRequestedAmountFocus"
+                @blur="onRequestedAmountBlur"
               />
               <span
                 v-if="amountError"
@@ -323,7 +351,7 @@ function formatUsd(value: number): string {
               <span
                 v-for="asset in opportunity.collateralUsed"
                 :key="asset.token"
-                class="rounded-full border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink"
+                class="rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-ink"
               >
                 {{ asset.symbol }} · {{ formatUsd(asset.valueUsd) }}
               </span>
@@ -371,10 +399,10 @@ function formatUsd(value: number): string {
               How we use this data
             </summary>
             <p class="pb-3">
-              The email, wallet, requested amount, term, and collateral summary
-              are sent to the OWN team only to review this request and follow up
-              about potential terms. Submitting does not approve a loan or
-              create a transaction.
+              The email, public address, requested amount, term, and collateral
+              summary are sent to the OWN team only to review this request and
+              follow up about potential terms. Submitting does not approve a
+              loan or create a transaction.
             </p>
           </details>
 
@@ -393,7 +421,7 @@ function formatUsd(value: number): string {
           </label>
 
           <div
-            class="flex items-start gap-2 rounded-xl bg-blue-50 p-3 text-xs leading-5 text-blue-900"
+            class="flex items-start gap-2 rounded-xl bg-info-surface p-3 text-xs leading-5 text-info"
           >
             <PhInfo :size="18" class="mt-0.5 shrink-0" aria-hidden="true" />
             <p>
@@ -412,7 +440,7 @@ function formatUsd(value: number): string {
 
           <button
             type="submit"
-            class="focus-ring flex h-12 w-full items-center justify-center rounded-lg bg-river px-5 text-sm font-semibold text-white hover:bg-river/90 disabled:cursor-not-allowed disabled:bg-slate/35"
+            class="focus-ring flex h-12 w-full items-center justify-center rounded-lg bg-river px-5 text-sm font-semibold text-accent-contrast hover:bg-river/90 disabled:cursor-not-allowed disabled:bg-slate/35 disabled:text-slate"
             :disabled="loadingStatus || !status?.enabled || submitting"
           >
             {{ submitting ? "Sending request…" : "Send request to OWN" }}

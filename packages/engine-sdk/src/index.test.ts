@@ -60,6 +60,46 @@ describe("Powerrr engine SDK", () => {
     );
   });
 
+  it("quotes only the collateral assets explicitly selected by the caller", async () => {
+    const allAssets = await engine.quotes({
+      chainId: 1,
+      input: { ensName: "powerrr.eth" },
+      mode: "wallet-estimate",
+    });
+    const weth = allAssets.portfolio.assets.find(
+      (asset) => asset.symbol === "WETH",
+    );
+    expect(weth).toBeDefined();
+
+    const selected = await engine.quotes({
+      chainId: 1,
+      input: { ensName: "powerrr.eth" },
+      mode: "wallet-estimate",
+      collateralTokens: [weth!.token],
+    });
+
+    expect(selected.portfolio.assets.map((asset) => asset.symbol)).toEqual([
+      "WETH",
+    ]);
+    expect(
+      selected.quotes.every((quote) =>
+        quote.collateralUsed.every(
+          (collateral) =>
+            collateral.token.toLowerCase() === weth!.token.toLowerCase(),
+        ),
+      ),
+    ).toBe(true);
+    expect(selected.portfolioSummary.matchedCollateralUsd).toBeLessThan(
+      allAssets.portfolioSummary.matchedCollateralUsd ?? Infinity,
+    );
+    expect(
+      selected.opportunities?.[0]?.collateralUsed.every(
+        (collateral) =>
+          collateral.token.toLowerCase() === weth!.token.toLowerCase(),
+      ),
+    ).toBe(true);
+  });
+
   it("runs deterministic scenarios over quote outputs", async () => {
     const response = await engine.simulations({
       chainId: 1,

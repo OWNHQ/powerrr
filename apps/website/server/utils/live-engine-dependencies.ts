@@ -371,7 +371,7 @@ export async function getLivePortfolio(
     completeness: portfolioPartial ? "partial" : "complete",
     provenance: [
       {
-        source: `Ethereum RPC batch reads using ${ETHEREUM_ASSET_REGISTRY_VERSION}`,
+        source: `Ethereum mainnet RPC batch reads using ${ETHEREUM_ASSET_REGISTRY_VERSION}`,
         sourceType: "on-chain",
         fetchedAt: fetchedAt.toISOString(),
         ...(blockTimestamp
@@ -399,7 +399,7 @@ export async function getLivePortfolio(
           ]
         : []),
       "Only the reviewed blue-chip registry is queried; unsupported wallet tokens are intentionally omitted.",
-      "PublicNode is public-rpc-preview infrastructure and has no availability guarantee.",
+      "This non-production preview has no availability guarantee.",
       "Protocol quote values use protocol-native source reads where live adapters are wired.",
     ],
   };

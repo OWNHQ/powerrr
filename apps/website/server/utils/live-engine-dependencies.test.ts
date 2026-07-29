@@ -37,6 +37,9 @@ const cometAbi = parseAbi([
   "function getBorrowRate(uint256 utilization) view returns (uint64)",
   "function baseScale() view returns (uint64)",
   "function priceScale() view returns (uint64)",
+  "function baseBorrowMin() view returns (uint256)",
+  "function isSupplyPaused() view returns (bool)",
+  "function isWithdrawPaused() view returns (bool)",
 ]);
 const erc20Abi = parseAbi([
   "function balanceOf(address account) view returns (uint256)",
@@ -436,6 +439,17 @@ function compoundResultFor(
 
   if (functionName === "priceScale") {
     return encodeComet(functionName, 100_000_000n);
+  }
+
+  if (functionName === "baseBorrowMin") {
+    return encodeComet(functionName, 100_000_000n);
+  }
+
+  if (
+    functionName === "isSupplyPaused" ||
+    functionName === "isWithdrawPaused"
+  ) {
+    return encodeComet(functionName, false);
   }
 
   if (functionName === "totalSupply") {

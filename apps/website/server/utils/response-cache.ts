@@ -1,4 +1,4 @@
-import { setHeader, type H3Event } from "h3";
+import type { H3Event } from "h3";
 import { createTtlCache, hashedCacheKey } from "./cache-core.js";
 import {
   getDistributedCacheEntry,
@@ -9,6 +9,7 @@ type CachePolicy = {
   scope: string;
   ttlMs: number;
   subject: unknown;
+  bypassRead?: boolean;
 };
 
 const responseCache = createTtlCache<unknown>({
@@ -22,13 +23,14 @@ export async function cachedResponse<T>(
   loader: () => Promise<T>,
 ): Promise<T> {
   const key = hashedCacheKey(policy.scope, policy.subject);
-  const memoryCached = responseCache.getEntry(key);
-  const cached =
-    memoryCached ??
-    (await getDistributedCacheEntry<unknown>(key).catch((error) => {
-      logDistributedStateFailure("cache.read", error);
-      return null;
-    }));
+  const memoryCached = policy.bypassRead ? null : responseCache.getEntry(key);
+  const cached = policy.bypassRead
+    ? null
+    : (memoryCached ??
+      (await getDistributedCacheEntry<unknown>(key).catch((error) => {
+        logDistributedStateFailure("cache.read", error);
+        return null;
+      })));
 
   if (cached !== null) {
     if (!memoryCached) {
@@ -47,7 +49,8 @@ export async function cachedResponse<T>(
     return withDeliveryMetadata(cached.value as T, "hit", ageSeconds);
   }
 
-  const pending = inFlight.get(key);
+  const operationKey = policy.bypassRead ? `refresh:${key}` : key;
+  const pending = inFlight.get(operationKey);
   if (pending) {
     setHeader(event, "x-powerrr-cache", "COALESCED");
     const value = (await pending) as T;
@@ -55,12 +58,12 @@ export async function cachedResponse<T>(
   }
 
   const operation = loader();
-  inFlight.set(key, operation);
+  inFlight.set(operationKey, operation);
   let value: T;
   try {
     value = await operation;
   } finally {
-    inFlight.delete(key);
+    inFlight.delete(operationKey);
   }
   responseCache.set(key, value, policy.ttlMs);
   await setDistributedCacheEntry(key, value, policy.ttlMs).catch((error) => {

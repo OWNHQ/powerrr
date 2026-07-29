@@ -4,221 +4,426 @@ import {
   PhCaretDown,
   PhCheck,
   PhInfo,
+  PhMoon,
+  PhSun,
   PhUser,
-  PhWarningCircle,
   PhWallet,
+  PhWarningCircle,
 } from "@phosphor-icons/vue";
+import type { ProtocolBorrowQuote } from "@powerrr/shared-types";
+import {
+  calculatePooledBorrowPreview,
+  pooledRiskDescription,
+  pooledRiskTitle,
+} from "./utils/borrow-preview";
+import {
+  amountForUtilization,
+  amountInputStep,
+  formatUsdValue,
+  ownFundingStatusLabel,
+  providerRateLabel,
+  summarizeEstimatorCapacity,
+} from "./utils/estimator-ux";
+import { formatLocalDateTime } from "./utils/date-time";
+import {
+  groupWebsiteQuoteRows,
+  type WebsiteQuoteGroup,
+} from "./utils/quote-row";
+
+type EstimatorStage = "assets" | "terms" | "options";
+type ProviderItem = {
+  id: "aave" | "sparklend" | "compound-iii" | "morpho-blue";
+  label: string;
+  link: string;
+  group?: WebsiteQuoteGroup;
+};
+
 const {
-  configuredFixtureMode,
-  input,
-  selectedProviderId,
-  borrowAmountUsd,
-  walletError,
-  showSearch,
-  showOwnLead,
-  assetsExpanded,
-  ownLeadStatus,
-  landingInput,
-  resultSummary,
-  examples,
-  estimatorMutation,
-  quoteResponse,
-  portfolio,
+  announcedProviders,
+  account,
+  compactAccount,
+  resolvedWalletNames,
+  progress,
+  valuedAssets,
+  manualReviewAssets,
+  failedAssets,
+  selectedAssets,
+  selectedCollateralTokens,
+  receipt,
   ownOpportunity,
-  providerItems,
-  bestExternalId,
-  maxBorrowUsd,
-  usableAssets,
-  usableCollateralUsd,
-  conversionRequiredAssets,
-  pooledPreview,
-  ownLtv,
-  ownTotalRepayment,
-  selectedOwnFundingLabel,
-  selectedOwnFundingClass,
-  selectedRiskTitle,
-  selectedRiskDescription,
-  selectedProviderLabel,
-  selectedRate,
-  selectedRateConvention,
-  selectedAnnualInterest,
-  selectedExternalLink,
-  displayAddress,
-  isDemoData,
-  isOwnActionable,
-  actionableProviderCount,
-  hasProviderOutage,
-  hasActionableSelection,
-  utilizationPercent,
-  ownUnavailableReason,
-  estimateFreshnessLabel,
-  riskAnnouncement,
-  submit,
-  retryEstimator,
-  openWalletSearch,
-  toggleWalletSearch,
-  connectWallet,
-  useExample,
-  selectProvider,
-  providerStatusLabel,
-  providerStatusClass,
-  formatUsd,
-  formatPercent,
-  friendlyEstimatorError,
-} = useEstimatorState();
+  quotes,
+  error,
+  isScanning,
+  isComparing,
+  walletDiscoveryComplete,
+  connect,
+  scan,
+  switchToMainnet,
+  disconnect,
+  setAssetSelected,
+  compareSelectedAssets,
+  openExternal,
+} = useStaticEstimator();
+const { isDark, toggleLabel, toggleTheme } = useTheme();
+
+const currentStage = ref<EstimatorStage>("assets");
+const selectedProviderId = ref("");
+const borrowAmountUsd = ref(0);
+const stageError = ref("");
+const showWalletMenu = ref(false);
+const showWalletReadInfo = ref(false);
+const walletIdentityLabel = computed(() =>
+  resolvedWalletNames.value.length
+    ? resolvedWalletNames.value.join(" · ")
+    : compactAccount.value,
+);
+const walletIdentityTitle = computed(() =>
+  [...resolvedWalletNames.value, compactAccount.value]
+    .filter(Boolean)
+    .join(" · "),
+);
+const blockLoadedAtLabel = computed(() =>
+  receipt.value ? formatLocalDateTime(receipt.value.blockTimestamp) : "",
+);
+
+const providerDefinitions: Array<Omit<ProviderItem, "group">> = [
+  { id: "aave", label: "Aave", link: "https://app.aave.com/" },
+  { id: "sparklend", label: "Spark", link: "https://app.spark.fi/" },
+  { id: "morpho-blue", label: "Morpho", link: "https://app.morpho.org/" },
+  {
+    id: "compound-iii",
+    label: "Compound",
+    link: "https://app.compound.finance/",
+  },
+];
+
+const quoteGroups = computed(() => groupWebsiteQuoteRows(quotes.value));
+const providerItems = computed<ProviderItem[]>(() =>
+  providerDefinitions
+    .map((definition) => ({
+      ...definition,
+      group: quoteGroups.value.find(
+        (candidate) => candidate.groupId === definition.id,
+      ),
+    }))
+    .sort((left, right) => providerCapacity(right) - providerCapacity(left)),
+);
+const matchingProviderItems = computed(() =>
+  providerItems.value.filter(
+    (provider) =>
+      providerCapacity(provider) > 0 &&
+      providerCapacity(provider) >= borrowAmountUsd.value,
+  ),
+);
+const selectedProvider = computed(
+  () =>
+    providerItems.value.find(
+      (provider) => provider.id === selectedProviderId.value,
+    ) ?? null,
+);
+const selectedQuote = computed<ProtocolBorrowQuote | null>(
+  () => selectedProvider.value?.group?.primaryQuote ?? null,
+);
+// OWN policy values are intentionally not exposed until credit policy and
+// repayment terms receive explicit production approval.
+const ownPotentialUsd = computed(() => 0);
+const capacitySummary = computed(() =>
+  summarizeEstimatorCapacity(
+    providerItems.value.map((provider) => providerCapacity(provider)),
+    ownPotentialUsd.value,
+  ),
+);
+const providerMaximumUsd = computed(
+  () => capacitySummary.value.providerMaximumUsd,
+);
+const maximumRequestableUsd = computed(
+  () => capacitySummary.value.maximumRequestableUsd,
+);
+const providerPathCount = computed(
+  () => capacitySummary.value.providerPathCount,
+);
+const selectedCapacity = computed(() =>
+  selectedProviderId.value === "own"
+    ? ownPotentialUsd.value
+    : (selectedQuote.value?.safeBorrowUsd ?? 0),
+);
+const matchedCollateralUsd = computed(() =>
+  selectedAssets.value.reduce(
+    (sum, asset) => sum + Number(asset.balance) * (asset.marketPriceUsd ?? 0),
+    0,
+  ),
+);
+const ownFundingLabel = computed(() =>
+  ownFundingStatusLabel(ownOpportunity.value?.fundingStatus),
+);
+const pooledPreview = computed(() =>
+  selectedQuote.value
+    ? calculatePooledBorrowPreview(selectedQuote.value, borrowAmountUsd.value)
+    : null,
+);
+const pooledRateLabel = computed(() =>
+  selectedQuote.value ? providerRateLabel(selectedQuote.value) : "—",
+);
+const selectedRiskTitle = computed(() => {
+  if (selectedProviderId.value === "own") return "Fixed-term repayment plan";
+  return pooledRiskTitle(pooledPreview.value?.riskBand ?? "none");
+});
+const selectedRiskDescription = computed(() => {
+  if (selectedProviderId.value === "own") {
+    return "OWN assessments require policy review; no numeric capacity or repayment projection is currently published.";
+  }
+  if (pooledPreview.value?.reasonCodes.includes("below-protocol-minimum")) {
+    return `The projected position is below this protocol's ${formatUsdValue(pooledPreview.value.minimumBorrowUsd)} minimum borrow.`;
+  }
+  return pooledRiskDescription(pooledPreview.value?.riskBand ?? "none");
+});
+const utilizationPercent = computed(() =>
+  selectedCapacity.value > 0
+    ? (borrowAmountUsd.value / selectedCapacity.value) * 100
+    : 0,
+);
+const riskAnnouncement = computed(() =>
+  selectedProviderId.value
+    ? `${selectedRiskTitle.value}. The amount reviewed is ${Math.round(utilizationPercent.value)} percent of Powerrr's estimated path limit.`
+    : "Select a borrowing path to review its risk.",
+);
+
+watch(receipt, (next) => {
+  if (!next) return;
+  currentStage.value = "assets";
+  selectedProviderId.value = "";
+  borrowAmountUsd.value = 0;
+  stageError.value = "";
+});
+
+async function continueFromAssets(): Promise<void> {
+  if (!selectedCollateralTokens.value.length) {
+    stageError.value = "Select at least one collateral asset to continue.";
+    return;
+  }
+  stageError.value = "";
+  await compareSelectedAssets();
+  currentStage.value = "terms";
+  selectedProviderId.value = "";
+  borrowAmountUsd.value = amountForUtilization(maximumRequestableUsd.value, 50);
+  await scrollToWorkflow();
+}
+
+function continueFromTerms(): void {
+  if (borrowAmountUsd.value <= 0) {
+    stageError.value = "Enter the amount of USDC you want to borrow.";
+    return;
+  }
+  if (borrowAmountUsd.value > maximumRequestableUsd.value) {
+    stageError.value = `Enter an amount up to ${formatUsdValue(maximumRequestableUsd.value)}.`;
+    return;
+  }
+  stageError.value = "";
+  selectedProviderId.value = "";
+  currentStage.value = "options";
+  void scrollToWorkflow();
+}
+
+function goToStage(stage: EstimatorStage): void {
+  if (stage === "terms" && !selectedCollateralTokens.value.length) return;
+  if (
+    stage === "options" &&
+    (borrowAmountUsd.value <= 0 ||
+      borrowAmountUsd.value > maximumRequestableUsd.value)
+  ) {
+    return;
+  }
+  currentStage.value = stage;
+  stageError.value = "";
+  void scrollToWorkflow();
+}
+
+function selectProvider(id: string, capacity: number): void {
+  if (capacity < borrowAmountUsd.value) return;
+  selectedProviderId.value = id;
+}
+
+function onSelectedAmountInput(event: Event): void {
+  const value = Number((event.target as HTMLInputElement).value);
+  if (Number.isFinite(value)) {
+    borrowAmountUsd.value = Math.max(
+      0,
+      Math.min(selectedCapacity.value, value),
+    );
+  }
+}
+
+function setSelectedUtilization(percent: number): void {
+  borrowAmountUsd.value = amountForUtilization(selectedCapacity.value, percent);
+}
+
+async function refreshEstimate(): Promise<void> {
+  await scan();
+  currentStage.value = "assets";
+  selectedProviderId.value = "";
+  borrowAmountUsd.value = 0;
+}
+
+function continueWithSelection(): void {
+  if (selectedProvider.value && pooledPreview.value?.actionable) {
+    openExternal(selectedProvider.value.link);
+  }
+}
+
+function connectFromHeader(): void {
+  if (announcedProviders.value.length === 1 && announcedProviders.value[0]) {
+    void connect(announcedProviders.value[0]);
+    return;
+  }
+  if (announcedProviders.value.length > 1) {
+    showWalletMenu.value = !showWalletMenu.value;
+    return;
+  }
+  document
+    .querySelector<HTMLElement>("#wallet-options")
+    ?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function connectFromMenu(
+  wallet: (typeof announcedProviders.value)[number],
+): void {
+  showWalletMenu.value = false;
+  void connect(wallet);
+}
+
+function providerCapacity(provider: ProviderItem): number {
+  return provider.group?.primaryQuote.safeBorrowUsd ?? 0;
+}
+
+async function scrollToWorkflow(): Promise<void> {
+  await nextTick();
+  document.querySelector<HTMLElement>("#workflow")?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+}
 </script>
 
 <template>
   <a href="#main-content" class="skip-link">Skip to estimator</a>
   <main id="main-content" class="min-h-screen bg-paper text-ink">
     <header
-      class="sticky top-0 z-30 border-b border-line/80 bg-white/95 backdrop-blur"
+      class="sticky top-0 z-30 border-b border-line/80 bg-surface/95 backdrop-blur"
     >
       <div
         class="mx-auto flex h-16 w-full max-w-[1360px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8"
       >
         <a
           href="/"
-          class="focus-ring rounded-md text-2xl font-bold tracking-[-0.04em] text-ink"
-          >Powerrr</a
+          class="focus-ring rounded-md text-2xl font-bold tracking-[-0.04em]"
         >
-        <div class="flex min-w-0 items-center gap-2 sm:gap-3">
+          Powerrr
+        </a>
+        <div class="flex min-w-0 items-center gap-2">
           <button
-            v-if="quoteResponse"
             type="button"
-            class="focus-ring flex h-11 min-w-0 items-center gap-2 rounded-lg border border-line bg-white px-3 text-sm font-medium hover:border-river"
-            :aria-expanded="showSearch"
-            @click="toggleWalletSearch"
+            class="focus-ring grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-line bg-surface text-slate transition hover:border-river hover:text-ink"
+            :aria-label="toggleLabel"
+            :title="toggleLabel"
+            data-testid="theme-toggle"
+            @click="toggleTheme"
           >
-            <PhUser :size="18" aria-hidden="true" />
-            <span class="max-w-28 truncate sm:max-w-36">{{
-              displayAddress
-            }}</span>
-            <span
-              class="h-2 w-2 shrink-0 rounded-full sm:hidden"
-              :class="isDemoData ? 'bg-amber-500' : 'bg-moss'"
-              aria-hidden="true"
-            ></span>
-            <span class="sr-only">{{
-              isDemoData ? "Demo data" : "Live Ethereum preview"
-            }}</span>
-            <PhCaretDown :size="14" aria-hidden="true" />
+            <PhSun v-if="isDark" :size="19" aria-hidden="true" />
+            <PhMoon v-else :size="19" aria-hidden="true" />
           </button>
-          <button
-            v-else
-            type="button"
-            class="focus-ring flex h-11 items-center gap-2 rounded-lg border border-line px-3 text-sm font-semibold"
-            @click="connectWallet"
-          >
-            <PhWallet :size="18" aria-hidden="true" />
-            <span class="sm:hidden">Connect</span>
-            <span class="hidden sm:inline">Connect wallet</span>
-          </button>
-          <span
-            v-if="quoteResponse"
-            class="hidden items-center gap-2 text-sm text-slate sm:flex"
-          >
-            <span
-              class="h-2 w-2 rounded-full"
-              :class="isDemoData ? 'bg-amber-500' : 'bg-moss'"
-            ></span>
-            {{ isDemoData ? "Demo data" : "Live Ethereum · preview" }}
-          </span>
+
+          <div class="relative min-w-0">
+            <button
+              v-if="receipt"
+              type="button"
+              class="focus-ring flex h-11 min-w-0 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm font-medium hover:border-river"
+              :aria-label="`Disconnect wallet ${walletIdentityTitle}`"
+              @click="disconnect"
+            >
+              <PhUser :size="18" aria-hidden="true" />
+              <span
+                class="max-w-28 truncate sm:max-w-48"
+                :title="walletIdentityTitle"
+                >{{ walletIdentityLabel }}</span
+              >
+              <span
+                class="h-2 w-2 rounded-full bg-moss"
+                aria-hidden="true"
+              ></span>
+              <span class="hidden text-slate sm:inline">Disconnect</span>
+            </button>
+            <button
+              v-else-if="isScanning && account"
+              type="button"
+              class="flex h-11 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm font-medium text-slate"
+              aria-label="Resolving wallet name"
+              disabled
+            >
+              <PhUser :size="18" aria-hidden="true" />
+              <span>Checking name…</span>
+            </button>
+            <button
+              v-else
+              type="button"
+              class="focus-ring flex h-11 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm font-semibold hover:border-river"
+              :aria-expanded="
+                announcedProviders.length > 1 ? showWalletMenu : undefined
+              "
+              @click="connectFromHeader"
+            >
+              <PhWallet :size="18" aria-hidden="true" />
+              Connect wallet
+            </button>
+            <div
+              v-if="!receipt && showWalletMenu && announcedProviders.length > 1"
+              class="absolute right-0 top-12 z-40 w-64 overflow-hidden rounded-xl border border-line bg-surface p-2 shadow-panel"
+            >
+              <button
+                v-for="wallet in announcedProviders"
+                :key="wallet.descriptor.uuid"
+                type="button"
+                class="focus-ring flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold hover:bg-mist"
+                @click="connectFromMenu(wallet)"
+              >
+                <img
+                  v-if="wallet.descriptor.icon"
+                  :src="wallet.descriptor.icon"
+                  alt=""
+                  class="h-6 w-6 rounded"
+                />
+                <PhWallet v-else :size="18" aria-hidden="true" />
+                <span class="truncate">{{ wallet.descriptor.name }}</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-      <form
-        v-if="showSearch && quoteResponse"
-        class="border-t border-line bg-mist/60"
-        @submit.prevent="submit"
-      >
-        <div class="mx-auto flex w-full max-w-3xl gap-2 px-4 py-3">
-          <input
-            ref="landingInput"
-            v-model="input"
-            class="field-control mt-0"
-            aria-label="Ethereum address or ENS"
-            placeholder="ENS or 0x address"
-          />
-          <button
-            class="focus-ring min-h-11 rounded-lg bg-ink px-5 text-sm font-semibold text-white"
-            type="submit"
-          >
-            Update
-          </button>
-        </div>
-      </form>
     </header>
 
     <section
-      v-if="estimatorMutation.isPending.value"
+      v-if="isScanning"
       class="mx-auto grid min-h-[calc(100vh-4rem)] max-w-5xl place-items-center px-4 py-16"
+      aria-live="polite"
     >
       <div class="mx-auto max-w-xl text-center">
         <div
           class="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-line border-t-river"
         ></div>
-        <h1 class="mt-6 text-2xl font-semibold">Finding usable collateral</h1>
+        <h1 class="mt-6 text-2xl font-semibold">Checking your wallet</h1>
         <p class="mt-2 text-sm leading-6 text-slate">
-          Checking the supported asset registry and live provider rules. This
-          can take a few seconds.
+          {{ progress?.message ?? "Waiting for your wallet…" }}
+        </p>
+        <p class="mt-3 text-xs text-slate">
+          Read-only. No signature or transaction will be requested.
         </p>
       </div>
     </section>
 
     <section
-      v-else-if="estimatorMutation.error.value && !quoteResponse"
-      class="mx-auto grid min-h-[calc(100vh-4rem)] max-w-3xl place-items-center px-4 py-16"
-    >
-      <div
-        class="w-full rounded-2xl border border-line bg-white p-6 text-center shadow-panel sm:p-10"
-      >
-        <PhWarningCircle
-          :size="48"
-          class="mx-auto text-coral"
-          aria-hidden="true"
-        />
-        <h1 class="mt-4 text-2xl font-semibold">
-          We couldn’t estimate this wallet
-        </h1>
-        <p class="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate">
-          {{ friendlyEstimatorError(estimatorMutation.error.value) }}
-        </p>
-        <form
-          class="mx-auto mt-7 flex max-w-2xl flex-col gap-3 sm:flex-row"
-          @submit.prevent="submit"
-        >
-          <label class="min-w-0 flex-1 text-left">
-            <span class="field-label">Ethereum address or ENS</span>
-            <input
-              ref="landingInput"
-              v-model="input"
-              class="field-control mt-0 h-12"
-              placeholder="name.eth or 0x…"
-              autocomplete="off"
-            />
-          </label>
-          <button
-            type="submit"
-            class="focus-ring min-h-12 self-end rounded-lg bg-river px-6 text-sm font-semibold text-white hover:bg-river/90"
-          >
-            Try again
-          </button>
-        </form>
-        <button
-          type="button"
-          class="focus-ring mt-5 min-h-11 rounded-lg px-4 text-sm font-semibold text-river hover:bg-blue-50"
-          @click="retryEstimator"
-        >
-          Clear error and edit address
-        </button>
-      </div>
-    </section>
-
-    <section
-      v-else-if="!quoteResponse"
+      v-else-if="!receipt"
       class="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl place-items-center px-4 py-16"
     >
-      <div class="w-full max-w-3xl text-center">
+      <div id="wallet-options" class="w-full max-w-3xl text-center">
         <p class="text-sm font-bold uppercase tracking-[0.18em] text-river">
           Borrow with your onchain assets
         </p>
@@ -228,381 +433,456 @@ const {
         <p
           class="mx-auto mt-5 max-w-xl text-base leading-7 text-slate sm:text-lg"
         >
-          Enter an Ethereum address to see usable collateral, compare providers,
-          and review threshold-based risk before you borrow.
+          Connect a wallet to see usable collateral, compare borrowing paths,
+          and review risk before you borrow.
         </p>
-        <form
-          class="mx-auto mt-9 flex max-w-2xl flex-col gap-3 rounded-2xl border border-line bg-white p-3 shadow-panel sm:flex-row"
-          @submit.prevent="submit"
+
+        <div
+          v-if="announcedProviders.length"
+          class="mx-auto mt-9 flex max-w-2xl flex-wrap justify-center gap-3"
         >
-          <label class="min-w-0 flex-1 text-left">
-            <span class="sr-only">Ethereum address or ENS</span>
-            <input
-              ref="landingInput"
-              v-model="input"
-              class="h-12 w-full rounded-lg border-0 px-3 text-base outline-none"
-              placeholder="name.eth or 0x…"
-              autocomplete="off"
-            />
-          </label>
           <button
-            type="submit"
-            class="focus-ring h-12 rounded-lg bg-river px-6 text-sm font-semibold text-white hover:bg-river/90"
+            v-for="wallet in announcedProviders"
+            :key="wallet.descriptor.uuid"
+            type="button"
+            class="focus-ring inline-flex h-12 items-center justify-center gap-3 rounded-lg bg-river px-6 text-sm font-semibold text-accent-contrast hover:bg-river/90"
+            @click="connect(wallet)"
           >
-            Check borrowing power
+            <img
+              v-if="wallet.descriptor.icon"
+              :src="wallet.descriptor.icon"
+              alt=""
+              class="h-6 w-6 rounded"
+            />
+            <PhWallet v-else :size="20" aria-hidden="true" />
+            Connect
+            {{
+              announcedProviders.length > 1 ? wallet.descriptor.name : "wallet"
+            }}
           </button>
-        </form>
-        <p v-if="walletError" class="mt-3 text-sm text-coral">
-          {{ walletError }}
-        </p>
-        <p class="mx-auto mt-4 max-w-lg text-xs leading-5 text-slate">
-          Read-only estimate. Connecting or entering a wallet never submits a
-          transaction.
+        </div>
+        <p v-else-if="!walletDiscoveryComplete" class="mt-9 text-sm text-slate">
+          Looking for a browser wallet…
         </p>
         <div
-          v-if="configuredFixtureMode"
-          class="mt-6 flex flex-wrap justify-center gap-2"
+          v-else
+          class="mx-auto mt-9 max-w-xl rounded-xl border border-line bg-surface p-5"
+        >
+          <p class="font-semibold">No browser wallet found</p>
+          <p class="mt-1 text-sm text-slate">
+            Install an injected wallet or open Powerrr inside your wallet
+            browser.
+          </p>
+        </div>
+
+        <div
+          class="relative mx-auto mt-3 max-w-lg text-xs text-slate"
+          @keydown.escape="showWalletReadInfo = false"
         >
           <button
-            v-for="example in examples"
-            :key="example.value"
             type="button"
-            class="focus-ring rounded-full border border-line bg-white px-3 py-2 text-xs font-semibold text-slate hover:border-river hover:text-river"
-            @click="useExample(example.value)"
+            class="focus-ring rounded font-semibold text-river"
+            aria-controls="wallet-read-info"
+            :aria-expanded="showWalletReadInfo"
+            @click="showWalletReadInfo = !showWalletReadInfo"
           >
-            {{ example.label }}
+            How it works
+          </button>
+          <p
+            v-if="showWalletReadInfo"
+            id="wallet-read-info"
+            class="absolute left-1/2 top-full z-20 mt-3 w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-line bg-surface p-4 text-left leading-5 shadow-panel"
+          >
+            After you connect, one Multicall3 read checks 100 ERC-20 balances at
+            one Ethereum block. Onchain names, prices, and provider rules are
+            then read through the same wallet. Name lookup never uses an HTTP
+            gateway. No signature, transaction, analytics request, or Powerrr
+            API is used.
+          </p>
+        </div>
+
+        <div
+          v-if="error"
+          class="mx-auto mt-5 flex max-w-2xl items-start gap-3 rounded-xl border border-coral/25 bg-danger-surface px-4 py-3 text-left text-sm text-danger"
+          role="alert"
+        >
+          <PhWarningCircle
+            :size="20"
+            class="mt-0.5 shrink-0"
+            aria-hidden="true"
+          />
+          <span>{{ error }}</span>
+          <button
+            v-if="/Ethereum Mainnet/i.test(error)"
+            type="button"
+            class="focus-ring ml-auto shrink-0 font-semibold underline"
+            @click="switchToMainnet"
+          >
+            Switch network
           </button>
         </div>
       </div>
     </section>
 
     <div
-      v-else-if="quoteResponse && portfolio"
+      v-else
       class="mx-auto w-full max-w-[1360px] px-4 py-7 sm:px-6 lg:px-8 lg:py-10"
     >
       <EstimatorResultSummary
-        ref="resultSummary"
-        :demo="isDemoData"
-        :address="displayAddress"
-        :matched-collateral="formatUsd(usableCollateralUsd)"
-        :asset-count="portfolio.assets.length"
-        :provider-count="actionableProviderCount"
-        :freshness="estimateFreshnessLabel"
+        :demo="false"
+        :address="compactAccount"
+        :names="resolvedWalletNames"
+        :matched-collateral="formatUsdValue(matchedCollateralUsd)"
+        :asset-count="valuedAssets.length + manualReviewAssets.length"
+        :selected-asset-count="selectedCollateralTokens.length"
+        :provider-count="providerPathCount"
+        stale-label=""
+        :refreshing="isScanning"
+        :refresh-complete="false"
+        @refresh="refreshEstimate"
       />
 
       <nav
-        aria-label="Estimator sections"
-        class="compact-progress mb-5 grid grid-cols-3 gap-2"
+        aria-label="Estimator steps"
+        class="compact-progress mb-5 mt-4 grid grid-cols-3 gap-2"
       >
-        <a
-          href="#assets"
-          class="compact-step"
+        <button
+          type="button"
+          class="compact-step text-left"
           :class="
-            usableAssets.length
-              ? 'compact-step-complete'
-              : 'compact-step-active'
+            currentStage === 'assets'
+              ? 'compact-step-active'
+              : 'compact-step-complete'
           "
-          :aria-current="!usableAssets.length ? 'step' : undefined"
+          :aria-current="currentStage === 'assets' ? 'step' : undefined"
+          @click="goToStage('assets')"
         >
-          <span class="progress-number"
-            ><PhCheck
-              v-if="usableAssets.length"
+          <span class="progress-number">
+            <PhCheck
+              v-if="currentStage !== 'assets'"
               :size="15"
               weight="bold"
               aria-hidden="true"
-            /><template v-else>1</template></span
-          >
-          <span><strong>Assets</strong><small>Confirmed matches</small></span>
-        </a>
-        <a
-          href="#providers"
-          class="compact-step"
+            />
+            <template v-else>1</template>
+          </span>
+          <span><strong>Assets</strong><small>Choose collateral</small></span>
+        </button>
+        <button
+          type="button"
+          class="compact-step text-left"
           :class="
-            hasActionableSelection
-              ? 'compact-step-complete'
-              : usableAssets.length
-                ? 'compact-step-active'
+            currentStage === 'terms'
+              ? 'compact-step-active'
+              : currentStage === 'options'
+                ? 'compact-step-complete'
                 : ''
           "
-          :aria-current="
-            usableAssets.length && !hasActionableSelection ? 'step' : undefined
-          "
+          :aria-current="currentStage === 'terms' ? 'step' : undefined"
+          @click="goToStage('terms')"
         >
-          <span class="progress-number"
-            ><PhCheck
-              v-if="hasActionableSelection"
+          <span class="progress-number">
+            <PhCheck
+              v-if="currentStage === 'options'"
               :size="15"
               weight="bold"
               aria-hidden="true"
-            /><template v-else>2</template></span
-          >
-          <span><strong>Provider</strong><small>Compare options</small></span>
-        </a>
-        <a
-          href="#amount"
-          class="compact-step"
-          :class="hasActionableSelection ? 'compact-step-active' : ''"
-          :aria-current="hasActionableSelection ? 'step' : undefined"
-          :aria-disabled="!hasActionableSelection"
-          @click="!hasActionableSelection && $event.preventDefault()"
+            />
+            <template v-else>2</template>
+          </span>
+          <span><strong>Amount</strong><small>Set borrowing need</small></span>
+        </button>
+        <button
+          type="button"
+          class="compact-step text-left"
+          :class="currentStage === 'options' ? 'compact-step-active' : ''"
+          :aria-current="currentStage === 'options' ? 'step' : undefined"
+          @click="goToStage('options')"
         >
           <span class="progress-number">3</span>
-          <span
-            ><strong>Amount & risk</strong><small>Review threshold</small></span
-          >
-        </a>
+          <span><strong>Options</strong><small>Compare paths</small></span>
+        </button>
       </nav>
 
-      <EstimatorAssets
-        :assets="usableAssets"
-        :expanded="assetsExpanded"
-        :demo="isDemoData"
-        :has-conversions="conversionRequiredAssets.length > 0"
-        @change-wallet="openWalletSearch"
-        @toggle-expanded="assetsExpanded = !assetsExpanded"
-      />
-
-      <section
-        v-if="usableAssets.length"
-        id="providers"
-        class="panel mt-5 scroll-mt-36 p-5"
-        aria-labelledby="providers-title"
+      <p
+        v-if="error || stageError"
+        class="mb-4 flex items-start gap-3 rounded-xl border border-coral/25 bg-danger-surface px-4 py-3 text-sm text-danger"
+        role="alert"
       >
-        <div>
-          <h2 id="providers-title" class="text-lg font-semibold">
-            Choose a provider
-          </h2>
-          <p class="mt-1 text-sm text-slate">
-            Compare estimated borrowing power and rates, then select an option
-            to review risk.
-          </p>
-        </div>
+        <PhWarningCircle :size="20" class="shrink-0" aria-hidden="true" />
+        {{ stageError || error }}
+      </p>
 
-        <div role="radiogroup" aria-labelledby="providers-title">
-          <button
-            v-if="ownOpportunity"
-            type="button"
-            role="radio"
-            class="focus-ring group mt-5 grid min-h-32 w-full gap-5 rounded-2xl border p-5 text-left transition sm:grid-cols-[1fr_auto] sm:items-center"
-            :class="[
-              selectedProviderId === 'own'
-                ? 'border-own bg-ownsoft shadow-lg'
-                : 'border-own/30 bg-white',
-              isOwnActionable
-                ? 'hover:border-own'
-                : 'cursor-not-allowed opacity-75',
-            ]"
-            :aria-checked="selectedProviderId === 'own'"
-            :disabled="!isOwnActionable"
-            @click="selectProvider('own', ownOpportunity.potentialBorrowUsd)"
+      <div id="workflow" class="scroll-mt-28">
+        <template v-if="currentStage === 'assets'">
+          <EstimatorAssets
+            :assets="valuedAssets"
+            :selected-tokens="selectedCollateralTokens"
+            :loading="isComparing"
+            @change-address="disconnect"
+            @toggle="setAssetSelected"
+            @continue="continueFromAssets"
+          />
+
+          <details
+            v-if="manualReviewAssets.length || failedAssets.length"
+            class="panel mt-4 overflow-hidden"
           >
-            <span class="flex min-w-0 items-start gap-4">
-              <span
-                class="mt-0.5 grid h-12 w-16 shrink-0 place-items-center rounded-xl bg-ownsoft p-2"
-              >
-                <OwnLogo />
-              </span>
-              <span class="min-w-0">
-                <span class="flex flex-wrap items-center gap-2">
-                  <strong class="text-xl">OWN</strong>
-                  <span
-                    class="rounded-full bg-own px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white"
-                    >Featured</span
-                  >
-                  <span
-                    class="rounded-full px-2.5 py-1 text-xs font-semibold"
-                    :class="
-                      isOwnActionable
-                        ? providerStatusClass(ownOpportunity)
-                        : 'bg-slate-100 text-slate'
-                    "
-                  >
-                    {{
-                      isOwnActionable
-                        ? providerStatusLabel(ownOpportunity)
-                        : "Unavailable"
-                    }}
-                  </span>
-                </span>
-                <span class="mt-2 block text-sm text-slate"
-                  >OWN’s indicative fixed-term request option</span
-                >
-                <span class="mt-3 block text-xs leading-5 text-slate"
-                  >No automatic price-triggered liquidation. Repay by the agreed
-                  maturity date.</span
-                >
-              </span>
-            </span>
-            <span class="sm:max-w-sm sm:text-right">
-              <template v-if="isOwnActionable">
-                <span
-                  class="block text-xs font-medium uppercase tracking-wide text-slate"
-                  >Indicative capacity</span
-                >
-                <strong class="mt-1 block tabular-nums text-2xl tracking-tight"
-                  >Up to
-                  {{ formatUsd(ownOpportunity.potentialBorrowUsd) }}</strong
-                >
-                <span class="mt-1 block text-xs text-slate"
-                  >{{ formatPercent(ownOpportunity.indicativeApr) }} fixed APR ·
-                  {{ ownOpportunity.termMonths }} months</span
-                >
-              </template>
-              <template v-else>
-                <span
-                  class="block text-xs font-medium uppercase tracking-wide text-slate"
-                  >Not selectable</span
-                >
-                <strong class="mt-1 block text-lg">{{
-                  ownUnavailableReason
-                }}</strong>
-                <span
-                  v-if="ownOpportunity.potentialBorrowUsd > 0"
-                  class="mt-1 block text-xs text-slate"
-                >
-                  Indicative capacity
-                  {{ formatUsd(ownOpportunity.potentialBorrowUsd) }}
-                </span>
-              </template>
-            </span>
-          </button>
-
-          <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <ExternalProviderOption
-              v-for="provider in providerItems"
-              :key="provider.id"
-              :provider="provider"
-              :selected="selectedProviderId === provider.id"
-              :highest-capacity="provider.id === bestExternalId"
-              @select="selectProvider"
-            />
-          </div>
-        </div>
-
-        <div
-          v-if="hasProviderOutage"
-          class="mt-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <span
-            >One or more live provider estimates could not be refreshed.</span
-          >
-          <button
-            type="button"
-            class="focus-ring min-h-11 rounded-lg border border-amber-300 bg-white px-4 font-semibold hover:border-amber-500"
-            @click="submit"
-          >
-            Retry providers
-          </button>
-        </div>
-      </section>
-
-      <EstimatorRiskPanel
-        v-if="maxBorrowUsd > 0"
-        v-model:amount="borrowAmountUsd"
-        v-model:utilization="utilizationPercent"
-        :maximum-usd="maxBorrowUsd"
-        :selected-provider-id="selectedProviderId"
-        :risk-title="selectedRiskTitle"
-        :risk-description="selectedRiskDescription"
-        :own-funding-class="selectedOwnFundingClass"
-        :own-funding-label="selectedOwnFundingLabel"
-        :own-opportunity="ownOpportunity"
-        :own-ltv="ownLtv"
-        :own-total-repayment="ownTotalRepayment"
-        :pooled-preview="pooledPreview"
-        :announcement="riskAnnouncement"
-      />
-
-      <section
-        v-if="maxBorrowUsd > 0"
-        class="mt-5 overflow-hidden rounded-2xl border border-line bg-white shadow-panel"
-        aria-label="Next step"
-      >
-        <div
-          class="grid gap-5 px-5 py-5 sm:grid-cols-[1fr_auto] sm:items-center sm:px-6"
-        >
-          <div class="flex min-w-0 items-center gap-4">
-            <span
-              v-if="selectedProviderId === 'own'"
-              class="grid h-11 w-16 shrink-0 place-items-center rounded-xl bg-ownsoft p-2"
+            <summary
+              class="focus-ring cursor-pointer px-5 py-4 text-sm font-semibold sm:px-6"
             >
-              <OwnLogo />
-            </span>
-            <img
-              v-else
-              src="/tokens/usdc.png"
-              alt="USDC"
-              class="h-11 w-11 shrink-0 rounded-full"
-            />
-            <div class="min-w-0">
-              <p class="tabular-nums font-semibold">
-                Review {{ formatUsd(borrowAmountUsd) }} USDC
-                {{ selectedProviderId === "own" ? "with" : "on" }}
-                {{ selectedProviderLabel }}
-              </p>
-              <p
-                id="next-step-description"
-                class="mt-1 text-sm leading-6 text-slate"
+              {{ manualReviewAssets.length }} additional asset{{
+                manualReviewAssets.length === 1 ? "" : "s"
+              }}
+              need manual valuation
+              <template v-if="failedAssets.length">
+                · {{ failedAssets.length }} reads failed</template
               >
-                {{
-                  selectedProviderId === "own"
-                    ? `${formatPercent(selectedRate)} fixed APR · ${ownOpportunity?.termMonths} months · indicative`
-                    : `${formatUsd(selectedAnnualInterest)} approximate first-year interest at the current ${formatPercent(selectedRate)} variable ${selectedRateConvention}`
-                }}
+            </summary>
+            <div
+              class="border-t border-line px-5 py-4 text-sm text-slate sm:px-6"
+            >
+              <p
+                v-for="asset in manualReviewAssets"
+                :key="asset.token"
+                class="py-1"
+              >
+                <strong class="text-ink">{{ asset.symbol }}</strong> ·
+                {{ asset.balance }} — {{ asset.valuationReason }}
+              </p>
+              <p v-for="asset in failedAssets" :key="asset.token" class="py-1">
+                <strong class="text-ink">{{ asset.symbol }}</strong> —
+                {{ asset.balanceReadReason }}
               </p>
             </div>
-          </div>
-          <button
-            v-if="selectedProviderId === 'own'"
-            type="button"
-            class="focus-ring flex h-12 items-center justify-center gap-2 rounded-lg bg-river px-7 text-sm font-semibold text-white hover:bg-river/90"
-            aria-describedby="next-step-description"
-            @click="showOwnLead = true"
-          >
-            Request an OWN offer
-          </button>
-          <a
-            v-else
-            :href="selectedExternalLink"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="focus-ring flex h-12 items-center justify-center gap-2 rounded-lg bg-river px-7 text-sm font-semibold text-white hover:bg-river/90"
-            aria-describedby="next-step-description external-provider-note"
-          >
-            Review on {{ selectedProviderLabel }}
-            <PhArrowSquareOut :size="18" aria-hidden="true" />
-            <span class="sr-only">(opens in a new tab)</span>
-          </a>
-        </div>
-        <div
-          class="flex items-start gap-2 border-t border-line bg-mist/50 px-5 py-3 text-xs leading-5 text-slate sm:px-6"
-        >
-          <PhInfo :size="17" class="mt-0.5 shrink-0" aria-hidden="true" />
-          <p v-if="selectedProviderId === 'own'">
-            Indicative only; subject to OWN review, lender matching, verified
-            funding, and final documentation. Policy
-            {{ ownOpportunity?.policyVersion }}.
-          </p>
-          <p v-else id="external-provider-note">
-            This estimate does not transfer to {{ selectedProviderLabel }}.
-            Recreate and verify the position there before continuing; rates and
-            protocol conditions can change.
-          </p>
-        </div>
-      </section>
-    </div>
+          </details>
+        </template>
 
-    <OwnLeadModal
-      v-if="showOwnLead && ownOpportunity && ownLeadStatus"
-      :opportunity="ownOpportunity"
-      :wallet="
-        quoteResponse?.resolvedEnsName ||
-        quoteResponse?.resolvedAddress ||
-        input
-      "
-      :amount-usd="borrowAmountUsd"
-      :status="ownLeadStatus"
-      @close="showOwnLead = false"
-    />
+        <EstimatorTerms
+          v-else-if="currentStage === 'terms'"
+          v-model:amount="borrowAmountUsd"
+          :provider-maximum-usd="providerMaximumUsd"
+          :own-potential-usd="ownPotentialUsd"
+          :error="stageError"
+          @back="goToStage('assets')"
+          @continue="continueFromTerms"
+        />
+
+        <section
+          v-else
+          class="panel overflow-hidden"
+          aria-labelledby="providers-title"
+        >
+          <div class="border-b border-line px-5 py-5 sm:px-6">
+            <p class="text-xs font-bold uppercase tracking-[0.14em] text-river">
+              Step 3 of 3
+            </p>
+            <h2 id="providers-title" class="mt-1 text-xl font-semibold">
+              Choose a borrowing path
+            </h2>
+            <p class="mt-1 text-sm text-slate">
+              Compare each path with your requested
+              {{ formatUsdValue(borrowAmountUsd) }}.
+            </p>
+          </div>
+
+          <div class="p-5 sm:p-6">
+            <div
+              v-if="!matchingProviderItems.length"
+              class="mb-4 rounded-xl border border-warning-border bg-warning-surface p-4 text-sm text-warning"
+            >
+              No immediately available provider supports this amount.
+              <span v-if="ownPotentialUsd < borrowAmountUsd">
+                Go back and lower the amount or change collateral.
+              </span>
+            </div>
+
+            <div
+              class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+              role="radiogroup"
+              aria-label="Immediately available providers"
+            >
+              <ExternalProviderOption
+                v-for="provider in providerItems"
+                :key="provider.id"
+                :provider="provider"
+                :selected="selectedProviderId === provider.id"
+                :meets-amount="
+                  providerCapacity(provider) >= borrowAmountUsd &&
+                  providerCapacity(provider) > 0
+                "
+                @select="selectProvider"
+              />
+            </div>
+
+            <OwnOpportunityCard
+              v-if="ownOpportunity"
+              :opportunity="ownOpportunity"
+            />
+
+            <section
+              v-if="selectedProviderId && selectedCapacity > 0"
+              class="mt-4 rounded-xl border border-line bg-surface p-4 sm:p-5"
+              aria-labelledby="adjust-amount-title"
+            >
+              <div
+                class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"
+              >
+                <div>
+                  <h3 id="adjust-amount-title" class="font-semibold">
+                    Adjust amount
+                  </h3>
+                  <p class="mt-1 text-xs text-slate">
+                    Changes update the risk preview for this path.
+                  </p>
+                </div>
+                <p class="text-sm tabular-nums text-slate">
+                  <strong class="text-lg text-ink">{{
+                    formatUsdValue(borrowAmountUsd)
+                  }}</strong>
+                  of {{ formatUsdValue(selectedCapacity) }}
+                </p>
+              </div>
+              <input
+                :value="borrowAmountUsd"
+                type="range"
+                min="0"
+                :max="selectedCapacity"
+                :step="amountInputStep(selectedCapacity)"
+                class="amount-range mt-5 w-full"
+                :class="{ 'amount-range-own': selectedProviderId === 'own' }"
+                :style="{
+                  '--range-progress': `${utilizationPercent}%`,
+                }"
+                aria-label="Borrow amount"
+                :aria-valuetext="`${formatUsdValue(borrowAmountUsd)} of ${formatUsdValue(selectedCapacity)}`"
+                @input="onSelectedAmountInput"
+              />
+              <div class="mt-2 flex justify-between text-xs text-slate">
+                <span>$0</span>
+                <span>{{ formatUsdValue(selectedCapacity) }} max</span>
+              </div>
+              <div class="mt-4 grid grid-cols-4 gap-2">
+                <button
+                  v-for="percent in [25, 50, 75, 100]"
+                  :key="percent"
+                  type="button"
+                  class="focus-ring min-h-10 rounded-lg border px-2 text-xs font-semibold"
+                  :class="
+                    Math.abs(utilizationPercent - percent) < 1
+                      ? 'border-river bg-info-surface text-river'
+                      : 'border-line hover:border-river'
+                  "
+                  @click="setSelectedUtilization(percent)"
+                >
+                  {{ percent }}%
+                </button>
+              </div>
+            </section>
+
+            <EstimatorRiskPanel
+              v-if="selectedProviderId && selectedCapacity > 0"
+              :amount-usd="borrowAmountUsd"
+              :maximum-usd="selectedCapacity"
+              :selected-provider-id="selectedProviderId"
+              :risk-title="selectedRiskTitle"
+              :risk-description="selectedRiskDescription"
+              own-funding-class="bg-surface text-own ring-1 ring-own/15"
+              :own-funding-label="ownFundingLabel"
+              :own-opportunity="ownOpportunity"
+              :pooled-preview="pooledPreview"
+              :pooled-rate-label="pooledRateLabel"
+              :announcement="riskAnnouncement"
+            />
+
+            <div
+              v-if="selectedProviderId"
+              class="mt-4 flex flex-col gap-4 rounded-xl border border-line bg-surface p-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <p class="text-sm text-slate">
+                Review {{ formatUsdValue(borrowAmountUsd) }} USDC with
+                <strong class="text-ink">{{
+                  selectedProviderId === "own" ? "OWN" : selectedProvider?.label
+                }}</strong
+                >.
+              </p>
+              <a
+                v-if="selectedProviderId === 'own'"
+                href="https://own.casa/borrow#contact"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="focus-ring inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-river px-6 text-sm font-semibold text-accent-contrast"
+              >
+                Request with OWN
+                <PhArrowSquareOut :size="17" aria-hidden="true" />
+              </a>
+              <button
+                v-else
+                type="button"
+                class="focus-ring inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-river px-6 text-sm font-semibold text-accent-contrast"
+                :class="{
+                  'cursor-not-allowed opacity-50': !pooledPreview?.actionable,
+                }"
+                :disabled="!pooledPreview?.actionable"
+                @click="continueWithSelection"
+              >
+                Review on {{ selectedProvider?.label }}
+                <PhArrowSquareOut :size="17" aria-hidden="true" />
+              </button>
+            </div>
+
+            <button
+              type="button"
+              class="focus-ring mt-5 min-h-11 rounded-lg px-3 text-sm font-semibold text-river hover:bg-info-surface"
+              @click="goToStage('terms')"
+            >
+              Back to amount
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <details class="panel mt-5 overflow-hidden">
+        <summary
+          class="focus-ring flex min-h-14 cursor-pointer items-center gap-2 px-5 py-4 text-sm font-semibold sm:px-6"
+        >
+          <PhInfo :size="18" aria-hidden="true" />
+          How this was calculated
+          <PhCaretDown :size="14" class="ml-auto" aria-hidden="true" />
+        </summary>
+        <div
+          class="grid gap-5 border-t border-line px-5 py-5 text-sm sm:grid-cols-2 sm:px-6 lg:grid-cols-4"
+        >
+          <div>
+            <p class="text-slate">Wallet</p>
+            <p class="mt-1 font-semibold">
+              {{ receipt.walletName }} · {{ walletIdentityTitle }}
+            </p>
+          </div>
+          <div>
+            <p class="text-slate">Ethereum block</p>
+            <p class="mt-1 font-semibold">
+              {{ receipt.blockNumber }} ·
+              <time :datetime="receipt.blockTimestamp">
+                Loaded {{ blockLoadedAtLabel }}
+              </time>
+            </p>
+          </div>
+          <div>
+            <p class="text-slate">Balance calls</p>
+            <p class="mt-1 font-semibold">
+              {{ receipt.callsSucceeded }}/{{ receipt.callsAttempted }}
+              succeeded
+            </p>
+          </div>
+          <div>
+            <p class="text-slate">Privacy</p>
+            <p class="mt-1 font-semibold text-moss">
+              No account, balance, or request was posted to Powerrr.
+            </p>
+          </div>
+        </div>
+      </details>
+    </div>
   </main>
 </template>

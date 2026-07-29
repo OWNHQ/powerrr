@@ -514,7 +514,7 @@ export const protocolSourcePolicies: ProtocolSourcePolicy[] = [
     priority: [
       {
         source: "on-chain",
-        label: "PublicNode curated registry batch reads",
+        label: "Ethereum mainnet curated registry batch reads",
         envKey: "ETHEREUM_RPC_URL",
         requiredForExactQuote: true,
       },

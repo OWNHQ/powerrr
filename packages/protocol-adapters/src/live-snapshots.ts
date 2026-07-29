@@ -39,6 +39,7 @@ export type LiveProtocolSnapshot = {
   rateSourceId?: string;
   existingDebtUsd: number;
   availableLiquidityUsd: number;
+  minimumBorrowUsd?: number;
   source: string;
   sourceType: QuoteProvenance["sourceType"];
   freshnessSeconds?: number;
@@ -260,10 +261,15 @@ export function quoteCompoundLiveSnapshot(
     safetyBuffer: safetyBufferForProfile(input.safetyProfile),
   });
 
+  const minimumBorrowUsd = Math.max(0, input.minimumBorrowUsd ?? 0);
+  const belowMinimum =
+    capacity.safeBorrowUsd > 0 &&
+    input.existingDebtUsd + capacity.safeBorrowUsd < minimumBorrowUsd;
+
   return buildLiveQuote({
     input,
     theoreticalBorrowUsd: capacity.theoreticalBorrowUsd,
-    safeBorrowUsd: capacity.safeBorrowUsd,
+    safeBorrowUsd: belowMinimum ? 0 : capacity.safeBorrowUsd,
     liquidationRisk: "ltv-threshold",
     collateralUsed: input.collateral.map((item) => ({
       token: item.token,
@@ -273,7 +279,14 @@ export function quoteCompoundLiveSnapshot(
       liquidationThreshold: item.liquidateCollateralFactor,
     })),
     healthFactor: capacity.healthFactor,
-    warnings: input.warnings ?? [],
+    warnings: [
+      ...(input.warnings ?? []),
+      ...(belowMinimum
+        ? [
+            `Maximum projected debt is below Compound's ${roundUsd(minimumBorrowUsd)} USDC minimum borrow.`,
+          ]
+        : []),
+    ],
   });
 }
 
@@ -303,6 +316,9 @@ function buildLiveQuote(input: {
       input.safeBorrowUsd === null ? null : roundUsd(input.safeBorrowUsd),
     existingDebtUsd: roundUsd(input.input.existingDebtUsd),
     availableLiquidityUsd: roundUsd(input.input.availableLiquidityUsd),
+    ...(input.input.minimumBorrowUsd === undefined
+      ? {}
+      : { minimumBorrowUsd: roundUsd(input.input.minimumBorrowUsd) }),
     targetBorrowAsset: input.input.targetBorrowAsset,
     rateType: input.input.rateType ?? "variable",
     indicativeApr: input.input.indicativeApr ?? null,

@@ -4,25 +4,33 @@ Powerrr treats repayment capacity and collateral recovery as separate lines of d
 
 ## Public borrowing comparison
 
-Aave, Spark, Compound, and Morpho use protocol-threshold calculations. For a
-selected amount, Powerrr adds existing and proposed debt, applies each quote's
-collateral factors and liquidation thresholds, and displays projected LTV,
-health factor or liquidation ratio, borrowing-power usage, and the proportional
-collateral decline that reaches liquidation. Those values describe a boundary;
-they are not a forecast or probability of liquidation.
+Aave, Spark, Compound, and Morpho use protocol-threshold calculations. The
+final comparison displays the collateral included in the estimate, starting
+debt, projected total debt, the rate with its APR or APY convention, projected
+LTV, the value-weighted borrow limit, the value-weighted liquidation threshold,
+and a common liquidation safety ratio. The ratio is weighted liquidation
+capacity divided by projected debt, so `1.00` is the protocol boundary.
 
-OWN is intentionally different. The public opportunity uses a versioned,
-collateral-only policy with eligible assets, advance rates, valuation haircuts,
-concentration limits, and a maximum ticket. It does not use borrower grades or
-expert-judgment PD assumptions. Verified funding is stored separately from
-potential capacity.
+Powerrr assigns operational proximity labels to make amount changes visible:
+`wide` at or above `1.60`, `reduced` from `1.20` through `1.59`, `thin` above
+`1.00` and below `1.20`, and `at/above threshold` at or below `1.00`. These are
+not probabilities, personalized recommendations, or universal safety bands.
+Appropriate distance from liquidation still depends on collateral, price
+correlation, volatility, oracle behavior, and the user's circumstances.
 
-OWN requests use a fixed duration and time-based default. Price changes alone do
-not automatically liquidate the collateral. If repayment is not made by
-maturity and the loan defaults, the lender may claim collateral under the final
-agreement. The public UI therefore shows indicative LTV, fixed APR, duration,
-estimated total repayment, and funding state—not a health factor or liquidation
-probability for OWN.
+Wallet-estimate mode models a new position and does not include existing debt
+the wallet may already have in a protocol. Existing-position mode includes the
+debt reported by the adapter and labels it explicitly.
+
+The provider-card estimate is not the raw protocol maximum. `safeBorrowUsd`
+applies Powerrr's balanced safety profile and available-liquidity constraint, so
+it can be lower than the displayed value-weighted protocol borrow limit.
+
+OWN is intentionally different. Its underlying provisional model remains
+versioned for policy work, but the public app does not publish numeric capacity,
+APR, duration, or repayment projections until credit policy, funding limits,
+and the contractual repayment convention are approved. The public route is
+shown only as an assessment requiring review.
 
 ## Borrower and facility view
 

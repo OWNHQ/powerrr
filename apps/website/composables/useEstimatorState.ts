@@ -1,5 +1,6 @@
 import type {
   BorrowOpportunity,
+  HexAddress,
   OwnLeadStatusResponse,
   PortfolioAsset,
   PortfolioResponse,
@@ -9,10 +10,12 @@ import type {
   QuoteResponse,
 } from "@powerrr/shared-types";
 import { useMutation } from "@tanstack/vue-query";
-import { calculatePooledBorrowPreview } from "../utils/borrow-preview";
 import {
-  amountForUtilization,
-  chooseDefaultProviderId,
+  calculatePooledBorrowPreview,
+  pooledRiskDescription,
+  pooledRiskTitle,
+} from "../utils/borrow-preview";
+import {
   formatUsdValue,
   friendlyEstimatorError,
   sortAssetsByUsdValue,
@@ -23,10 +26,19 @@ import {
   type WebsiteQuoteGroup,
 } from "../utils/quote-row";
 
+export type EstimatorStage = "assets" | "terms" | "options";
+
 type EstimatorResult = {
   quote: QuoteResponse;
   portfolio: PortfolioResponse;
 };
+
+type EstimatorMutationInput = {
+  request: QuoteRequest;
+  refresh?: boolean;
+};
+
+type PendingAction = "initial" | "filter" | "refresh" | null;
 
 type ProviderItem = {
   id: "aave" | "sparklend" | "compound-iii" | "morpho-blue";
@@ -42,25 +54,33 @@ export function useEstimatorState() {
   const configuredFixtureMode =
     String(config.public.powerrrDataMode) === "fixtures";
   const input = ref(configuredFixtureMode ? "powerrr.eth" : "");
-  const selectedProviderId = ref<string>("");
-  const borrowAmountUsd = ref(0);
-  const walletError = ref("");
+  const addressError = ref("");
+  const stageError = ref("");
+  const refreshError = ref("");
+  const refreshComplete = ref(false);
   const showSearch = ref(!configuredFixtureMode);
   const showOwnLead = ref(false);
-  const assetsExpanded = ref(false);
   const ownLeadStatus = ref<OwnLeadStatusResponse | null>(null);
-  const loadingOwnLeadStatus = ref(true);
   const landingInput = ref<HTMLInputElement | null>(null);
-  const resultSummary = ref<{
-    focus: (options?: FocusOptions) => void;
-  } | null>(null);
+  const resultSummary = ref<{ focus: (options?: FocusOptions) => void } | null>(
+    null,
+  );
+  const stageHeading = ref<HTMLElement | null>(null);
+  const currentStage = ref<EstimatorStage>("assets");
+  const pendingAction = ref<PendingAction>(null);
+  const selectedCollateralTokens = ref<string[]>([]);
+  const selectedProviderId = ref("");
+  const borrowAmountUsd = ref(0);
+  const discoveryResult = shallowRef<EstimatorResult | null>(null);
+  const activeResult = shallowRef<EstimatorResult | null>(null);
   let ownLeadStatusPromise: Promise<OwnLeadStatusResponse> | null = null;
+  let refreshConfirmationTimer: ReturnType<typeof setTimeout> | null = null;
 
   const examples = [
-    { label: "Diversified wallet", value: "powerrr.eth" },
-    { label: "Blue-chip wallet", value: "bluechip.eth" },
-    { label: "Stablecoin wallet", value: "stablecoin.eth" },
-    { label: "Empty wallet", value: "empty.powerrr.eth" },
+    { label: "Diversified example", value: "powerrr.eth" },
+    { label: "Blue-chip example", value: "bluechip.eth" },
+    { label: "Stablecoin example", value: "stablecoin.eth" },
+    { label: "Empty example", value: "empty.powerrr.eth" },
   ];
 
   const providerDefinitions: Array<Omit<ProviderItem, "group">> = [
@@ -75,47 +95,20 @@ export function useEstimatorState() {
   ];
 
   const estimatorMutation = useMutation({
-    mutationFn: async (request: QuoteRequest): Promise<EstimatorResult> => {
-      const quote = await api.quotes(request);
+    mutationFn: async ({
+      request,
+      refresh,
+    }: EstimatorMutationInput): Promise<EstimatorResult> => {
+      const quote = await api.quotes(request, { refresh });
       return { quote, portfolio: quote.portfolio };
-    },
-    onSuccess: async ({ quote }) => {
-      const status = await ensureOwnLeadStatus();
-      const opportunity = quote.opportunities?.find(
-        (item) => item.id === "own",
-      );
-      const externalProviders = groupWebsiteQuoteRows(quote.quotes).map(
-        (group) => ({
-          id: group.groupId,
-          capacityUsd: group.primaryQuote.safeBorrowUsd ?? 0,
-        }),
-      );
-      selectedProviderId.value = chooseDefaultProviderId({
-        ownPotentialUsd: opportunity?.potentialBorrowUsd ?? 0,
-        ownLeadEnabled: status.enabled,
-        providers: externalProviders,
-      });
-      const selectedCapacity =
-        selectedProviderId.value === "own"
-          ? (opportunity?.potentialBorrowUsd ?? 0)
-          : (externalProviders.find(
-              (provider) => provider.id === selectedProviderId.value,
-            )?.capacityUsd ?? 0);
-      borrowAmountUsd.value = amountForUtilization(selectedCapacity, 50);
-      walletError.value = "";
-      showSearch.value = false;
-      assetsExpanded.value = false;
-      await nextTick();
-      resultSummary.value?.focus({ preventScroll: true });
-      window.scrollTo({ top: 0, behavior: "smooth" });
     },
   });
 
-  const result = computed<EstimatorResult | null>(
-    () => estimatorMutation.data.value ?? null,
+  const quoteResponse = computed(() => activeResult.value?.quote ?? null);
+  const portfolio = computed(() => activeResult.value?.portfolio ?? null);
+  const discoveryPortfolio = computed(
+    () => discoveryResult.value?.portfolio ?? null,
   );
-  const quoteResponse = computed(() => result.value?.quote ?? null);
-  const portfolio = computed(() => result.value?.portfolio ?? null);
   const ownOpportunity = computed<BorrowOpportunity | null>(() => {
     return (
       quoteResponse.value?.opportunities?.find((item) => item.id === "own") ??
@@ -129,7 +122,7 @@ export function useEstimatorState() {
     return providerDefinitions
       .map((definition) => {
         const group = externalGroups.value.find(
-          (group) => group.groupId === definition.id,
+          (candidate) => candidate.groupId === definition.id,
         );
         return {
           ...definition,
@@ -145,8 +138,15 @@ export function useEstimatorState() {
       })
       .sort((a, b) => providerCapacity(b) - providerCapacity(a));
   });
+  const matchingProviderItems = computed(() =>
+    providerItems.value.filter(
+      (provider) =>
+        providerCapacity(provider) > 0 &&
+        providerCapacity(provider) >= borrowAmountUsd.value,
+    ),
+  );
   const bestExternalId = computed(
-    () => providerItems.value.find((item) => item.group)?.id ?? null,
+    () => matchingProviderItems.value[0]?.id ?? null,
   );
   const selectedProvider = computed(
     () =>
@@ -157,94 +157,84 @@ export function useEstimatorState() {
   const selectedQuote = computed<ProtocolBorrowQuote | null>(
     () => selectedProvider.value?.group?.primaryQuote ?? null,
   );
+  const usableAssets = computed(() =>
+    sortAssetsByUsdValue(
+      (discoveryPortfolio.value?.assets ?? []).filter(
+        (asset) => assetValueUsd(asset) > 0 && eligibleProviderCount(asset) > 0,
+      ),
+    ),
+  );
+  const selectedAssets = computed(() => {
+    const selected = new Set(
+      selectedCollateralTokens.value.map((token) => token.toLowerCase()),
+    );
+    return usableAssets.value.filter((asset) =>
+      selected.has(asset.token.toLowerCase()),
+    );
+  });
+  const usableCollateralUsd = computed(() => {
+    if (selectedCollateralTokens.value.length && quoteResponse.value) {
+      return (
+        quoteResponse.value.portfolioSummary.matchedCollateralUsd ??
+        selectedAssets.value.reduce(
+          (sum, asset) => sum + assetValueUsd(asset),
+          0,
+        )
+      );
+    }
+    return (
+      discoveryResult.value?.quote.portfolioSummary.matchedCollateralUsd ??
+      usableAssets.value.reduce((sum, asset) => sum + assetValueUsd(asset), 0)
+    );
+  });
+  const isOwnActionable = computed(() => false);
+  const isOwnMatching = computed(
+    () =>
+      isOwnActionable.value &&
+      (ownOpportunity.value?.potentialBorrowUsd ?? 0) >= borrowAmountUsd.value,
+  );
+  const maximumAvailableUsd = computed(() => {
+    const capacities = providerItems.value.map(providerCapacity);
+    if (isOwnActionable.value) {
+      capacities.push(ownOpportunity.value?.potentialBorrowUsd ?? 0);
+    }
+    return Math.max(0, ...capacities);
+  });
   const maxBorrowUsd = computed(() => {
-    if (selectedProviderId.value === "own") {
+    if (selectedProviderId.value === "own" && isOwnMatching.value) {
       return ownOpportunity.value?.potentialBorrowUsd ?? 0;
     }
     return selectedQuote.value?.safeBorrowUsd ?? 0;
   });
-  const usableAssets = computed(() =>
-    sortAssetsByUsdValue(
-      (portfolio.value?.assets ?? []).filter((asset) => {
-        return assetValueUsd(asset) > 0 && eligibleProviderCount(asset) > 0;
-      }),
-    ),
-  );
-  const usableCollateralUsd = computed(
-    () =>
-      quoteResponse.value?.portfolioSummary.matchedCollateralUsd ??
-      usableAssets.value.reduce((sum, asset) => sum + assetValueUsd(asset), 0),
-  );
-  const conversionRequiredAssets = computed(() =>
-    usableAssets.value.filter((asset) => asset.requiredAction === "wrap"),
-  );
   const pooledPreview = computed(() => {
     return selectedQuote.value
       ? calculatePooledBorrowPreview(selectedQuote.value, borrowAmountUsd.value)
       : null;
   });
-  const ownCollateralUsd = computed(() => {
-    return (
-      ownOpportunity.value?.collateralUsed.reduce(
-        (sum, item) => sum + item.valueUsd,
-        0,
-      ) ?? 0
-    );
-  });
-  const ownLtv = computed(() =>
-    ownCollateralUsd.value > 0
-      ? borrowAmountUsd.value / ownCollateralUsd.value
-      : 0,
-  );
-  const ownTotalRepayment = computed(() => {
-    const opportunity = ownOpportunity.value;
-    if (!opportunity) return 0;
-    return (
-      borrowAmountUsd.value *
-      (1 + (opportunity.indicativeApr * opportunity.termMonths) / 12)
-    );
-  });
+  const ownTotalRepayment = computed(() => 0);
   const selectedOwnFundingLabel = computed(() => {
     const opportunity = ownOpportunity.value;
-    if (!opportunity || opportunity.potentialBorrowUsd <= 0) {
-      return "Unavailable";
+    if (!opportunity || opportunity.potentialBorrowUsd <= 0) return "";
+    if (borrowAmountUsd.value <= opportunity.availableNowUsd) {
+      return "Ready to review";
     }
-    if (
-      borrowAmountUsd.value > 0 &&
-      borrowAmountUsd.value <= opportunity.availableNowUsd
-    ) {
-      return "Available now";
-    }
-    return "Request required";
+    return "Tailored request";
   });
-  const selectedOwnFundingClass = computed(() => {
-    return selectedOwnFundingLabel.value === "Available now"
-      ? "bg-emerald-100 text-emerald-800"
-      : selectedOwnFundingLabel.value === "Unavailable"
-        ? "bg-slate-200 text-slate-700"
-        : "bg-amber-100 text-amber-900";
-  });
+  const selectedOwnFundingClass = computed(
+    () => "bg-surface text-own ring-1 ring-own/15",
+  );
   const selectedRiskTitle = computed(() => {
-    if (selectedProviderId.value === "own") {
-      return "Fixed-term maturity risk";
-    }
-    if (pooledPreview.value?.status === "comfortable") {
-      return "Comfortable buffer";
-    }
-    if (pooledPreview.value?.status === "watch") return "Watch your buffer";
-    return "Close to liquidation";
+    if (selectedProviderId.value === "own") return "Fixed-term repayment plan";
+    return pooledRiskTitle(pooledPreview.value?.riskBand ?? "none");
   });
   const selectedRiskDescription = computed(() => {
     if (selectedProviderId.value === "own") {
-      return "No automatic price-triggered liquidation; repayment is due by maturity.";
+      return "Repayments follow an onchain schedule. Collateral price changes alone do not trigger liquidation; failure to remain within the schedule can cause default.";
     }
-    if (pooledPreview.value?.status === "comfortable") {
-      return "The selected amount remains well above the protocol threshold.";
+    if (pooledPreview.value?.reasonCodes.includes("below-protocol-minimum")) {
+      return `The projected position is below this protocol's ${formatUsdValue(pooledPreview.value.minimumBorrowUsd)} minimum borrow.`;
     }
-    if (pooledPreview.value?.status === "watch") {
-      return "A market decline could move this position toward liquidation.";
-    }
-    return "This amount leaves little room before the liquidation threshold.";
+    return pooledRiskDescription(pooledPreview.value?.riskBand ?? "none");
   });
   const selectedProviderLabel = computed(() =>
     selectedProviderId.value === "own"
@@ -275,13 +265,6 @@ export function useEstimatorState() {
       compactAddress(quoteResponse.value?.resolvedAddress),
   );
   const isDemoData = computed(() => quoteResponse.value?.dataMode !== "live");
-  const isOwnActionable = computed(() =>
-    Boolean(
-      ownOpportunity.value &&
-      ownOpportunity.value.potentialBorrowUsd > 0 &&
-      ownLeadStatus.value?.enabled,
-    ),
-  );
   const actionableProviderCount = computed(
     () =>
       providerItems.value.filter((provider) => providerCapacity(provider) > 0)
@@ -292,51 +275,75 @@ export function useEstimatorState() {
       (provider) => provider.availability?.status === "unavailable",
     ),
   );
-  const hasActionableSelection = computed(() => maxBorrowUsd.value > 0);
-  const utilizationPercent = computed({
-    get: () => utilizationForAmount(maxBorrowUsd.value, borrowAmountUsd.value),
-    set: (percent: number) => {
-      borrowAmountUsd.value = amountForUtilization(maxBorrowUsd.value, percent);
-    },
-  });
-  const ownUnavailableReason = computed(() => {
-    if (!ownOpportunity.value || ownOpportunity.value.potentialBorrowUsd <= 0) {
-      return "Not eligible for this wallet";
-    }
-    if (loadingOwnLeadStatus.value) return "Checking request availability";
-    return ownLeadStatus.value?.reason || "Requests are temporarily closed";
-  });
-  const estimateFreshnessLabel = computed(() => {
-    if (isDemoData.value) return "Demo data";
+  const hasActionableSelection = computed(
+    () => selectedProviderId.value.length > 0 && maxBorrowUsd.value > 0,
+  );
+  const utilizationPercent = computed(() =>
+    utilizationForAmount(maxBorrowUsd.value, borrowAmountUsd.value),
+  );
+  const hasStaleEstimate = computed(() => {
     const response = quoteResponse.value;
-    if (!response) return "Live Ethereum estimate";
-    const measuredAges = response.observations
-      .map((observation) => observation.ageSeconds)
-      .filter((age): age is number => age !== undefined);
-    const sourceAge = measuredAges.length ? Math.max(...measuredAges) : null;
-    const cacheLabel =
-      response.cache.status === "hit"
-        ? `cached ${formatAge(response.cache.ageSeconds)}`
-        : "live read";
-    const sourceLabel =
-      sourceAge === null
-        ? "freshness unknown"
-        : `oldest source ${formatAge(sourceAge)}`;
-    return `${cacheLabel} · block ${response.blockNumber} · ${sourceLabel}`;
+    if (!response || isDemoData.value) return false;
+    return (
+      response.observations.some(
+        (observation) => observation.freshness === "stale",
+      ) ||
+      response.quotes.some(
+        (quote) =>
+          quote.stale ||
+          quote.provenance.some(
+            (provenance) => provenance.freshnessStatus === "stale",
+          ),
+      )
+    );
   });
+  const staleEstimateLabel = computed(() => {
+    if (!hasStaleEstimate.value) return "";
+    const ages = [
+      ...(quoteResponse.value?.observations.map(
+        (observation) => observation.ageSeconds,
+      ) ?? []),
+      ...(quoteResponse.value?.quotes.flatMap((quote) =>
+        quote.provenance.map((provenance) => provenance.freshnessSeconds),
+      ) ?? []),
+    ].filter((age): age is number => age !== undefined);
+    return ages.length
+      ? `Some rates are ${formatAge(Math.max(...ages))} old`
+      : "Some rates need refreshing";
+  });
+  const amountIsValid = computed(
+    () =>
+      borrowAmountUsd.value > 0 &&
+      borrowAmountUsd.value <= maximumAvailableUsd.value,
+  );
   const riskAnnouncement = computed(() =>
     hasActionableSelection.value
-      ? `${selectedRiskTitle.value}. ${Math.round(utilizationPercent.value)} percent of estimated borrowing power selected.`
-      : "Select an available provider to review an amount and risk.",
+      ? `${selectedRiskTitle.value}. The amount reviewed is ${Math.round(utilizationPercent.value)} percent of Powerrr's estimated path limit.`
+      : "Select a borrowing path to review its risk.",
+  );
+  const isInitialLoading = computed(
+    () =>
+      pendingAction.value === "initial" && estimatorMutation.isPending.value,
+  );
+  const isFiltering = computed(
+    () => pendingAction.value === "filter" && estimatorMutation.isPending.value,
+  );
+  const isRefreshing = computed(
+    () =>
+      pendingAction.value === "refresh" && estimatorMutation.isPending.value,
   );
 
-  watch(maxBorrowUsd, (maximum) => {
-    if (borrowAmountUsd.value > maximum) {
-      borrowAmountUsd.value = amountForUtilization(maximum, 50);
+  watch(borrowAmountUsd, () => {
+    stageError.value = "";
+    if (
+      selectedProviderId.value &&
+      borrowAmountUsd.value > maxBorrowUsd.value
+    ) {
+      selectedProviderId.value = "";
     }
   });
 
-  function buildRequest(): QuoteRequest {
+  function buildRequest(collateralTokens?: string[]): QuoteRequest {
     const value = input.value.trim();
     const isAddress = /^0x[a-fA-F0-9]{40}$/.test(value);
     return {
@@ -345,109 +352,213 @@ export function useEstimatorState() {
       mode: "wallet-estimate",
       safetyProfile: "balanced",
       targetBorrowAssets: ["USDC"],
+      ...(collateralTokens?.length
+        ? { collateralTokens: collateralTokens as HexAddress[] }
+        : {}),
     };
   }
 
-  function submit(): void {
+  async function submit(): Promise<void> {
     if (!input.value.trim()) {
-      walletError.value = "Enter an Ethereum address or ENS name.";
-      nextTick(() => landingInput.value?.focus());
+      addressError.value = "Enter an Ethereum address or ENS name.";
+      await nextTick();
+      landingInput.value?.focus();
       return;
     }
-    walletError.value = "";
-    estimatorMutation.mutate(buildRequest());
+    addressError.value = "";
+    refreshError.value = "";
+    clearRefreshConfirmation();
+    stageError.value = "";
+    pendingAction.value = "initial";
+    try {
+      const response = await estimatorMutation.mutateAsync({
+        request: buildRequest(),
+      });
+      discoveryResult.value = response;
+      activeResult.value = response;
+      currentStage.value = "assets";
+      selectedCollateralTokens.value = [];
+      selectedProviderId.value = "";
+      borrowAmountUsd.value = 0;
+      showSearch.value = false;
+      await ensureOwnLeadStatus();
+      await focusResult();
+    } catch {
+      // The mutation error is rendered by the page.
+    } finally {
+      pendingAction.value = null;
+    }
+  }
+
+  async function continueFromAssets(): Promise<void> {
+    if (!selectedCollateralTokens.value.length) {
+      stageError.value = "Select at least one collateral asset to continue.";
+      return;
+    }
+    stageError.value = "";
+    pendingAction.value = "filter";
+    try {
+      activeResult.value = await estimatorMutation.mutateAsync({
+        request: buildRequest(selectedCollateralTokens.value),
+      });
+      selectedProviderId.value = "";
+      borrowAmountUsd.value = 0;
+      currentStage.value = "terms";
+      await focusStage();
+    } catch {
+      stageError.value = friendlyEstimatorError(estimatorMutation.error.value);
+    } finally {
+      pendingAction.value = null;
+    }
+  }
+
+  function continueFromTerms(): void {
+    if (!amountIsValid.value) {
+      stageError.value =
+        borrowAmountUsd.value <= 0
+          ? "Enter the amount of USDC you want to borrow."
+          : `Enter an amount up to ${formatUsd(maximumAvailableUsd.value)}.`;
+      return;
+    }
+    stageError.value = "";
+    selectedProviderId.value = "";
+    currentStage.value = "options";
+    void focusStage();
+  }
+
+  function setAssetSelected(token: string, selected: boolean): void {
+    const existing = new Set(selectedCollateralTokens.value);
+    if (selected) existing.add(token);
+    else existing.delete(token);
+    selectedCollateralTokens.value = [...existing];
+    stageError.value = "";
+  }
+
+  function goToStage(stage: EstimatorStage): void {
+    if (stage === "assets") {
+      currentStage.value = stage;
+    } else if (stage === "terms" && selectedCollateralTokens.value.length) {
+      currentStage.value = stage;
+    } else if (stage === "options" && amountIsValid.value) {
+      currentStage.value = stage;
+    } else {
+      return;
+    }
+    stageError.value = "";
+    void focusStage();
+  }
+
+  async function refreshEstimate(): Promise<void> {
+    if (estimatorMutation.isPending.value) return;
+    refreshError.value = "";
+    clearRefreshConfirmation();
+    pendingAction.value = "refresh";
+    const requestedStage = currentStage.value;
+    const requestedTokens = [...selectedCollateralTokens.value];
+    try {
+      const refreshesDiscovery =
+        requestedStage === "assets" || !requestedTokens.length;
+      const refreshed = await estimatorMutation.mutateAsync({
+        request: buildRequest(refreshesDiscovery ? undefined : requestedTokens),
+        refresh: true,
+      });
+      if (refreshesDiscovery) discoveryResult.value = refreshed;
+
+      const availableTokens = new Set(
+        refreshed.portfolio.assets.map((asset) => asset.token.toLowerCase()),
+      );
+      selectedCollateralTokens.value = requestedTokens.filter((token) =>
+        availableTokens.has(token.toLowerCase()),
+      );
+
+      activeResult.value = refreshed;
+      if (
+        !selectedCollateralTokens.value.length &&
+        requestedStage !== "assets"
+      ) {
+        const discovery = await estimatorMutation.mutateAsync({
+          request: buildRequest(),
+          refresh: true,
+        });
+        discoveryResult.value = discovery;
+        activeResult.value = discovery;
+      }
+
+      if (
+        requestedStage === "assets" ||
+        !selectedCollateralTokens.value.length
+      ) {
+        if (
+          !selectedCollateralTokens.value.length &&
+          requestedStage !== "assets"
+        ) {
+          currentStage.value = "assets";
+          selectedProviderId.value = "";
+          borrowAmountUsd.value = 0;
+          stageError.value =
+            "Your previously selected collateral changed. Choose assets again.";
+        }
+      } else {
+        await nextTick();
+        if (borrowAmountUsd.value > maximumAvailableUsd.value) {
+          currentStage.value = "terms";
+          selectedProviderId.value = "";
+          stageError.value =
+            "Current capacity changed. Adjust the borrowing amount to continue.";
+        } else if (
+          selectedProviderId.value === "own"
+            ? !isOwnMatching.value
+            : !matchingProviderItems.value.some(
+                (provider) => provider.id === selectedProviderId.value,
+              )
+        ) {
+          selectedProviderId.value = "";
+        }
+      }
+      showRefreshConfirmation();
+    } catch {
+      refreshError.value =
+        "We couldn’t refresh the estimate. The previous result is still shown.";
+    } finally {
+      pendingAction.value = null;
+    }
   }
 
   function retryEstimator(): void {
     estimatorMutation.reset();
-    walletError.value = "";
+    discoveryResult.value = null;
+    activeResult.value = null;
+    addressError.value = "";
+    stageError.value = "";
+    refreshError.value = "";
+    clearRefreshConfirmation();
     showSearch.value = true;
-    nextTick(() => {
-      landingInput.value?.focus();
-      landingInput.value?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    });
+    void nextTick(() => landingInput.value?.focus());
   }
 
-  function openWalletSearch(): void {
+  function openAddressSearch(): void {
     showSearch.value = true;
-    nextTick(() => {
-      landingInput.value?.focus();
-      landingInput.value?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    });
+    void nextTick(() => landingInput.value?.focus());
   }
 
-  function toggleWalletSearch(): void {
-    if (showSearch.value) {
-      showSearch.value = false;
-      return;
-    }
-    openWalletSearch();
-  }
-
-  async function connectWallet(): Promise<void> {
-    walletError.value = "";
-    if (!window.ethereum) {
-      walletError.value =
-        "No browser wallet provider found. You can paste an address or ENS instead.";
-      showSearch.value = true;
-      return;
-    }
-    try {
-      const accounts = await window.ethereum.request<string[]>({
-        method: "eth_requestAccounts",
-      });
-      if (accounts[0]) {
-        input.value = accounts[0];
-        submit();
-      }
-    } catch {
-      walletError.value = "Wallet connection was not completed.";
-    }
+  function cancelAddressSearch(): void {
+    showSearch.value = false;
+    addressError.value = "";
   }
 
   function useExample(value: string): void {
     input.value = value;
-    submit();
+    void submit();
   }
 
   function selectProvider(id: string, capacity: number): void {
-    if (capacity <= 0) return;
-    if (id === "own" && !isOwnActionable.value) return;
-    const previousUtilization = hasActionableSelection.value
-      ? utilizationPercent.value
-      : 50;
+    if (borrowAmountUsd.value <= 0 || capacity < borrowAmountUsd.value) return;
+    if (id === "own" && !isOwnMatching.value) return;
     selectedProviderId.value = id;
-    borrowAmountUsd.value = amountForUtilization(capacity, previousUtilization);
   }
 
   function providerCapacity(item: ProviderItem): number {
     return item.group?.primaryQuote.safeBorrowUsd ?? 0;
-  }
-
-  function providerStatusLabel(opportunity: BorrowOpportunity): string {
-    const labels: Record<BorrowOpportunity["fundingStatus"], string> = {
-      "available-now": "Available now",
-      limited: "Limited availability",
-      "request-required": "Request required",
-      unavailable: "Unavailable",
-    };
-    return labels[opportunity.fundingStatus];
-  }
-
-  function providerStatusClass(opportunity: BorrowOpportunity): string {
-    if (opportunity.fundingStatus === "available-now") {
-      return "bg-emerald-100 text-emerald-800";
-    }
-    if (opportunity.fundingStatus === "unavailable") {
-      return "bg-slate-100 text-slate";
-    }
-    return "bg-amber-100 text-amber-900";
   }
 
   function assetValueUsd(asset: PortfolioAsset): number {
@@ -495,47 +606,83 @@ export function useEstimatorState() {
     if (ownLeadStatus.value) return ownLeadStatus.value;
     ownLeadStatusPromise ??= api.ownLeadStatus().catch(() => ({
       enabled: false,
-      reason:
-        "OWN offer requests are temporarily unavailable. Please try again later.",
+      reason: "OWN request intake could not be confirmed.",
     }));
-    try {
-      ownLeadStatus.value = await ownLeadStatusPromise;
-      return ownLeadStatus.value;
-    } finally {
-      loadingOwnLeadStatus.value = false;
+    ownLeadStatus.value = await ownLeadStatusPromise;
+    return ownLeadStatus.value;
+  }
+
+  async function focusResult(): Promise<void> {
+    await nextTick();
+    resultSummary.value?.focus({ preventScroll: true });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function focusStage(): Promise<void> {
+    await nextTick();
+    stageHeading.value?.focus({ preventScroll: true });
+    stageHeading.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function clearRefreshConfirmation(): void {
+    refreshComplete.value = false;
+    if (refreshConfirmationTimer) {
+      clearTimeout(refreshConfirmationTimer);
+      refreshConfirmationTimer = null;
     }
+  }
+
+  function showRefreshConfirmation(): void {
+    refreshComplete.value = true;
+    refreshConfirmationTimer = setTimeout(() => {
+      refreshComplete.value = false;
+      refreshConfirmationTimer = null;
+    }, 4_000);
   }
 
   onMounted(async () => {
     await ensureOwnLeadStatus();
-    if (configuredFixtureMode) submit();
+    if (configuredFixtureMode) await submit();
+  });
+
+  onBeforeUnmount(() => {
+    if (refreshConfirmationTimer) clearTimeout(refreshConfirmationTimer);
   });
 
   return {
     configuredFixtureMode,
     input,
-    selectedProviderId,
-    borrowAmountUsd,
-    walletError,
+    addressError,
+    stageError,
+    refreshError,
     showSearch,
     showOwnLead,
-    assetsExpanded,
     ownLeadStatus,
     landingInput,
     resultSummary,
+    stageHeading,
+    currentStage,
+    selectedCollateralTokens,
+    selectedProviderId,
+    borrowAmountUsd,
     examples,
     estimatorMutation,
+    isInitialLoading,
+    isFiltering,
+    isRefreshing,
+    refreshComplete,
     quoteResponse,
     portfolio,
     ownOpportunity,
     providerItems,
+    matchingProviderItems,
     bestExternalId,
+    maximumAvailableUsd,
     maxBorrowUsd,
     usableAssets,
+    selectedAssets,
     usableCollateralUsd,
-    conversionRequiredAssets,
     pooledPreview,
-    ownLtv,
     ownTotalRepayment,
     selectedOwnFundingLabel,
     selectedOwnFundingClass,
@@ -549,23 +696,27 @@ export function useEstimatorState() {
     displayAddress,
     isDemoData,
     isOwnActionable,
+    isOwnMatching,
     actionableProviderCount,
     hasProviderOutage,
     hasActionableSelection,
     utilizationPercent,
-    ownUnavailableReason,
-    estimateFreshnessLabel,
+    hasStaleEstimate,
+    staleEstimateLabel,
+    amountIsValid,
     riskAnnouncement,
     submit,
+    continueFromAssets,
+    continueFromTerms,
+    setAssetSelected,
+    goToStage,
+    refreshEstimate,
     retryEstimator,
-    openWalletSearch,
-    toggleWalletSearch,
-    connectWallet,
+    openAddressSearch,
+    cancelAddressSearch,
     useExample,
     selectProvider,
     providerCapacity,
-    providerStatusLabel,
-    providerStatusClass,
     formatUsd,
     formatPercent,
     friendlyEstimatorError,

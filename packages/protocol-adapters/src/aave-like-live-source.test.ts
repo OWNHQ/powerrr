@@ -18,6 +18,8 @@ const abi = parseAbi([
   "function getReserveTokensAddresses(address asset) view returns (address aTokenAddress,address stableDebtTokenAddress,address variableDebtTokenAddress)",
   "function getReserveData(address asset) view returns (uint256 unbacked,uint256 accruedToTreasuryScaled,uint256 totalAToken,uint256 totalStableDebt,uint256 totalVariableDebt,uint256 liquidityRate,uint256 variableBorrowRate,uint256 stableBorrowRate,uint256 averageStableBorrowRate,uint256 liquidityIndex,uint256 variableBorrowIndex,uint40 lastUpdateTimestamp)",
   "function getReserveCaps(address asset) view returns (uint256 borrowCap,uint256 supplyCap)",
+  "function getPaused(address asset) view returns (bool)",
+  "function getDebtCeiling(address asset) view returns (uint256)",
   "function getAssetPrice(address asset) view returns (uint256)",
   "function BASE_CURRENCY_UNIT() view returns (uint256)",
   "function balanceOf(address account) view returns (uint256)",
@@ -31,6 +33,7 @@ const zero = "0x0000000000000000000000000000000000000000" as const;
 
 describe("Aave-like live source", () => {
   it("builds wallet capacity only from on-chain configuration, oracle, and liquidity reads", async () => {
+    const rpc = createRpcMock();
     const snapshot = await loadAaveLikeSnapshot({
       address: account,
       chainId: 1,
@@ -50,7 +53,7 @@ describe("Aave-like live source", () => {
         },
       ],
       now: new Date("2026-07-15T12:00:00.000Z"),
-      rpc: createRpcMock(),
+      rpc,
       deployment: AAVE_V3_ETHEREUM,
     });
 
@@ -71,16 +74,82 @@ describe("Aave-like live source", () => {
         liquidationThreshold: 0.83,
       }),
     ]);
+    expect(new Set(rpc.blockTags)).toEqual(new Set(["0x160d6f0"]));
+  });
+
+  it("limits borrowable liquidity to the remaining target reserve cap", async () => {
+    const snapshot = await loadAaveLikeSnapshot({
+      address: account,
+      chainId: 1,
+      mode: "wallet-estimate",
+      safetyProfile: "balanced",
+      targetBorrowAssets: ["USDC"],
+      portfolio: [
+        {
+          chainId: 1,
+          token: weth,
+          symbol: "WETH",
+          name: "Wrapped Ether",
+          decimals: 18,
+          balance: "2",
+          balanceRaw: "2000000000000000000",
+          protocolEligible: { "aave-v3": true },
+        },
+      ],
+      rpc: createRpcMock({
+        targetBorrowCap: 500_000n,
+        targetDebtRaw: 499_000_000_000n,
+      }),
+      deployment: AAVE_V3_ETHEREUM,
+    });
+
+    expect(snapshot.availableLiquidityUsd).toBe(1_000);
+  });
+
+  it("excludes isolation-mode collateral until its transaction constraints are modeled", async () => {
+    const snapshot = await loadAaveLikeSnapshot({
+      address: account,
+      chainId: 1,
+      mode: "wallet-estimate",
+      safetyProfile: "balanced",
+      targetBorrowAssets: ["USDC"],
+      portfolio: [
+        {
+          chainId: 1,
+          token: weth,
+          symbol: "WETH",
+          name: "Wrapped Ether",
+          decimals: 18,
+          balance: "2",
+          balanceRaw: "2000000000000000000",
+          protocolEligible: { "aave-v3": true },
+        },
+      ],
+      rpc: createRpcMock({ isolatedWeth: true }),
+      deployment: AAVE_V3_ETHEREUM,
+    });
+
+    expect(snapshot.collateral).toEqual([]);
+    expect((snapshot.warnings ?? []).join(" ")).toContain("Isolation-mode");
   });
 });
 
-function createRpcMock(): CompoundLiveRpcClient {
+function createRpcMock(
+  input: {
+    isolatedWeth?: boolean;
+    targetBorrowCap?: bigint;
+    targetDebtRaw?: bigint;
+  } = {},
+): CompoundLiveRpcClient & { blockTags: string[] } {
+  const blockTags: string[] = [];
   return {
+    blockTags,
     async request<TResult>(request: {
       method: string;
       params?: unknown[];
     }): Promise<TResult> {
       if (request.method === "eth_blockNumber") return "0x160d6f0" as TResult;
+      blockTags.push(String(request.params?.[1]));
       const call = (request.params?.[0] ?? {}) as { to?: Address; data?: Hex };
       if (!call.to || !call.data) throw new Error("Invalid eth_call");
       const decoded = decodeFunctionData({ abi, data: call.data });
@@ -123,11 +192,12 @@ function createRpcMock(): CompoundLiveRpcClient {
         ]) as TResult;
       }
       if (decoded.functionName === "getReserveData") {
+        const asset = (decoded.args?.[0] as string).toLowerCase();
         return result("getReserveData", [
           0n,
           0n,
           0n,
-          0n,
+          asset === usdc.toLowerCase() ? (input.targetDebtRaw ?? 0n) : 0n,
           0n,
           0n,
           50_000_000_000_000_000_000_000_000n,
@@ -139,7 +209,20 @@ function createRpcMock(): CompoundLiveRpcClient {
         ]) as TResult;
       }
       if (decoded.functionName === "getReserveCaps") {
-        return result("getReserveCaps", [0n, 0n]) as TResult;
+        const asset = (decoded.args?.[0] as string).toLowerCase();
+        return result("getReserveCaps", [
+          asset === usdc.toLowerCase() ? (input.targetBorrowCap ?? 0n) : 0n,
+          0n,
+        ]) as TResult;
+      }
+      if (decoded.functionName === "getPaused") {
+        return result("getPaused", [false]) as TResult;
+      }
+      if (decoded.functionName === "getDebtCeiling") {
+        const asset = (decoded.args?.[0] as string).toLowerCase();
+        return result("getDebtCeiling", [
+          input.isolatedWeth && asset === weth.toLowerCase() ? 1n : 0n,
+        ]) as TResult;
       }
       if (decoded.functionName === "getAssetPrice") {
         const asset = (decoded.args?.[0] as string).toLowerCase();

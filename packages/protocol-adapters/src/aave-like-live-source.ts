@@ -23,6 +23,8 @@ const abi = parseAbi([
   "function getUserReserveData(address asset,address user) view returns (uint256 currentATokenBalance,uint256 currentStableDebt,uint256 currentVariableDebt,uint256 principalStableDebt,uint256 scaledVariableDebt,uint256 stableBorrowRate,uint256 liquidityRate,uint40 stableRateLastUpdated,bool usageAsCollateralEnabled)",
   "function getReserveData(address asset) view returns (uint256 unbacked,uint256 accruedToTreasuryScaled,uint256 totalAToken,uint256 totalStableDebt,uint256 totalVariableDebt,uint256 liquidityRate,uint256 variableBorrowRate,uint256 stableBorrowRate,uint256 averageStableBorrowRate,uint256 liquidityIndex,uint256 variableBorrowIndex,uint40 lastUpdateTimestamp)",
   "function getReserveCaps(address asset) view returns (uint256 borrowCap,uint256 supplyCap)",
+  "function getPaused(address asset) view returns (bool)",
+  "function getDebtCeiling(address asset) view returns (uint256)",
   "function getAssetPrice(address asset) view returns (uint256)",
   "function BASE_CURRENCY_UNIT() view returns (uint256)",
   "function balanceOf(address account) view returns (uint256)",
@@ -106,12 +108,11 @@ export async function loadAaveLikeSnapshot(
 ): Promise<AaveLikeLiveSnapshot & { kind: "aave-like" }> {
   const fetchedAt = input.now ?? new Date();
   const freshnessSeconds = sourceAgeSeconds(fetchedAt, input.blockTimestamp);
-  const blockTag = input.asOfBlock
-    ? `0x${BigInt(input.asOfBlock).toString(16)}`
-    : "latest";
   const blockHex = input.asOfBlock
     ? (`0x${BigInt(input.asOfBlock).toString(16)}` as Hex)
     : await input.rpc.request<Hex>({ method: "eth_blockNumber" });
+  // Resolve `latest` once, then pin every dependent read to that exact block.
+  const blockTag = blockHex;
   const [rawReserves, baseCurrencyUnit] = await Promise.all([
     call<unknown>(
       input.rpc,
@@ -159,6 +160,7 @@ export async function loadAaveLikeSnapshot(
     targetConfiguration,
     targetPriceRaw,
     targetCaps,
+    targetPaused,
   ] = await Promise.all([
     call<readonly [Address, Address, Address]>(
       input.rpc,
@@ -195,15 +197,24 @@ export async function loadAaveLikeSnapshot(
       [target.tokenAddress],
       blockTag,
     ),
+    call<boolean>(
+      input.rpc,
+      input.deployment.dataProvider,
+      "getPaused",
+      [target.tokenAddress],
+      blockTag,
+    ),
   ]);
+  const targetBorrowCapRaw =
+    targetCaps[0] * BigInt(10) ** targetConfiguration[0];
+  const targetDebtRaw = targetReserveData[3] + targetReserveData[4];
   const targetBorrowCapReached =
-    targetCaps[0] > ZERO &&
-    targetReserveData[3] + targetReserveData[4] >=
-      targetCaps[0] * BigInt(10) ** targetConfiguration[0];
+    targetCaps[0] > ZERO && targetDebtRaw >= targetBorrowCapRaw;
   if (
     !targetConfiguration[6] ||
     !targetConfiguration[8] ||
     targetConfiguration[9] ||
+    targetPaused ||
     targetPriceRaw <= ZERO ||
     targetBorrowCapReached
   ) {
@@ -221,46 +232,67 @@ export async function loadAaveLikeSnapshot(
   );
   const reserveRows = await Promise.all(
     candidateReserves.map(async (reserve) => {
-      const [configuration, priceRaw, userReserve, reserveData, reserveCaps] =
-        await Promise.all([
-          call<Configuration>(
-            input.rpc,
-            input.deployment.dataProvider,
-            "getReserveConfigurationData",
-            [reserve.tokenAddress],
-            blockTag,
-          ),
-          call<bigint>(
-            input.rpc,
-            input.deployment.oracle,
-            "getAssetPrice",
-            [reserve.tokenAddress],
-            blockTag,
-          ),
-          input.mode === "existing-position"
-            ? call<UserReserve>(
-                input.rpc,
-                input.deployment.dataProvider,
-                "getUserReserveData",
-                [reserve.tokenAddress, input.address],
-                blockTag,
-              )
-            : Promise.resolve(null),
-          call<ReserveData>(
-            input.rpc,
-            input.deployment.dataProvider,
-            "getReserveData",
-            [reserve.tokenAddress],
-            blockTag,
-          ),
-          call<ReserveCaps>(
-            input.rpc,
-            input.deployment.dataProvider,
-            "getReserveCaps",
-            [reserve.tokenAddress],
-            blockTag,
-          ),
-        ]);
+      const [
+        configuration,
+        priceRaw,
+        userReserve,
+        reserveData,
+        reserveCaps,
+        paused,
+        debtCeiling,
+      ] = await Promise.all([
+        call<Configuration>(
+          input.rpc,
+          input.deployment.dataProvider,
+          "getReserveConfigurationData",
+          [reserve.tokenAddress],
+          blockTag,
+        ),
+        call<bigint>(
+          input.rpc,
+          input.deployment.oracle,
+          "getAssetPrice",
+          [reserve.tokenAddress],
+          blockTag,
+        ),
+        input.mode === "existing-position"
+          ? call<UserReserve>(
+              input.rpc,
+              input.deployment.dataProvider,
+              "getUserReserveData",
+              [reserve.tokenAddress, input.address],
+              blockTag,
+            )
+          : Promise.resolve(null),
+        call<ReserveData>(
+          input.rpc,
+          input.deployment.dataProvider,
+          "getReserveData",
+          [reserve.tokenAddress],
+          blockTag,
+        ),
+        call<ReserveCaps>(
+          input.rpc,
+          input.deployment.dataProvider,
+          "getReserveCaps",
+          [reserve.tokenAddress],
+          blockTag,
+        ),
+        call<boolean>(
+          input.rpc,
+          input.deployment.dataProvider,
+          "getPaused",
+          [reserve.tokenAddress],
+          blockTag,
+        ),
+        call<bigint>(
+          input.rpc,
+          input.deployment.dataProvider,
+          "getDebtCeiling",
+          [reserve.tokenAddress],
+          blockTag,
+        ),
+      ]);
       const decimals = Number(configuration[0]);
       const priceUsd = Number(priceRaw) / Number(baseCurrencyUnit);
       const walletAsset = [...walletAssets.entries()].find(([token]) =>
@@ -292,6 +324,8 @@ export async function loadAaveLikeSnapshot(
         isCollateral,
         reserveData,
         reserveCaps,
+        paused,
+        debtCeiling,
       };
     }),
   );
@@ -300,6 +334,7 @@ export async function loadAaveLikeSnapshot(
       const supplyCapRaw =
         row.reserveCaps[1] * BigInt(10) ** row.configuration[0];
       const capAvailable =
+        input.mode === "existing-position" ||
         row.reserveCaps[1] === ZERO ||
         row.reserveData[2] + row.balanceRaw <= supplyCapRaw;
       return (
@@ -307,6 +342,8 @@ export async function loadAaveLikeSnapshot(
         row.isCollateral &&
         row.configuration[8] &&
         !row.configuration[9] &&
+        !row.paused &&
+        row.debtCeiling === ZERO &&
         row.configuration[1] > ZERO &&
         row.priceUsd > 0 &&
         capAvailable
@@ -320,6 +357,16 @@ export async function loadAaveLikeSnapshot(
       liquidationThreshold: Number(row.configuration[2]) / BPS,
     }));
   const targetDecimals = Number(targetConfiguration[0]);
+  const borrowCapRemainingRaw =
+    targetCaps[0] === ZERO
+      ? availableLiquidityRaw
+      : targetBorrowCapRaw > targetDebtRaw
+        ? targetBorrowCapRaw - targetDebtRaw
+        : ZERO;
+  const borrowableLiquidityRaw =
+    availableLiquidityRaw < borrowCapRemainingRaw
+      ? availableLiquidityRaw
+      : borrowCapRemainingRaw;
 
   return {
     kind: "aave-like",
@@ -337,7 +384,7 @@ export async function loadAaveLikeSnapshot(
     rateSourceId: `${input.deployment.protocolId}:variable-borrow-rate`,
     existingDebtUsd: reserveRows.reduce((sum, row) => sum + row.debtUsd, 0),
     availableLiquidityUsd:
-      Number(formatUnits(availableLiquidityRaw, targetDecimals)) *
+      Number(formatUnits(borrowableLiquidityRaw, targetDecimals)) *
       (Number(targetPriceRaw) / Number(baseCurrencyUnit)),
     source: `${input.deployment.protocolLabel} data provider and oracle on-chain reads`,
     sourceType: "on-chain",
@@ -355,13 +402,22 @@ export async function loadAaveLikeSnapshot(
       `Contract addresses are pinned to the protocol-owned address registry snapshot reviewed on 2026-07-15.`,
       "USD values use the deployment oracle and reserve-native decimals.",
       "Available liquidity is the target underlying balance held by its aToken contract.",
+      "Isolation-mode collateral is excluded until Powerrr models debt-ceiling consumption and isolated debt-asset compatibility end to end.",
+      "Standard protocol mode is assumed; eMode bonuses are not applied.",
     ],
-    warnings:
-      input.mode === "wallet-estimate"
+    warnings: [
+      ...(input.mode === "wallet-estimate"
         ? [
             "Wallet-estimate mode models supported wallet assets as newly supplied collateral; it is not a transaction preview.",
           ]
-        : [],
+        : []),
+      ...(reserveRows.some((row) => row.debtCeiling > ZERO)
+        ? ["Isolation-mode collateral was excluded from this estimate."]
+        : []),
+      ...(reserveRows.some((row) => row.paused)
+        ? ["Paused collateral reserves were excluded from this estimate."]
+        : []),
+    ],
     confidencePenalties: {
       sourcePenalty: 1,
       stalenessPenalty: 0,

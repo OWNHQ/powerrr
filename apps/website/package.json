@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "nuxt dev --host 127.0.0.1 --port 3000",
-    "build": "nuxt build",
+    "build": "nuxt generate",
+    "generate": "nuxt generate",
     "preview": "nuxt preview",
     "lint": "nuxt prepare && eslint . --max-warnings 0",
     "typecheck": "nuxt typecheck"
@@ -17,6 +18,7 @@
     "@powerrr/configs": "workspace:*",
     "@powerrr/engine-sdk": "workspace:*",
     "@powerrr/fixtures": "workspace:*",
+    "@powerrr/own-underwriter": "workspace:*",
     "@powerrr/portfolio": "workspace:*",
     "@powerrr/protocol-adapters": "workspace:*",
     "@powerrr/schemas": "workspace:*",

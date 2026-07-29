@@ -30,6 +30,9 @@ const compoundCometAbi = parseAbi([
   "function getBorrowRate(uint256 utilization) view returns (uint64)",
   "function baseScale() view returns (uint64)",
   "function priceScale() view returns (uint64)",
+  "function baseBorrowMin() view returns (uint256)",
+  "function isSupplyPaused() view returns (bool)",
+  "function isWithdrawPaused() view returns (bool)",
 ]);
 const erc20Abi = parseAbi([
   "function balanceOf(address account) view returns (uint256)",
@@ -64,10 +67,11 @@ export async function loadCompoundUsdcCometSnapshot(
   const fetchedAt = input.now ?? new Date();
   const freshnessSeconds = sourceAgeSeconds(fetchedAt, input.blockTimestamp);
   const cometAddress = input.cometAddress ?? COMPOUND_USDC_COMET_MAINNET;
-  const blockTag = blockTagFor(input.asOfBlock);
   const blockNumberHex = input.asOfBlock
     ? toHexBlockNumber(input.asOfBlock)
     : await input.rpc.request<Hex>({ method: "eth_blockNumber" });
+  // Resolve `latest` once, then pin Comet, price-feed, and ERC-20 reads.
+  const blockTag = blockNumberHex;
   const [
     numAssets,
     baseScale,
@@ -76,6 +80,9 @@ export async function loadCompoundUsdcCometSnapshot(
     totalBorrowRaw,
     utilization,
     existingDebtRaw,
+    baseBorrowMinRaw,
+    supplyPaused,
+    withdrawPaused,
   ] = await Promise.all([
     callComet<number>(input.rpc, cometAddress, "numAssets", [], blockTag),
     callComet<bigint>(input.rpc, cometAddress, "baseScale", [], blockTag),
@@ -83,14 +90,30 @@ export async function loadCompoundUsdcCometSnapshot(
     callComet<bigint>(input.rpc, cometAddress, "totalSupply", [], blockTag),
     callComet<bigint>(input.rpc, cometAddress, "totalBorrow", [], blockTag),
     callComet<bigint>(input.rpc, cometAddress, "getUtilization", [], blockTag),
-    callComet<bigint>(
+    input.mode === "existing-position"
+      ? callComet<bigint>(
+          input.rpc,
+          cometAddress,
+          "borrowBalanceOf",
+          [input.address],
+          blockTag,
+        )
+      : Promise.resolve(ZERO_BIGINT),
+    callComet<bigint>(input.rpc, cometAddress, "baseBorrowMin", [], blockTag),
+    callComet<boolean>(input.rpc, cometAddress, "isSupplyPaused", [], blockTag),
+    callComet<boolean>(
       input.rpc,
       cometAddress,
-      "borrowBalanceOf",
-      [input.address],
+      "isWithdrawPaused",
+      [],
       blockTag,
     ),
   ]);
+  if (supplyPaused || withdrawPaused) {
+    throw new Error(
+      `Compound III operations are paused (${supplyPaused ? "supply" : "withdraw"})`,
+    );
+  }
   const borrowRate = await callComet<bigint>(
     input.rpc,
     cometAddress,
@@ -144,7 +167,9 @@ export async function loadCompoundUsdcCometSnapshot(
           asset.borrowCollateralFactor <= ZERO_BIGINT ||
           asset.liquidateCollateralFactor <= ZERO_BIGINT ||
           (asset.supplyCap > ZERO_BIGINT &&
-            currentSupplyRaw + balanceRaw > asset.supplyCap)
+            (input.mode === "wallet-estimate"
+              ? currentSupplyRaw + balanceRaw
+              : currentSupplyRaw) > asset.supplyCap)
         ) {
           return null;
         }
@@ -185,6 +210,9 @@ export async function loadCompoundUsdcCometSnapshot(
   );
   const existingDebtUsd = Number(
     formatUnits(existingDebtRaw, decimalsFromScale(baseScale)),
+  );
+  const minimumBorrowUsd = Number(
+    formatUnits(baseBorrowMinRaw, decimalsFromScale(baseScale)),
   );
   const indicativeApr = Number(formatUnits(borrowRate, 18)) * SECONDS_PER_YEAR;
 
@@ -235,6 +263,7 @@ export async function loadCompoundUsdcCometSnapshot(
       liquidityPenalty: 0,
     },
     safetyProfile: input.safetyProfile,
+    minimumBorrowUsd,
     collateral,
   };
 }
@@ -299,10 +328,6 @@ async function callComet<TResult>(
     functionName,
     data: result,
   } as never) as TResult;
-}
-
-function blockTagFor(asOfBlock: string | undefined): string {
-  return asOfBlock ? toHexBlockNumber(asOfBlock) : "latest";
 }
 
 function toHexBlockNumber(value: string): Hex {

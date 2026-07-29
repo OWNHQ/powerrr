@@ -2,63 +2,109 @@ import { describe, expect, it } from "vitest";
 import {
   amountForUtilization,
   amountInputStep,
-  chooseDefaultProviderId,
   formatUsdValue,
   friendlyEstimatorError,
-  providerAvailabilityMessage,
+  ownFundingStatusLabel,
+  ownSupportsRequestedAmount,
+  providerRateLabel,
   sortAssetsByUsdValue,
+  summarizeEstimatorCapacity,
   utilizationForAmount,
 } from "./estimator-ux.js";
 
 describe("estimator UX helpers", () => {
-  it("prefers actionable OWN and otherwise selects the highest-capacity live provider", () => {
-    const providers = [
-      { id: "aave", capacityUsd: 20_000 },
-      { id: "compound", capacityUsd: 80_000 },
-    ];
+  it.each([
+    {
+      convention: "apr" as const,
+      value: 0.05,
+      expected: "5% variable APR",
+    },
+    {
+      convention: "apy" as const,
+      value: 0.05127,
+      expected: "5.1% variable APY",
+    },
+  ])("preserves the $convention rate convention in provider copy", (input) => {
+    expect(
+      providerRateLabel({
+        annualRate: {
+          value: input.value,
+          convention: input.convention,
+          rateType: "variable",
+          sourceId: "test",
+        },
+        indicativeApr: null,
+        rateType: "variable",
+      }),
+    ).toBe(input.expected);
+  });
 
+  it("keeps the legacy APR fallback explicit", () => {
     expect(
-      chooseDefaultProviderId({
-        ownPotentialUsd: 100_000,
-        ownLeadEnabled: true,
-        providers,
+      providerRateLabel({
+        annualRate: null,
+        indicativeApr: 0.065,
+        rateType: "fixed",
       }),
-    ).toBe("own");
-    expect(
-      chooseDefaultProviderId({
-        ownPotentialUsd: 100_000,
-        ownLeadEnabled: false,
-        providers,
-      }),
-    ).toBe("compound");
-    expect(
-      chooseDefaultProviderId({
-        ownPotentialUsd: 0,
-        ownLeadEnabled: true,
-        providers: providers.map((provider) => ({
-          ...provider,
-          capacityUsd: 0,
-        })),
-      }),
-    ).toBe("");
+    ).toBe("6.5% fixed APR");
   });
 
   it.each([
-    { maximum: 0.93, percent: 50, expected: 0.47, step: 0.01 },
-    { maximum: 75, percent: 50, expected: 37.5, step: 0.01 },
-    { maximum: 900, percent: 25, expected: 225, step: 1 },
-    { maximum: 100_000, percent: 75, expected: 75_000, step: 100 },
+    { maximum: 0.93, percent: 50, expected: 0.465 },
+    { maximum: 0.0488889, percent: 100, expected: 0.0488889 },
+    { maximum: 75, percent: 50, expected: 37.5 },
+    { maximum: 900, percent: 25, expected: 225 },
+    { maximum: 100_000, percent: 75, expected: 75_000 },
   ])(
     "keeps amount and utilization accurate for a $maximum maximum",
-    ({ maximum, percent, expected, step }) => {
+    ({ maximum, percent, expected }) => {
       const amount = amountForUtilization(maximum, percent);
       expect(amount).toBe(expected);
       expect(
         Math.abs(utilizationForAmount(maximum, amount) - percent),
       ).toBeLessThanOrEqual(1);
-      expect(amountInputStep(maximum)).toBe(step);
     },
   );
+
+  it("keeps the amount slider useful across small and large positions", () => {
+    expect(amountInputStep(0.0488889)).toBe(0.000001);
+    expect(amountInputStep(12.03)).toBe(0.01);
+    expect(amountInputStep(750)).toBe(1);
+    expect(amountInputStep(100_000)).toBe(100);
+  });
+
+  it("keeps available provider capacity separate from OWN request potential", () => {
+    expect(summarizeEstimatorCapacity([40_000, 75_000, 0], 100_000)).toEqual({
+      providerMaximumUsd: 75_000,
+      ownPotentialUsd: 100_000,
+      maximumRequestableUsd: 100_000,
+      providerPathCount: 2,
+    });
+  });
+
+  it("allows an OWN-sized request when providers have no capacity", () => {
+    expect(summarizeEstimatorCapacity([0, Number.NaN], 25_000)).toEqual({
+      providerMaximumUsd: 0,
+      ownPotentialUsd: 25_000,
+      maximumRequestableUsd: 25_000,
+      providerPathCount: 0,
+    });
+  });
+
+  it.each([
+    ["request-required", "Request required"],
+    ["limited", "Limited availability"],
+    ["available-now", "Funding available"],
+    ["unavailable", "Unavailable"],
+  ] as const)("labels the %s OWN state", (status, expected) => {
+    expect(ownFundingStatusLabel(status)).toBe(expected);
+  });
+
+  it("requires positive OWN potential that covers the requested amount", () => {
+    expect(ownSupportsRequestedAmount(25_000, 10_000)).toBe(true);
+    expect(ownSupportsRequestedAmount(5_000, 10_000)).toBe(false);
+    expect(ownSupportsRequestedAmount(0, 0)).toBe(false);
+  });
 
   it("sorts assets by descending USD value without mutating registry order", () => {
     const registryOrder = [
@@ -79,7 +125,8 @@ describe("estimator UX helpers", () => {
 
   it("formats small positive balances without turning them into zero", () => {
     expect(formatUsdValue(0)).toBe("$0");
-    expect(formatUsdValue(0.009)).toBe("<$0.01");
+    expect(formatUsdValue(0.009)).toBe("$0.0090");
+    expect(formatUsdValue(0.0488889)).toBe("$0.0489");
     expect(formatUsdValue(0.93)).toBe("$0.93");
     expect(formatUsdValue(45)).toBe("$45.00");
     expect(formatUsdValue(27_652.42)).toBe("$27,652");
@@ -109,9 +156,6 @@ describe("estimator UX helpers", () => {
     expect(friendlyEstimatorError(ensError)).not.toContain("Raw Call");
     expect(friendlyEstimatorError(providerError)).toContain(
       "temporarily unavailable",
-    );
-    expect(providerAvailabilityMessage("Approved source read failed")).toBe(
-      "Live estimate temporarily unavailable",
     );
   });
 });

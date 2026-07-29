@@ -1,24 +1,26 @@
 <script setup lang="ts">
-import { PhCheckCircle, PhCoins, PhPencilSimple } from "@phosphor-icons/vue";
+import { PhCheck, PhCoins } from "@phosphor-icons/vue";
 import { ethereumAssetMetadataByAddress } from "@powerrr/configs";
 import type { PortfolioAsset } from "@powerrr/shared-types";
 import { formatUsdValue } from "../utils/estimator-ux";
 
 const props = defineProps<{
   assets: PortfolioAsset[];
-  expanded: boolean;
-  demo: boolean;
-  hasConversions: boolean;
+  selectedTokens: string[];
+  loading: boolean;
 }>();
 
 const emit = defineEmits<{
-  changeWallet: [];
-  toggleExpanded: [];
+  changeAddress: [];
+  toggle: [token: string, selected: boolean];
+  continue: [];
 }>();
 
-const visibleAssets = computed(() =>
-  props.expanded ? props.assets : props.assets.slice(0, 5),
-);
+function isSelected(asset: PortfolioAsset): boolean {
+  return props.selectedTokens.some(
+    (token) => token.toLowerCase() === asset.token.toLowerCase(),
+  );
+}
 
 function assetValueUsd(asset: PortfolioAsset): number {
   const balance = Number(asset.balance);
@@ -37,125 +39,127 @@ function eligibleProviderCount(asset: PortfolioAsset): number {
   return families.filter(Boolean).length;
 }
 
+function eligibleProviderLabel(asset: PortfolioAsset): string {
+  const count = eligibleProviderCount(asset);
+  return `${count} ${count === 1 ? "provider" : "providers"}`;
+}
+
 function assetIcon(asset: PortfolioAsset): string | null {
   const iconKey = ethereumAssetMetadataByAddress(asset.token)?.iconKey;
   return iconKey ? `/tokens/${iconKey}.png` : null;
 }
+
+function formatBalance(asset: PortfolioAsset): string {
+  const value = Number(asset.balance);
+  if (!Number.isFinite(value)) return asset.balance;
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: value < 0.01 ? 6 : 4,
+  }).format(value);
+}
 </script>
 
 <template>
-  <section
-    id="assets"
-    class="panel scroll-mt-36 overflow-hidden"
-    aria-labelledby="assets-title"
-  >
-    <header
-      class="flex flex-col gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
-    >
-      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <h2 id="assets-title" class="text-lg font-semibold">
-          Provider-matched collateral
+  <section class="panel overflow-hidden" aria-labelledby="assets-title">
+    <div class="border-b border-line px-5 py-5 sm:px-6">
+      <div>
+        <p class="text-xs font-bold uppercase tracking-[0.14em] text-river">
+          Step 1 of 3
+        </p>
+        <h2 id="assets-title" class="mt-1 text-xl font-semibold">
+          Choose collateral
         </h2>
-        <span class="flex items-center gap-1.5 text-sm font-medium text-moss">
-          <PhCheckCircle :size="17" weight="fill" aria-hidden="true" />
-          {{ assets.length }} matched
-          {{ assets.length === 1 ? "asset" : "assets" }}
-        </span>
       </div>
-      <button
-        type="button"
-        class="focus-ring flex min-h-11 items-center gap-2 self-start rounded-lg border border-line px-3 py-2 text-sm font-semibold text-river hover:border-river"
-        @click="emit('changeWallet')"
-      >
-        <PhPencilSimple :size="17" aria-hidden="true" /> Change wallet
-      </button>
-    </header>
+    </div>
 
     <div
       v-if="assets.length"
-      class="grid grid-cols-2 p-3 sm:grid-cols-3 lg:grid-cols-5"
+      class="grid gap-3 p-5 sm:grid-cols-2 sm:p-6 lg:grid-cols-3"
     >
-      <article
-        v-for="(asset, index) in visibleAssets"
+      <button
+        v-for="asset in assets"
         :key="asset.token"
-        class="flex min-w-0 items-center gap-3 border-b border-r border-line px-2 py-4 last:border-r-0 sm:px-3 lg:px-5 lg:py-3"
-        :class="!expanded && index === 4 ? 'hidden sm:flex' : ''"
+        type="button"
+        class="focus-ring relative flex min-h-32 items-center gap-4 rounded-xl border p-4 text-left transition"
+        :class="
+          isSelected(asset)
+            ? 'border-river bg-info-surface ring-1 ring-river'
+            : 'border-line bg-surface hover:border-river/60'
+        "
+        :aria-pressed="isSelected(asset)"
+        @click="emit('toggle', asset.token, !isSelected(asset))"
       >
+        <span
+          class="absolute right-3 top-3 grid h-6 w-6 place-items-center rounded-full border"
+          :class="
+            isSelected(asset)
+              ? 'border-river bg-river text-accent-contrast'
+              : 'border-slate/35 bg-surface text-transparent'
+          "
+          aria-hidden="true"
+        >
+          <PhCheck :size="14" weight="bold" />
+        </span>
         <img
           v-if="assetIcon(asset)"
-          :src="assetIcon(asset) || undefined"
-          :alt="`${asset.symbol} icon`"
-          class="h-11 w-11 shrink-0 rounded-full object-contain"
+          :src="assetIcon(asset) ?? undefined"
+          :alt="asset.symbol"
+          class="h-11 w-11 shrink-0 rounded-full"
         />
         <span
           v-else
-          class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-mist text-slate"
-          aria-hidden="true"
-          ><PhCoins :size="24"
-        /></span>
-        <div class="min-w-0">
-          <p class="truncate text-sm font-medium text-slate">
-            {{ asset.symbol }}
-          </p>
-          <p class="mt-0.5 tabular-nums text-lg font-semibold tracking-tight">
+          class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-mist text-river"
+        >
+          <PhCoins :size="24" aria-hidden="true" />
+        </span>
+        <span class="min-w-0 pr-6">
+          <strong class="block text-base">{{ asset.symbol }}</strong>
+          <span class="mt-1 block text-sm tabular-nums text-slate">
+            {{ formatBalance(asset) }} ·
             {{ formatUsdValue(assetValueUsd(asset)) }}
-          </p>
-          <p class="mt-0.5 text-xs text-slate">
-            {{ eligibleProviderCount(asset) }} providers
-          </p>
-        </div>
-      </article>
-    </div>
-    <div
-      v-if="assets.length > 4 || expanded"
-      class="border-t border-line px-5 py-3"
-      :class="assets.length === 5 && !expanded ? 'sm:hidden' : ''"
-    >
-      <button
-        type="button"
-        class="focus-ring min-h-11 rounded-lg px-3 text-sm font-semibold text-river hover:bg-blue-50"
-        :aria-expanded="expanded"
-        @click="emit('toggleExpanded')"
-      >
-        {{ expanded ? "Show key assets" : `View all ${assets.length} assets` }}
+          </span>
+          <span class="mt-1 block text-xs text-slate">
+            {{ eligibleProviderLabel(asset) }}
+            <template v-if="asset.requiredAction === 'wrap'">
+              · conversion required</template
+            >
+          </span>
+        </span>
       </button>
     </div>
-    <div v-if="!assets.length" class="px-5 py-10 text-center">
-      <h3 class="font-semibold">No provider-matched collateral</h3>
+
+    <div v-else class="px-5 py-12 text-center sm:px-6">
+      <h3 class="font-semibold">No provider-matched collateral found</h3>
       <p class="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate">
-        None of the supported wallet assets matched an available provider’s
-        current USDC collateral rules. Other wallet tokens are not indexed.
+        The supported assets at this public address do not match the current
+        USDC collateral rules used by the compared providers.
       </p>
       <button
         type="button"
         class="focus-ring mt-5 min-h-11 rounded-lg border border-line px-4 text-sm font-semibold text-river hover:border-river"
-        @click="emit('changeWallet')"
+        @click="emit('changeAddress')"
       >
-        Try another wallet
+        Try another address
       </button>
     </div>
-    <details
-      class="estimate-details border-t border-line bg-mist/45 px-5 py-3 text-xs leading-5 text-slate"
+
+    <div
+      v-if="assets.length"
+      class="flex flex-col gap-4 border-t border-line bg-mist/35 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"
     >
-      <summary
-        class="focus-ring min-h-11 cursor-pointer rounded-md py-2 font-semibold text-ink"
+      <p class="text-sm text-slate">
+        <strong class="font-semibold text-ink">{{
+          selectedTokens.length
+        }}</strong>
+        {{ selectedTokens.length === 1 ? "asset" : "assets" }} selected
+      </p>
+      <button
+        type="button"
+        class="focus-ring min-h-12 rounded-lg bg-river px-6 text-sm font-semibold text-accent-contrast hover:bg-river/90 disabled:cursor-not-allowed disabled:opacity-45"
+        :disabled="!selectedTokens.length || loading"
+        @click="emit('continue')"
       >
-        About this estimate
-      </summary>
-      <div class="max-w-5xl pb-2">
-        <p v-if="hasConversions">
-          Some providers may require converting ETH or stETH before use.
-        </p>
-        <p :class="{ 'mt-2': hasConversions }">
-          {{
-            demo
-              ? "This view uses demonstration data."
-              : "This preview uses live on-chain and official provider sources through public infrastructure with no availability guarantee."
-          }}
-          Rates and capacity are point-in-time estimates, not executable quotes.
-          Unsupported wallet holdings are intentionally omitted.
-        </p>
-      </div>
-    </details>
+        {{ loading ? "Recalculating…" : "Continue to amount" }}
+      </button>
+    </div>
   </section>
 </template>

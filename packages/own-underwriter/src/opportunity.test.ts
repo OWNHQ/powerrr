@@ -18,11 +18,12 @@ describe("OWN collateral-only opportunity", () => {
   it("defaults verified liquidity to zero and stays explicitly indicative", () => {
     const result = calculateOwnOpportunity([WETH]);
 
-    expect(result.potentialBorrowUsd).toBe(149_760);
+    expect(result.potentialBorrowUsd).toBe(273_600);
     expect(result.availableNowUsd).toBe(0);
     expect(result.fundingStatus).toBe("request-required");
     expect(result.kind).toBe("indicative-request");
-    expect(result.policyVersion).toContain("own-collateral-v1");
+    expect(result.indicativeApr).toBe(0.065);
+    expect(result.policyVersion).toContain("own-collateral-static-v3");
   });
 
   it("reports partial and sufficient verified funding separately from capacity", () => {
@@ -30,7 +31,7 @@ describe("OWN collateral-only opportunity", () => {
       availableLiquidityUsd: 50_000,
     });
     const sufficient = calculateOwnOpportunity([WETH], {
-      availableLiquidityUsd: 250_000,
+      availableLiquidityUsd: 300_000,
     });
 
     expect(partial).toMatchObject({
@@ -38,7 +39,7 @@ describe("OWN collateral-only opportunity", () => {
       fundingStatus: "limited",
     });
     expect(sufficient).toMatchObject({
-      availableNowUsd: 149_760,
+      availableNowUsd: 273_600,
       fundingStatus: "available-now",
     });
   });
@@ -60,9 +61,32 @@ describe("OWN collateral-only opportunity", () => {
       fundingStatus: "unavailable",
     });
     expect(unapproved).toMatchObject({
-      potentialBorrowUsd: 149_760,
+      potentialBorrowUsd: 273_600,
       fundingStatus: "request-required",
     });
     expect(capped.potentialBorrowUsd).toBe(120_000);
+  });
+
+  it("applies the provisional 10% effective non-core rule and aggregate cap", () => {
+    const nonCore = (symbol: string): PortfolioAsset => ({
+      ...WETH,
+      symbol,
+      balance: "1000",
+      balanceRaw: "1000000000000000000000",
+      marketPriceUsd: 1_000,
+      ownEligible: true,
+      ownAdvanceRate: 0.2,
+      ownValuationHaircut: 0.5,
+      ownContributionCapUsd: 50_000,
+      protocolEligible: { own: true },
+    });
+    const result = calculateOwnOpportunity([
+      nonCore("UNI"),
+      nonCore("LINK"),
+      nonCore("AAVE"),
+    ]);
+
+    expect(result.potentialBorrowUsd).toBe(100_000);
+    expect(result.collateralUsed).toHaveLength(3);
   });
 });

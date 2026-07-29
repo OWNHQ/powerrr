@@ -14,28 +14,38 @@ import type {
 export function usePowerrrApi() {
   return {
     protocols: () =>
-      $fetch<{ protocols: ProtocolMetadata[] }>("/api/v2/protocols"),
+      $fetch("/api/v2/protocols") as Promise<{
+        protocols: ProtocolMetadata[];
+      }>,
     resolve: (request: ResolveRequest) =>
-      $fetch<ResolveResponse>("/api/v1/resolve", {
+      $fetch("/api/v1/resolve", {
         method: "POST",
         body: request,
-      }),
+      }) as Promise<ResolveResponse>,
     portfolio: (request: PortfolioRequest) =>
-      $fetch<PortfolioResponse>("/api/v1/portfolio", {
+      $fetch("/api/v1/portfolio", {
         method: "POST",
         body: request,
-      }),
-    quotes: (request: QuoteRequest) =>
-      $fetch<QuoteResponse>("/api/v2/quotes", {
+      }) as Promise<PortfolioResponse>,
+    quotes: (request: QuoteRequest, options: { refresh?: boolean } = {}) =>
+      $fetch("/api/v2/quotes", {
         method: "POST",
         body: request,
-      }),
+        ...(options.refresh
+          ? {
+              headers: {
+                "cache-control": "no-cache",
+                "x-powerrr-refresh": "1",
+              },
+            }
+          : {}),
+      }) as Promise<QuoteResponse>,
     ownLeadStatus: () =>
-      $fetch<OwnLeadStatusResponse>("/api/v1/own/leads/status"),
+      $fetch("/api/v1/own/leads/status") as Promise<OwnLeadStatusResponse>,
     submitOwnLead: (request: OwnLeadRequest) =>
-      $fetch<OwnLeadResponse>("/api/v1/own/leads", {
+      $fetch("/api/v1/own/leads", {
         method: "POST",
         body: request,
-      }),
+      }) as Promise<OwnLeadResponse>,
   };
 }

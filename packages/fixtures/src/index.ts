@@ -252,7 +252,7 @@ export const protocolFixtures: Record<string, ProtocolFixture> = {
     sourceType: "assumption",
     freshnessSeconds: 0,
     availableLiquidityUsd: 2_500_000,
-    indicativeApr: 0.095,
+    indicativeApr: 0.065,
     targetHealthFactor: 1.35,
     confidencePenalties: {
       sourcePenalty: 12,
@@ -588,7 +588,7 @@ export const existingDebtFixtures: Record<
 
 export const ownTerms = {
   12: 0.0875,
-  24: 0.095,
+  24: 0.065,
   36: 0.1025,
 } as const;
 

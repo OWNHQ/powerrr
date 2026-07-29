@@ -76,6 +76,32 @@ describe("live protocol snapshot quote builders", () => {
     });
   });
 
+  it("does not round sub-dollar Aave capacity above its target ratio", () => {
+    const quote = quoteAaveLikeLiveSnapshot({
+      ...baseSnapshot,
+      mode: "wallet-estimate",
+      existingDebtUsd: 0,
+      safetyProfile: "balanced",
+      targetHealthFactor: 1.35,
+      collateral: [
+        {
+          token: "0x0000000000000000000000000000000000000001",
+          symbol: "WETH",
+          valueUsd: 0.08,
+          ltv: 0.8,
+          liquidationThreshold: 0.825,
+        },
+      ],
+    });
+
+    expect(quote.safeBorrowUsd).toBeCloseTo(0.0488889, 6);
+    expect(
+      (quote.collateralUsed[0]!.valueUsd *
+        quote.collateralUsed[0]!.liquidationThreshold!) /
+        quote.safeBorrowUsd!,
+    ).toBeCloseTo(1.35, 5);
+  });
+
   it("selects the highest safe borrow Morpho isolated market snapshot", () => {
     const quote = quoteMorphoLiveSnapshot({
       ...baseSnapshot,
@@ -153,6 +179,31 @@ describe("live protocol snapshot quote builders", () => {
       ltv: 0.825,
       liquidationThreshold: 0.9,
     });
+  });
+
+  it("makes a Compound path unavailable when even its maximum debt is below baseBorrowMin", () => {
+    const quote = quoteCompoundLiveSnapshot({
+      ...baseSnapshot,
+      protocolId: "compound-iii",
+      protocolLabel: "Compound III",
+      familyId: "compound-iii",
+      familyLabel: "Compound III",
+      safetyProfile: "balanced",
+      existingDebtUsd: 0,
+      minimumBorrowUsd: 1_000,
+      collateral: [
+        {
+          token: "0x0000000000000000000000000000000000000001",
+          symbol: "WETH",
+          valueUsd: 500,
+          borrowCollateralFactor: 0.825,
+          liquidateCollateralFactor: 0.895,
+        },
+      ],
+    });
+
+    expect(quote.safeBorrowUsd).toBe(0);
+    expect(quote.warnings.join(" ")).toContain("minimum borrow");
   });
 
   it("quotes, filters, and sorts mixed live snapshots for SDK-compatible orchestration", () => {

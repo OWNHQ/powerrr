@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OwnLeadRequestSchema } from "./index.js";
+import { OwnLeadRequestSchema, QuoteRequestSchema } from "./index.js";
 
 const validLead = {
   idempotencyKey: "d58e9be4-3f95-4ee4-858e-1e4f7a5d89a9",
@@ -32,5 +32,41 @@ describe("OWN lead request schema", () => {
         website: "https://spam.example",
       }).success,
     ).toBe(true);
+  });
+});
+
+describe("quote request schema", () => {
+  const request = {
+    chainId: 1,
+    input: { ensName: "powerrr.eth" },
+    mode: "wallet-estimate",
+  } as const;
+
+  it("accepts a unique selected-collateral token list", () => {
+    expect(
+      QuoteRequestSchema.safeParse({
+        ...request,
+        collateralTokens: [
+          "0x0000000000000000000000000000000000000001",
+          "0x0000000000000000000000000000000000000002",
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects empty and duplicate selected-collateral token lists", () => {
+    expect(
+      QuoteRequestSchema.safeParse({ ...request, collateralTokens: [] })
+        .success,
+    ).toBe(false);
+    expect(
+      QuoteRequestSchema.safeParse({
+        ...request,
+        collateralTokens: [
+          "0x0000000000000000000000000000000000000001",
+          "0x0000000000000000000000000000000000000001",
+        ],
+      }).success,
+    ).toBe(false);
   });
 });

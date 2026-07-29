@@ -1,5 +1,17 @@
 # Curated Ethereum asset registry
 
+The static public application uses a second, broader registry,
+`ethereum-own-top100-2026-07-21-r2`. It contains exactly 100 ERC-20 contracts and
+is read through the connected wallet's EIP-1193 provider using Multicall3. All
+entries are eligible to appear in a locally prepared OWN request. Only entries
+whose checked-in onchain route returns a valid price contribute to instant
+indicative capacity; missing routes and failed prices remain visible as manual
+review items.
+
+The static registry is bundled into the application. It is never fetched from
+a token-list server at runtime, and symbols, decimals, icons, or prices are not
+trusted from arbitrary wallet tokens.
+
 Live wallet discovery is deliberately finite. Version
 `ethereum-blue-chip-v1` queries native ETH plus the ERC-20 contracts below and
 never enumerates arbitrary wallet tokens. Additions require explicit review,
@@ -22,7 +34,7 @@ tests, and a new registry version.
 | Stablecoin     | sDAI   | `0x83F20F44975D03b1b09e64809B757c47f942BEeA` |
 | Stablecoin     | USDS   | `0xdC035D45d973E3EC169d2276DDab16f1e407384F` |
 | Stablecoin     | sUSDS  | `0xA3931d71877C0E7a3148CB7EB4463524feC27Fbd` |
-| Stablecoin     | GHO    | `0x40D16FC0246aC3360CBb2B0DC3Dc5AD24d8352C6` |
+| Stablecoin     | GHO    | `0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f` |
 | Stablecoin     | PYUSD  | `0x6c3ea9036406852006290770BEdFcAbA0e23A0e8` |
 | Governance     | LINK   | `0x514910771AF9Ca656af840dff83E8264EcF986CA` |
 | Governance     | AAVE   | `0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2dDAE9` |

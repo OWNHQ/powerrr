@@ -18,15 +18,15 @@ pnpm check
 pnpm dev:website
 ```
 
-Open `http://127.0.0.1:3000`. The diversified fixture wallet loads
-automatically and is labelled **Demo data**. Review the usable asset strip,
-select the featured OWN request opportunity, and move the amount slider. Then
-select Aave, Spark, Compound, or Morpho to see the protocol-threshold risk view.
+Open `http://127.0.0.1:3000` with an injected Ethereum wallet, connect, and run
+the read-only scan. Select collateral, enter a borrowing amount, and compare
+Aave, Spark, Compound, or Morpho before reviewing the separate OWN fixed-term
+request option.
 
 OWN defaults to **Request required** because verified liquidity defaults to
-zero. Click **Request an OWN offer** to exercise the local development delivery
-flow. Development accepts the form without sending PII anywhere; production
-requires the configured signed webhook.
+zero. Selecting **Review fixed-term option** shows illustrative terms and risk
+mechanics. **Request with OWN** opens OWN's external borrower intake without
+adding wallet or estimate data to the URL.
 
 ## 3. Run the borrower-risk workbench
 

@@ -22,7 +22,7 @@ export const PROVISIONAL_RISK_POLICY: RiskPolicy = {
   rateStressBps: 300,
   incomeStress: 0.25,
   collateralAdvanceRateFloor: 0.15,
-  collateralAdvanceRateCeiling: 0.58,
+  collateralAdvanceRateCeiling: 0.95,
   maximumTermMonths: 120,
   supportedCollateral: ["ETH", "WETH", "BTC", "WBTC", "SOL"],
   supportedCreditTokens: ["USD", "USDC", "DAI", "USDS"],

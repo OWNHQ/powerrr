@@ -35,7 +35,7 @@ export function usePowerrrEngine() {
     runtimeTier: runtimeTierValue(config.powerrrRuntimeTier, dataMode),
     ownOpportunityConfig: {
       availableLiquidityUsd: finiteNumber(config.ownAvailableLiquidityUsd, 0),
-      indicativeApr: finiteNumber(config.ownIndicativeApr, 0.095),
+      indicativeApr: finiteNumber(config.ownIndicativeApr, 0.065),
       termMonths: positiveInteger(config.ownTermMonths, 24),
     },
     ...(dataMode === "live"

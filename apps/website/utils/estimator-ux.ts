@@ -1,24 +1,80 @@
-import type { ProtocolBorrowQuote } from "@powerrr/shared-types";
+import type {
+  BorrowOpportunity,
+  ProtocolBorrowQuote,
+} from "@powerrr/shared-types";
 
-export type ProviderCandidate = {
-  id: string;
-  capacityUsd: number;
+export type EstimatorCapacitySummary = {
+  providerMaximumUsd: number;
+  ownPotentialUsd: number;
+  maximumRequestableUsd: number;
+  providerPathCount: number;
 };
 
-export function chooseDefaultProviderId(input: {
-  ownPotentialUsd: number;
-  ownLeadEnabled: boolean;
-  providers: ProviderCandidate[];
-}): string {
-  if (input.ownLeadEnabled && input.ownPotentialUsd > 0) {
-    return "own";
-  }
-
-  return (
-    [...input.providers]
-      .filter((provider) => provider.capacityUsd > 0)
-      .sort((a, b) => b.capacityUsd - a.capacityUsd)[0]?.id ?? ""
+export function summarizeEstimatorCapacity(
+  providerCapacities: number[],
+  ownPotentialUsd: number,
+): EstimatorCapacitySummary {
+  const usableProviderCapacities = providerCapacities.filter(
+    (capacity) => Number.isFinite(capacity) && capacity > 0,
   );
+  const providerMaximumUsd = Math.max(0, ...usableProviderCapacities);
+  const normalizedOwnPotentialUsd =
+    Number.isFinite(ownPotentialUsd) && ownPotentialUsd > 0
+      ? ownPotentialUsd
+      : 0;
+
+  return {
+    providerMaximumUsd,
+    ownPotentialUsd: normalizedOwnPotentialUsd,
+    maximumRequestableUsd: Math.max(
+      providerMaximumUsd,
+      normalizedOwnPotentialUsd,
+    ),
+    providerPathCount: usableProviderCapacities.length,
+  };
+}
+
+export function ownFundingStatusLabel(
+  status: BorrowOpportunity["fundingStatus"] | undefined,
+): string {
+  switch (status) {
+    case "available-now":
+      return "Funding available";
+    case "limited":
+      return "Limited availability";
+    case "request-required":
+      return "Request required";
+    default:
+      return "Unavailable";
+  }
+}
+
+export function ownSupportsRequestedAmount(
+  potentialBorrowUsd: number,
+  requestedAmountUsd: number,
+): boolean {
+  return (
+    Number.isFinite(potentialBorrowUsd) &&
+    potentialBorrowUsd > 0 &&
+    Number.isFinite(requestedAmountUsd) &&
+    requestedAmountUsd > 0 &&
+    potentialBorrowUsd >= requestedAmountUsd
+  );
+}
+
+export function providerRateLabel(
+  quote: Pick<ProtocolBorrowQuote, "annualRate" | "indicativeApr" | "rateType">,
+): string {
+  const rate = quote.annualRate;
+  const value = rate?.value ?? quote.indicativeApr;
+  const formatted =
+    value === null || value === undefined || !Number.isFinite(value)
+      ? "—"
+      : new Intl.NumberFormat("en-US", {
+          style: "percent",
+          maximumFractionDigits: 1,
+        }).format(value);
+  return `${formatted} ${quote.rateType} ${(rate?.convention ?? "apr").toUpperCase()}`;
 }
 
 export function amountForUtilization(
@@ -27,6 +83,7 @@ export function amountForUtilization(
 ): number {
   if (!Number.isFinite(maximumUsd) || maximumUsd <= 0) return 0;
   const percent = clamp(utilizationPercent, 0, 100);
+  if (percent === 100) return maximumUsd;
   return roundAmount((maximumUsd * percent) / 100, maximumUsd);
 }
 
@@ -39,6 +96,7 @@ export function utilizationForAmount(
 }
 
 export function amountInputStep(maximumUsd: number): number {
+  if (maximumUsd < 1) return 0.000001;
   if (maximumUsd < 100) return 0.01;
   if (maximumUsd < 1_000) return 1;
   return 100;
@@ -56,15 +114,28 @@ export function formatUsdValue(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "Unavailable";
   }
-  if (value > 0 && value < 0.01) {
-    return "<$0.01";
-  }
+  const minimumFractionDigits =
+    value > 0 && value < 0.01
+      ? 4
+      : value > 0 && value < 1
+        ? 2
+        : value > 0 && value < 100
+          ? 2
+          : 0;
+  const maximumFractionDigits =
+    value > 0 && value < 0.01
+      ? 6
+      : value > 0 && value < 1
+        ? 4
+        : value > 0 && value < 100
+          ? 2
+          : 0;
 
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    minimumFractionDigits: value > 0 && value < 100 ? 2 : 0,
-    maximumFractionDigits: value > 0 && value < 100 ? 2 : 0,
+    minimumFractionDigits,
+    maximumFractionDigits,
   }).format(value);
 }
 
@@ -81,14 +152,14 @@ export function friendlyEstimatorError(error: unknown): string {
     message.includes("resolvewithgateways") ||
     message.includes("could not resolve")
   ) {
-    return "We couldn’t resolve that ENS name. Check the spelling or paste a 0x wallet address.";
+    return "We couldn’t resolve that ENS name. Check the spelling or paste a 0x address.";
   }
   if (
     code.includes("INVALID") ||
     message.includes("invalid address") ||
     message.includes("invalid wallet")
   ) {
-    return "That wallet address is not valid. Check it and try again.";
+    return "That Ethereum address is not valid. Check it and try again.";
   }
   if (
     code.includes("RATE_LIMIT") ||
@@ -103,25 +174,10 @@ export function friendlyEstimatorError(error: unknown): string {
     message.includes("public rpc") ||
     message.includes("service unavailable")
   ) {
-    return "Live provider data is temporarily unavailable. Your wallet was not changed—try again shortly.";
+    return "Live provider data is temporarily unavailable. The address was not changed—try again shortly.";
   }
 
-  return "We couldn’t estimate this wallet right now. Check the address and try again.";
-}
-
-export function providerAvailabilityMessage(
-  reason: string | undefined,
-): string {
-  const normalized = reason?.toLowerCase() ?? "";
-  if (
-    normalized.includes("source") ||
-    normalized.includes("rpc") ||
-    normalized.includes("read failed") ||
-    normalized.includes("timeout")
-  ) {
-    return "Live estimate temporarily unavailable";
-  }
-  return reason?.trim() || "No eligible collateral";
+  return "We couldn’t estimate this address right now. Check it and try again.";
 }
 
 export function providerFreshnessLabel(quote: ProtocolBorrowQuote): string {
@@ -180,7 +236,7 @@ function assetUsdValue(asset: {
 }
 
 function roundAmount(value: number, maximumUsd: number): number {
-  const precision = maximumUsd < 100 ? 100 : 1;
+  const precision = maximumUsd < 1 ? 1_000_000 : maximumUsd < 100 ? 100 : 1;
   return Math.round(value * precision) / precision;
 }
 

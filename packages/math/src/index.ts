@@ -66,10 +66,11 @@ export function roundUsd(value: number): number {
     return 0;
   }
 
-  const rounded = Math.round(value * 100) / 100;
-  if (value > 0 && rounded === 0) {
+  if (value !== 0 && Math.abs(value) < 1) {
     return Number(value.toPrecision(6));
   }
+
+  const rounded = Math.round(value * 100) / 100;
   return rounded;
 }
 

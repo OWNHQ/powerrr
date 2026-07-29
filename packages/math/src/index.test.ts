@@ -15,7 +15,30 @@ describe("financial math", () => {
   it("never rounds a positive USD value down to zero", () => {
     expect(roundUsd(0.000422)).toBe(0.000422);
     expect(roundUsd(0.00499999)).toBe(0.00499999);
-    expect(roundUsd(0.005)).toBe(0.01);
+    expect(roundUsd(0.005)).toBe(0.005);
+  });
+
+  it("preserves Aave's target health factor for sub-dollar capacity", () => {
+    const collateralValueUsd = 0.08;
+    const liquidationThreshold = 0.825;
+    const result = calculateAaveLikeBorrow({
+      collateral: [
+        {
+          valueUsd: collateralValueUsd,
+          ltv: 0.8,
+          liquidationThreshold,
+        },
+      ],
+      existingDebtUsd: 0,
+      availableLiquidityUsd: 1_000_000,
+      targetHealthFactor: 1.35,
+      safetyBuffer: 0.85,
+    });
+
+    expect(result.safeBorrowUsd).toBeCloseTo(0.0488889, 6);
+    expect(
+      (collateralValueUsd * liquidationThreshold) / result.safeBorrowUsd,
+    ).toBeCloseTo(1.35, 5);
   });
 
   it("calculates Aave/Spark-style theoretical and safe borrow capacity", () => {

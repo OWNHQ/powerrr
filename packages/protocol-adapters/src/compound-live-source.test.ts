@@ -26,6 +26,9 @@ const cometAbi = parseAbi([
   "function getBorrowRate(uint256 utilization) view returns (uint64)",
   "function baseScale() view returns (uint64)",
   "function priceScale() view returns (uint64)",
+  "function baseBorrowMin() view returns (uint256)",
+  "function isSupplyPaused() view returns (bool)",
+  "function isWithdrawPaused() view returns (bool)",
 ]);
 
 const account = "0x1111111111111111111111111111111111111111" as const;
@@ -87,6 +90,13 @@ describe("Compound III live Comet snapshot source", () => {
     expect(rpc.calls.some((call) => call.functionName === "getPrice")).toBe(
       true,
     );
+    expect(snapshot.minimumBorrowUsd).toBe(100);
+    expect(
+      rpc.calls.some((call) => call.functionName === "borrowBalanceOf"),
+    ).toBe(false);
+    expect(new Set(rpc.calls.map((call) => call.blockTag))).toEqual(
+      new Set(["0x160d6f0"]),
+    );
   });
 
   it("builds an existing-position snapshot from supplied Comet collateral and borrow balance", async () => {
@@ -120,16 +130,48 @@ describe("Compound III live Comet snapshot source", () => {
     expect(quote.safeBorrowUsd).toBe(0);
     expect(quote.healthFactor).toBe(0.7518);
   });
+
+  it("fails closed when Compound borrowing operations are paused", async () => {
+    const rpc = createCompoundRpcMock({
+      mode: "wallet-estimate",
+      borrowBalanceRaw: 0n,
+      collateralBalances: {},
+      withdrawPaused: true,
+    });
+
+    await expect(
+      loadCompoundUsdcCometSnapshot({
+        rpc,
+        address: account,
+        chainId: 1,
+        mode: "wallet-estimate",
+        portfolio: [buildPortfolioAsset("WETH", 2)],
+        targetBorrowAssets: ["USDC"],
+        safetyProfile: "balanced",
+      }),
+    ).rejects.toThrow("operations are paused");
+  });
 });
 
 function createCompoundRpcMock(input: {
   mode: "wallet-estimate" | "existing-position";
   borrowBalanceRaw: bigint;
   collateralBalances: Record<string, bigint>;
+  baseBorrowMinRaw?: bigint;
+  supplyPaused?: boolean;
+  withdrawPaused?: boolean;
 }): CompoundLiveRpcClient & {
-  calls: Array<{ functionName: string; args: readonly unknown[] }>;
+  calls: Array<{
+    functionName: string;
+    args: readonly unknown[];
+    blockTag: string;
+  }>;
 } {
-  const calls: Array<{ functionName: string; args: readonly unknown[] }> = [];
+  const calls: Array<{
+    functionName: string;
+    args: readonly unknown[];
+    blockTag: string;
+  }> = [];
 
   return {
     calls,
@@ -145,7 +187,7 @@ function createCompoundRpcMock(input: {
         throw new Error(`Unexpected RPC method ${request.method}`);
       }
 
-      const [call] = request.params ?? [];
+      const [call, blockTag] = request.params ?? [];
       if (!isEthCall(call)) {
         throw new Error("Expected eth_call params");
       }
@@ -158,6 +200,7 @@ function createCompoundRpcMock(input: {
       calls.push({
         functionName: decoded.functionName,
         args: decoded.args ?? [],
+        blockTag: String(blockTag),
       });
 
       return resultFor(
@@ -176,6 +219,9 @@ function resultFor(
     mode: "wallet-estimate" | "existing-position";
     borrowBalanceRaw: bigint;
     collateralBalances: Record<string, bigint>;
+    baseBorrowMinRaw?: bigint;
+    supplyPaused?: boolean;
+    withdrawPaused?: boolean;
   },
 ): Hex {
   if (functionName === "numAssets") {
@@ -188,6 +234,18 @@ function resultFor(
 
   if (functionName === "priceScale") {
     return encode(functionName, 100_000_000n);
+  }
+
+  if (functionName === "baseBorrowMin") {
+    return encode(functionName, input.baseBorrowMinRaw ?? 100_000_000n);
+  }
+
+  if (functionName === "isSupplyPaused") {
+    return encode(functionName, input.supplyPaused ?? false);
+  }
+
+  if (functionName === "isWithdrawPaused") {
+    return encode(functionName, input.withdrawPaused ?? false);
   }
 
   if (functionName === "totalSupply") {

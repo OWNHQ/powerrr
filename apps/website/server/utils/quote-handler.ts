@@ -1,5 +1,5 @@
 import type { QuoteRequest } from "@powerrr/shared-types";
-import { setHeader, type H3Event } from "h3";
+import { getHeader, setHeader, type H3Event } from "h3";
 import { hashedCacheKey } from "./cache-core.js";
 
 export async function handleQuoteRequest(
@@ -15,6 +15,12 @@ export async function handleQuoteRequest(
     }
 
     const body = await readBody<QuoteRequest>(event);
+    const refreshRequested =
+      getHeader(event, "x-powerrr-refresh") === "1" ||
+      (getHeader(event, "cache-control") ?? "")
+        .toLowerCase()
+        .split(",")
+        .some((directive) => directive.trim() === "no-cache");
     const subject = addressInputRateLimitSubject(body);
     await enforcePublicRateLimit(event, subject, "quotes");
     const response = await cachedResponse(
@@ -23,6 +29,7 @@ export async function handleQuoteRequest(
         scope: "quotes-v2",
         ttlMs: 15_000,
         subject: body,
+        bypassRead: refreshRequested,
       },
       () => usePowerrrEngine().quotes(body),
     );

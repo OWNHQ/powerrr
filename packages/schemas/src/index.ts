@@ -54,6 +54,17 @@ export const QuoteRequestSchema = ResolveRequestSchema.extend({
     .min(1)
     .max(8)
     .optional(),
+  collateralTokens: z
+    .array(EthereumAddressSchema)
+    .min(1)
+    .max(32)
+    .refine(
+      (tokens) =>
+        new Set(tokens.map((token) => token.toLowerCase())).size ===
+        tokens.length,
+      "Collateral token addresses must be unique",
+    )
+    .optional(),
   safetyProfile: SafetyProfileSchema.optional(),
   includeProtocols: z
     .array(z.string().min(2).max(64))

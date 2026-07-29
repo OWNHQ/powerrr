@@ -26,10 +26,16 @@ Quote request:
   "input": { "address": "0x1111111111111111111111111111111111111111" },
   "mode": "wallet-estimate",
   "targetBorrowAssets": ["USDC"],
+  "collateralTokens": ["0x0000000000000000000000000000000000000000"],
   "includeProtocols": ["aave-v3", "compound-iii"],
   "safetyProfile": "balanced"
 }
 ```
+
+`collateralTokens` is optional. When present, it must contain one or more unique
+token addresses discovered for the public address. Quotes and opportunities are
+then calculated from that explicit collateral selection only. Omit the field to
+discover the complete supported portfolio.
 
 The response includes `dataMode`, `runtimeTier`, `calculatedAt`, `servedAt`,
 `cache`, `completeness`, `sourcePolicySatisfied`, source `observations`, the
@@ -43,6 +49,9 @@ particular response was delivered. Neither is an upstream observation time.
 Use each observation's `observedAt`, block timestamp, measured age, and freshness
 status. A cache hit retains the original calculation and observations and
 reports its real `cache.ageSeconds`.
+
+Send `Cache-Control: no-cache` to refresh the estimate from its upstream sources
+instead of reading a previously calculated response from the application cache.
 
 `protocolAvailability` contains one sanitized status per requested live provider:
 
@@ -89,7 +98,7 @@ never be treated as an on-chain quote:
       "potentialBorrowUsd": 101117.57,
       "availableNowUsd": 0,
       "fundingStatus": "request-required",
-      "indicativeApr": 0.095,
+      "indicativeApr": 0.065,
       "termMonths": 24,
       "policyVersion": "own-collateral-v1-2026-07-15",
       "riskModel": "maturity-default"

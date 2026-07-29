@@ -1,540 +1,697 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+import { encodeFunctionData, encodeFunctionResult, parseAbi } from "viem";
+import { ethereumOwnTokenRegistryV1 } from "../../packages/configs/src/index.ts";
+import {
+  ENS_UNIVERSAL_RESOLVER,
+  GNS_NAME_NFT,
+} from "../../apps/website/utils/static-names.ts";
 
-test("public estimator features OWN first and switches to pooled threshold risk", async ({
-  page,
-}) => {
-  await page.goto("/");
+const account = "0x00000000000000000000000000000000000000A1";
+const wethIndex = ethereumOwnTokenRegistryV1.findIndex(
+  (token) => token.symbol === "WETH",
+);
+const weth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" as const;
+const usdc = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as const;
+const aUsdc = "0x98C23E9d8f34FEFb1B7BD6a91B7FF122F4e16F5c" as const;
+const zero = "0x0000000000000000000000000000000000000000" as const;
 
-  await expect(
-    page.getByRole("heading", { name: "Borrowing power for powerrr.eth" }),
-  ).toBeVisible();
-  const own = page.getByRole("radio", {
-    name: /OWN Featured Request required/i,
-  });
-  await expect(own).toBeVisible();
-  await expect(
-    own.getByText("OWN’s indicative fixed-term request option"),
-  ).toBeVisible();
-  await expect(own.getByText("Up to $101,118")).toBeVisible();
-  await expect(own).toHaveAttribute("aria-checked", "true");
-  await expect(
-    page.getByRole("heading", { name: "Fixed-term maturity risk" }),
-  ).toBeVisible();
-  await expect(
-    page.getByText(
-      "Price changes alone do not automatically liquidate an OWN position.",
-    ),
-  ).toBeVisible();
+const erc20Abi = [
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "balance", type: "uint256" }],
+  },
+] as const;
+const oracleAbi = [
+  {
+    type: "function",
+    name: "BASE_CURRENCY_UNIT",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "unit", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "getAssetPrice",
+    stateMutability: "view",
+    inputs: [{ name: "asset", type: "address" }],
+    outputs: [{ name: "price", type: "uint256" }],
+  },
+] as const;
+const multicall3Abi = [
+  {
+    type: "function",
+    name: "aggregate3",
+    stateMutability: "payable",
+    inputs: [
+      {
+        name: "calls",
+        type: "tuple[]",
+        components: [
+          { name: "target", type: "address" },
+          { name: "allowFailure", type: "bool" },
+          { name: "callData", type: "bytes" },
+        ],
+      },
+    ],
+    outputs: [
+      {
+        name: "returnData",
+        type: "tuple[]",
+        components: [
+          { name: "success", type: "bool" },
+          { name: "returnData", type: "bytes" },
+        ],
+      },
+    ],
+  },
+] as const;
+const ensReverseAbi = [
+  {
+    type: "function",
+    name: "reverse",
+    stateMutability: "view",
+    inputs: [
+      { name: "lookupAddress", type: "bytes" },
+      { name: "coinType", type: "uint256" },
+    ],
+    outputs: [
+      { name: "primary", type: "string" },
+      { name: "resolver", type: "address" },
+      { name: "reverseResolver", type: "address" },
+    ],
+  },
+] as const;
+const gnsReverseAbi = [
+  {
+    type: "function",
+    name: "reverseResolve",
+    stateMutability: "view",
+    inputs: [{ name: "addr", type: "address" }],
+    outputs: [{ name: "name", type: "string" }],
+  },
+] as const;
+const aaveDataAbi = parseAbi([
+  "function getAllReservesTokens() view returns ((string symbol,address tokenAddress)[])",
+  "function getReserveConfigurationData(address asset) view returns (uint256 decimals,uint256 ltv,uint256 liquidationThreshold,uint256 liquidationBonus,uint256 reserveFactor,bool usageAsCollateralEnabled,bool borrowingEnabled,bool stableBorrowRateEnabled,bool isActive,bool isFrozen)",
+  "function getReserveTokensAddresses(address asset) view returns (address aTokenAddress,address stableDebtTokenAddress,address variableDebtTokenAddress)",
+  "function getReserveData(address asset) view returns (uint256 unbacked,uint256 accruedToTreasuryScaled,uint256 totalAToken,uint256 totalStableDebt,uint256 totalVariableDebt,uint256 liquidityRate,uint256 variableBorrowRate,uint256 stableBorrowRate,uint256 averageStableBorrowRate,uint256 liquidityIndex,uint256 variableBorrowIndex,uint40 lastUpdateTimestamp)",
+  "function getReserveCaps(address asset) view returns (uint256 borrowCap,uint256 supplyCap)",
+  "function getPaused(address asset) view returns (bool)",
+  "function getDebtCeiling(address asset) view returns (uint256)",
+]);
 
-  const aave = page.getByRole("radio", { name: /Aave.*Highest capacity/i });
-  await aave.click();
-  await expect(page.getByText("Health factor", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText("Borrowing power used", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /Review on Aave/ }),
-  ).toHaveAttribute("href", "https://app.aave.com/");
-  await expect(page.getByText(/liquidation likelihood/i)).toHaveCount(0);
-
-  const slider = page.getByRole("slider", { name: "Borrowing power used" });
-  const before = Number(await slider.inputValue());
-  await slider.focus();
-  await slider.press("ArrowRight");
-  expect(Number(await slider.inputValue())).toBeGreaterThan(before);
+const zeroBalance = encodeFunctionResult({
+  abi: erc20Abi,
+  functionName: "balanceOf",
+  result: 0n,
 });
-
-test("OWN request form is prefilled and completes through the development webhook substitute", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await expect(
-    page.getByRole("button", { name: "Request an OWN offer" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Request an OWN offer" }).click();
-
-  const dialog = page.getByRole("dialog", { name: "Request an OWN offer" });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByLabel("Email address")).toBeFocused();
-  await expect(dialog.getByLabel("Wallet or ENS")).toHaveValue("powerrr.eth");
-  await expect(dialog.getByLabel("Requested amount (USDC)")).toHaveValue(
-    "50559",
-  );
-  await expect(dialog.getByText("WETH · $63,510")).toBeVisible();
-
-  await dialog.press("Escape");
-  await expect(dialog).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Request an OWN offer" }),
-  ).toBeFocused();
-  await page.getByRole("button", { name: "Request an OWN offer" }).click();
-
-  const reopenedDialog = page.getByRole("dialog", {
-    name: "Request an OWN offer",
-  });
-  await reopenedDialog.getByLabel("Email address").fill("borrower@example.com");
-  await reopenedDialog.getByRole("checkbox").check();
-  await reopenedDialog
-    .getByRole("button", { name: "Send request to OWN" })
-    .click();
-  await expect(
-    page.getByRole("dialog", { name: "Request received" }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("This is not an approval or executable quote."),
-  ).toBeVisible();
-  await expect(page.getByText(/Reference [A-F0-9]{8}/)).toBeVisible();
+const wethBalance = encodeFunctionResult({
+  abi: erc20Abi,
+  functionName: "balanceOf",
+  result: 2_000_000_000_000_000_000n,
 });
+const balanceResponse = encodeFunctionResult({
+  abi: multicall3Abi,
+  functionName: "aggregate3",
+  result: ethereumOwnTokenRegistryV1.map((_, index) => ({
+    success: true,
+    returnData: index === wethIndex ? wethBalance : zeroBalance,
+  })),
+});
+const priceResponse = encodeFunctionResult({
+  abi: multicall3Abi,
+  functionName: "aggregate3",
+  result: [
+    {
+      success: true,
+      returnData: encodeFunctionResult({
+        abi: oracleAbi,
+        functionName: "BASE_CURRENCY_UNIT",
+        result: 100_000_000n,
+      }),
+    },
+    {
+      success: true,
+      returnData: encodeFunctionResult({
+        abi: oracleAbi,
+        functionName: "getAssetPrice",
+        result: 300_000_000_000n,
+      }),
+    },
+  ],
+});
+const ensNameResponse = encodeFunctionResult({
+  abi: ensReverseAbi,
+  functionName: "reverse",
+  result: [
+    "powerrr.eth",
+    "0x0000000000000000000000000000000000000000",
+    "0x0000000000000000000000000000000000000000",
+  ],
+});
+const gweiNameResponse = encodeFunctionResult({
+  abi: gnsReverseAbi,
+  functionName: "reverseResolve",
+  result: "powerrr.gwei",
+});
+const directRpcResponses = buildDirectRpcResponses();
 
-test("lead endpoint validates consent, traps honeypots, and rate limits repeated submissions", async ({
-  request,
-}) => {
-  const lead = {
-    idempotencyKey: "d58e9be4-3f95-4ee4-858e-1e4f7a5d89a9",
-    email: "borrower@example.com",
-    wallet: "powerrr.eth",
-    requestedAmountUsd: 50_000,
-    creditAsset: "USDC",
-    termMonths: 24,
-    collateral: [{ symbol: "WETH", valueUsd: 100_000 }],
-    policyVersion: "own-collateral-v1-2026-07-15",
-    consent: true,
+function buildDirectRpcResponses(): Record<string, string> {
+  const responses: Record<string, string> = {};
+  const add = (
+    functionName: string,
+    args: readonly unknown[],
+    result: unknown,
+  ) => {
+    const data = encodeFunctionData({
+      abi: aaveDataAbi,
+      functionName,
+      args,
+    } as never);
+    responses[data.toLowerCase()] = encodeFunctionResult({
+      abi: aaveDataAbi,
+      functionName,
+      result,
+    } as never);
   };
 
-  const invalid = await request.post("/api/v1/own/leads", {
-    data: { ...lead, consent: false },
-  });
-  expect(invalid.status()).toBe(400);
-
-  const honeypot = await request.post("/api/v1/own/leads", {
-    data: { ...lead, website: "https://spam.example" },
-  });
-  expect(honeypot.status()).toBe(200);
-  expect(await honeypot.json()).toMatchObject({
-    accepted: true,
-    delivery: "honeypot",
-  });
-
-  const remainingAttempts = Number(honeypot.headers()["x-ratelimit-remaining"]);
-  expect(remainingAttempts).toBeGreaterThan(0);
-  for (let index = 0; index < remainingAttempts; index += 1) {
-    const response = await request.post("/api/v1/own/leads", {
-      data: {
-        ...lead,
-        idempotencyKey: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-      },
-    });
-    expect(response.status()).toBe(200);
+  add(
+    "getAllReservesTokens",
+    [],
+    [
+      { symbol: "WETH", tokenAddress: weth },
+      { symbol: "USDC", tokenAddress: usdc },
+    ],
+  );
+  add("getReserveTokensAddresses", [usdc], [aUsdc, zero, zero]);
+  add(
+    "getReserveConfigurationData",
+    [usdc],
+    [6n, 0n, 0n, 0n, 1_000n, false, true, false, true, false],
+  );
+  add(
+    "getReserveConfigurationData",
+    [weth],
+    [18n, 8_000n, 8_300n, 10_500n, 1_000n, true, true, false, true, false],
+  );
+  for (const asset of [usdc, weth]) {
+    add(
+      "getReserveData",
+      [asset],
+      [
+        0n,
+        0n,
+        0n,
+        0n,
+        0n,
+        0n,
+        50_000_000_000_000_000_000_000_000n,
+        0n,
+        0n,
+        0n,
+        0n,
+        0,
+      ],
+    );
+    add("getReserveCaps", [asset], [0n, 0n]);
+    add("getPaused", [asset], false);
+    add("getDebtCeiling", [asset], 0n);
   }
+  responses[
+    encodeFunctionData({
+      abi: oracleAbi,
+      functionName: "BASE_CURRENCY_UNIT",
+    }).toLowerCase()
+  ] = encodeFunctionResult({
+    abi: oracleAbi,
+    functionName: "BASE_CURRENCY_UNIT",
+    result: 100_000_000n,
+  });
+  for (const [asset, price] of [
+    [usdc, 100_000_000n],
+    [weth, 300_000_000_000n],
+  ] as const) {
+    responses[
+      encodeFunctionData({
+        abi: oracleAbi,
+        functionName: "getAssetPrice",
+        args: [asset],
+      }).toLowerCase()
+    ] = encodeFunctionResult({
+      abi: oracleAbi,
+      functionName: "getAssetPrice",
+      result: price,
+    });
+  }
+  responses[
+    encodeFunctionData({
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [aUsdc],
+    }).toLowerCase()
+  ] = encodeFunctionResult({
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    result: 1_000_000_000_000n,
+  });
+  return responses;
+}
 
-  const limited = await request.post("/api/v1/own/leads", {
-    data: {
-      ...lead,
-      idempotencyKey: "00000000-0000-4000-8000-999999999999",
+async function installWallet(
+  page: Page,
+  options: { nameDelayMs?: number; namesAvailable?: boolean } = {},
+): Promise<void> {
+  const nameDelayMs = options.nameDelayMs ?? 0;
+  const namesAvailable = options.namesAvailable ?? true;
+  await page.addInitScript(
+    ({
+      account,
+      balanceResponse,
+      priceResponse,
+      ensNameResponse,
+      gweiNameResponse,
+      ensResolver,
+      gnsNameNft,
+      nameDelayMs,
+      namesAvailable,
+      directRpcResponses,
+    }) => {
+      const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+      let multicallNumber = 0;
+      const provider = {
+        async request({
+          method,
+          params,
+        }: {
+          method: string;
+          params?: unknown[];
+        }) {
+          const state = window as typeof window & {
+            __rpcMethods?: string[];
+            __ethCallCount?: number;
+          };
+          state.__rpcMethods ??= [];
+          state.__rpcMethods.push(method);
+          if (method === "eth_requestAccounts" || method === "eth_accounts") {
+            return [account];
+          }
+          if (method === "eth_chainId") return "0x1";
+          if (method === "eth_blockNumber") return "0x1234";
+          if (method === "eth_getBlockByNumber") {
+            return {
+              timestamp: `0x${Math.floor(Date.now() / 1000).toString(16)}`,
+            };
+          }
+          if (method === "eth_getCode") return "0x60016000";
+          if (method === "eth_getBalance") return "0x0";
+          if (method === "eth_call") {
+            state.__ethCallCount = (state.__ethCallCount ?? 0) + 1;
+            const to = (
+              params?.[0] as { to?: string } | undefined
+            )?.to?.toLowerCase();
+            if (to === ensResolver.toLowerCase()) {
+              if (nameDelayMs > 0) {
+                await new Promise((resolve) =>
+                  window.setTimeout(resolve, nameDelayMs),
+                );
+              }
+              return namesAvailable ? ensNameResponse : "0x";
+            }
+            if (to === gnsNameNft.toLowerCase()) {
+              if (nameDelayMs > 0) {
+                await new Promise((resolve) =>
+                  window.setTimeout(resolve, nameDelayMs),
+                );
+              }
+              return namesAvailable ? gweiNameResponse : "0x";
+            }
+            const data = (
+              params?.[0] as { data?: string } | undefined
+            )?.data?.toLowerCase();
+            if (data && directRpcResponses[data]) {
+              return directRpcResponses[data];
+            }
+            multicallNumber += 1;
+            if (multicallNumber === 1) return balanceResponse;
+            if (multicallNumber === 2) return priceResponse;
+            return "0x";
+          }
+          if (method === "wallet_switchEthereumChain") return null;
+          throw new Error(`Unexpected RPC method ${method}`);
+        },
+        on(event: string, listener: (...args: unknown[]) => void) {
+          const set = listeners.get(event) ?? new Set();
+          set.add(listener);
+          listeners.set(event, set);
+        },
+        removeListener(event: string, listener: (...args: unknown[]) => void) {
+          listeners.get(event)?.delete(listener);
+        },
+      };
+      const announce = () =>
+        window.dispatchEvent(
+          new CustomEvent("eip6963:announceProvider", {
+            detail: Object.freeze({
+              info: {
+                uuid: "00000000-0000-4000-8000-000000000001",
+                name: "Test Wallet",
+                rdns: "test.wallet",
+                icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>",
+              },
+              provider,
+            }),
+          }),
+        );
+      window.addEventListener("eip6963:requestProvider", announce);
+      announce();
     },
-  });
-  expect(limited.status()).toBe(429);
-});
+    {
+      account,
+      balanceResponse,
+      priceResponse,
+      ensNameResponse,
+      gweiNameResponse,
+      ensResolver: ENS_UNIVERSAL_RESOLVER,
+      gnsNameNft: GNS_NAME_NFT,
+      nameDelayMs,
+      namesAvailable,
+      directRpcResponses,
+    },
+  );
+}
 
-test("public estimator remains usable at a phone viewport", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+async function connectAndScan(page: Page): Promise<void> {
+  await installWallet(page);
   await page.goto("/");
   await expect(
-    page.getByRole("radio", { name: /OWN Featured Request required/i }),
+    page.getByRole("button", { name: "Connect wallet" }).first(),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Connect wallet" }).first().click();
   await expect(
-    page.getByRole("button", { name: "Request an OWN offer" }),
-  ).toBeVisible();
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBe(true);
-});
-
-test("disabled OWN requests leave OWN informational and select the highest-capacity live provider", async ({
-  page,
-}) => {
-  await page.route("**/api/v1/own/leads/status", async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        enabled: false,
-        reason: "Requests are temporarily closed.",
-      }),
-    });
-  });
-
-  await page.goto("/");
-  await expect(
-    page.getByRole("radio", {
-      name: /OWN Featured Unavailable.*Requests are temporarily closed/i,
+    page.getByRole("heading", {
+      name: "Borrowing estimate for powerrr.eth · powerrr.gwei",
     }),
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("radio", { name: /Aave.*Highest capacity/i }),
-  ).toHaveAttribute("aria-checked", "true");
-  await expect(
-    page.getByRole("link", { name: /Review on Aave/ }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Request an OWN offer" }),
+    page.getByText(/verified primary names read onchain/i),
   ).toHaveCount(0);
-});
+  await expect(page.getByRole("button", { name: /Disconnect/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Edit address/i })).toHaveCount(
+    0,
+  );
+}
 
-test("mocked live ENS results show conversions and partial provider availability on mobile", async ({
+test("wallet read disclosure opens without shifting the landing layout", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.route("**/api/v2/quotes", async (route) => {
-    const portfolio = {
-      resolvedAddress: "0x1111111111111111111111111111111111111111",
-      resolvedEnsName: "vojtch.eth",
-      chainId: 1,
-      assets: [
-        {
-          chainId: 1,
-          token: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-          symbol: "ETH",
-          name: "Ether",
-          decimals: 18,
-          balance: "1",
-          balanceRaw: "1000000000000000000",
-          marketPriceUsd: 2_000,
-          protocolEligible: { "aave-v3": true },
-          assetKind: "native",
-          protocolAssetToken: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-          protocolBalanceRaw: "1000000000000000000",
-          requiredAction: "wrap",
-          conversion: {
-            kind: "one-to-one",
-            fromSymbol: "ETH",
-            toSymbol: "WETH",
-            rate: "1",
-          },
-        },
-      ],
-      summary: {
-        totalValueUsd: 2_000,
-        eligibleCollateralUsd: 2_000,
-        discoveredAssets: 1,
-        supportedWalletValueUsd: 2_000,
-        matchedCollateralUsd: 2_000,
-        matchedAssetCount: 1,
-      },
-      provenance: [
-        {
-          source: "Ethereum RPC batch test",
-          sourceType: "on-chain",
-          blockNumber: "1",
-        },
-      ],
-      warnings: ["Unsupported wallet holdings are intentionally omitted."],
-    };
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        requestId: "live-e2e",
-        resolvedAddress: portfolio.resolvedAddress,
-        resolvedEnsName: "vojtch.eth",
-        chainId: 1,
-        mode: "wallet-estimate",
-        blockNumber: "1",
-        blockTimestamp: "2026-07-20T07:59:48.000Z",
-        calculatedAt: "2026-07-20T08:00:00.000Z",
-        servedAt: "2026-07-20T08:00:01.000Z",
-        generatedAt: "2026-07-20T08:00:00.000Z",
-        dataMode: "live",
-        runtimeTier: "public-rpc-preview",
-        sourcePolicySatisfied: true,
-        completeness: "partial",
-        cache: { status: "miss", ageSeconds: 0 },
-        observations: [
-          {
-            sourceId: "portfolio:0",
-            sourceLabel: "Ethereum RPC batch test",
-            sourceType: "on-chain",
-            fetchedAt: "2026-07-20T08:00:00.000Z",
-            observedAt: "2026-07-20T07:59:48.000Z",
-            blockNumber: "1",
-            blockTimestamp: "2026-07-20T07:59:48.000Z",
-            ageSeconds: 12,
-            freshness: "fresh",
-          },
-        ],
-        productionSafe: false,
-        quotes: [],
-        opportunities: [],
-        portfolio,
-        portfolioSummary: portfolio.summary,
-        protocolAvailability: [
-          {
-            protocolId: "aave-v3",
-            status: "unavailable",
-            code: "SOURCE_READ_FAILED",
-            reason: "Live estimate temporarily unavailable",
-          },
-        ],
-        warnings: ["Live estimates use public-rpc-preview infrastructure."],
-      }),
-    });
-  });
-
+  await installWallet(page);
   await page.goto("/");
-  await expect(page.getByText("Wrapping required")).toHaveCount(0);
-  await page.getByText("About this estimate").click();
-  await expect(
-    page.getByText(/Some providers may require converting ETH or stETH/i),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("radio", {
-      name: /Aave.*Live estimate temporarily unavailable/i,
-    }),
-  ).toBeDisabled();
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBe(true);
+  const hero = page.locator("#wallet-options");
+  const before = await hero.boundingBox();
+  await page.getByRole("button", { name: "How it works" }).click();
+  await expect(page.locator("#wallet-read-info")).toBeVisible();
+  const after = await hero.boundingBox();
+  expect(after?.y).toBe(before?.y);
+  expect(after?.height).toBe(before?.height);
 });
 
-test("empty and server-error states are clear", async ({ page }) => {
+test("wallet identity resolves before its final label is published", async ({
+  page,
+}) => {
+  await installWallet(page, { nameDelayMs: 350 });
   await page.goto("/");
-  await page.getByRole("button", { name: "powerrr.eth" }).click();
-  await page.getByLabel("Ethereum address or ENS").fill("empty.powerrr.eth");
-  await page.getByRole("button", { name: "Update" }).click();
+  await page.getByRole("button", { name: "Connect wallet" }).first().click();
+
   await expect(
-    page.getByRole("heading", { name: "No provider-matched collateral" }),
+    page.getByRole("button", { name: "Resolving wallet name" }),
+  ).toBeVisible();
+  await expect(page.getByText("0x0000…00A1", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", {
+      name: /Disconnect wallet powerrr\.eth · powerrr\.gwei/i,
+    }),
+  ).toBeVisible();
+});
+
+test("wallet identity falls back to the address after name lookup completes", async ({
+  page,
+}) => {
+  await installWallet(page, { nameDelayMs: 200, namesAvailable: false });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Connect wallet" }).first().click();
+
+  await expect(
+    page.getByRole("button", { name: "Resolving wallet name" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("radio", { name: /OWN Featured Unavailable/i }),
-  ).toHaveCount(0);
+    page.getByRole("button", { name: /Disconnect wallet 0x0000…00A1/i }),
+  ).toBeVisible();
+});
 
-  await page.route("**/api/v2/quotes", async (route) => {
-    await route.fulfill({
-      status: 503,
-      contentType: "application/json",
-      body: JSON.stringify({
-        error: {
-          code: "PROTOCOL_SOURCE_UNAVAILABLE",
-          message: "Live provider data is temporarily unavailable.",
-        },
-      }),
-    });
-  });
+test("theme follows the system and persists an explicit local choice", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto("/");
+  const themeToggle = page.getByTestId("theme-toggle");
+  await expect(themeToggle).toHaveAccessibleName("Switch to dark mode");
+  await expect(page.locator("html")).not.toHaveAttribute("data-theme");
+
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(themeToggle).toHaveAccessibleName("Switch to light mode");
+  await expect(page.locator("html")).not.toHaveAttribute("data-theme");
+
+  await themeToggle.click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  expect(await page.evaluate(() => localStorage.getItem("powerrr-theme"))).toBe(
+    "light",
+  );
+
   await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "We couldn’t estimate this wallet" }),
-  ).toBeVisible();
-  await expect(
-    page.getByText(/Live provider data is temporarily unavailable/),
-  ).toBeVisible();
+  await expect(themeToggle).toHaveAccessibleName("Switch to dark mode");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
+  await themeToggle.click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  expect(await page.evaluate(() => localStorage.getItem("powerrr-theme"))).toBe(
+    "dark",
+  );
+
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: "powerrr-theme",
+        newValue: "light",
+      }),
+    );
+  });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 });
 
-test("invalid ENS errors stay friendly and retry returns focus to the preserved wallet input", async ({
+test("static wallet scan is explicit and uses no Powerrr API", async ({
   page,
 }) => {
-  await page.route("**/api/v2/quotes", async (route) => {
-    await route.fulfill({
-      status: 400,
-      contentType: "application/json",
-      body: JSON.stringify({
-        error: {
-          code: "ENS_RESOLUTION_FAILED",
-          message:
-            "ContractFunctionExecutionError: resolveWithGateways(0xdeadbeef) reverted",
-        },
-      }),
-    });
-  });
+  const requests: string[] = [];
+  page.on("request", (request) => requests.push(request.url()));
+  await connectAndScan(page);
 
-  await page.goto("/");
+  await expect(page.getByText("WETH", { exact: true })).toBeVisible();
+  await expect(page.getByText(/\$6,000/).first()).toBeVisible();
+  await page.getByText("How this was calculated").click();
+  await expect(page.getByText("100/100 succeeded")).toBeVisible();
+  await expect(page.locator("time[datetime]")).toContainText("Loaded");
+  await expect(page.getByText(/s old$/)).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "We couldn’t estimate this wallet" }),
+    page.getByText(/No account, balance, or request was posted/),
   ).toBeVisible();
-  await expect(page.getByText(/couldn’t resolve that ENS name/i)).toBeVisible();
   await expect(
-    page.getByText(
-      /resolveWithGateways|0xdeadbeef|ContractFunctionExecutionError/,
-    ),
+    page.getByText("Registry and policy", { exact: true }),
   ).toHaveCount(0);
+  await expect(page.getByText("Multicall3", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/Vendored Uniswap/)).toHaveCount(0);
 
-  await page
-    .getByRole("button", { name: "Clear error and edit address" })
-    .click();
-  const walletInput = page.getByLabel("Ethereum address or ENS");
-  await expect(walletInput).toBeFocused();
-  await expect(walletInput).toHaveValue("powerrr.eth");
+  const rpcMethods = await page.evaluate(
+    () =>
+      (window as typeof window & { __rpcMethods?: string[] }).__rpcMethods ??
+      [],
+  );
+  expect(rpcMethods).toContain("eth_requestAccounts");
+  expect(rpcMethods).toContain("eth_call");
+  expect(rpcMethods).not.toContain("personal_sign");
+  expect(rpcMethods).not.toContain("eth_sendTransaction");
+  expect(requests.some((url) => /\/api\/v[12]\//.test(url))).toBe(false);
+
+  const callsAfterInitialScan = await page.evaluate(
+    () =>
+      (window as typeof window & { __ethCallCount?: number }).__ethCallCount ??
+      0,
+  );
+  await page.getByRole("button", { name: "Continue to amount" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Set your borrowing amount" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("1,844");
+  const halfShortcut = page.getByRole("button", { name: /50%/ });
+  await expect(page.getByRole("button", { name: /100%/ })).toBeVisible();
+  await expect(halfShortcut).toHaveAttribute("aria-pressed", "true");
+  await page.getByLabel("Borrow amount in USDC").fill("1000");
+  await expect(halfShortcut).toHaveAttribute("aria-pressed", "false");
+  await page.getByLabel("Borrow amount in USDC").fill("1844");
+  await expect(halfShortcut).toHaveAttribute("aria-pressed", "true");
+  expect(
+    await page.evaluate(
+      () =>
+        (window as typeof window & { __ethCallCount?: number })
+          .__ethCallCount ?? 0,
+    ),
+  ).toBe(callsAfterInitialScan);
 });
 
-test("the amount input and slider agree for a sub-dollar borrowing maximum", async ({
+test("pooled risk responds to the selected amount without an always-green state", async ({
   page,
 }) => {
-  await page.route("**/api/v2/quotes", async (route) => {
-    const portfolio = {
-      resolvedAddress: "0x1111111111111111111111111111111111111111",
-      resolvedEnsName: "tiny.eth",
-      chainId: 1,
-      assets: [
-        {
-          chainId: 1,
-          token: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-          symbol: "WETH",
-          name: "Wrapped Ether",
-          decimals: 18,
-          balance: "0.0001",
-          balanceRaw: "100000000000000",
-          marketPriceUsd: 45,
-          protocolEligible: { "aave-v3": true },
-          assetKind: "erc20",
-        },
-      ],
-      summary: {
-        totalValueUsd: 0.0045,
-        eligibleCollateralUsd: 0.0045,
-        discoveredAssets: 1,
-        supportedWalletValueUsd: 0.0045,
-        matchedCollateralUsd: 0.0045,
-        matchedAssetCount: 1,
-      },
-      provenance: [{ source: "Tiny wallet fixture", sourceType: "fixture" }],
-      warnings: [],
-    };
-    const quote = {
-      protocolId: "aave-v3",
-      protocolLabel: "Aave V3",
-      familyId: "aave",
-      familyLabel: "Aave",
-      chainId: 1,
-      mode: "wallet-estimate",
-      theoreticalBorrowUsd: 1,
-      safeBorrowUsd: 0.93,
-      existingDebtUsd: 0,
-      availableLiquidityUsd: 1_000,
-      targetBorrowAsset: "USDC",
-      rateType: "variable",
-      indicativeApr: 0.04,
-      annualRate: {
-        value: 0.04,
-        convention: "apr",
-        rateType: "variable",
-        sourceId: "aave-v3",
-      },
-      liquidationRisk: "price-threshold",
-      collateralUsed: [
-        {
-          token: portfolio.assets[0].token,
-          symbol: "WETH",
-          valueUsd: 1,
-          ltv: 0.8,
-          liquidationThreshold: 0.83,
-        },
-      ],
-      healthFactor: 1.4,
-      riskLevel: "medium",
-      confidence: "high",
-      confidenceScore: 0.95,
-      stale: false,
-      timestamp: "2026-07-20T08:00:00.000Z",
-      assumptions: [],
-      warnings: [],
-      provenance: [{ source: "Tiny wallet fixture", sourceType: "fixture" }],
-    };
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        requestId: "tiny-e2e",
-        resolvedAddress: portfolio.resolvedAddress,
-        resolvedEnsName: "tiny.eth",
-        chainId: 1,
-        mode: "wallet-estimate",
-        blockNumber: "1",
-        calculatedAt: "2026-07-20T08:00:00.000Z",
-        servedAt: "2026-07-20T08:00:00.000Z",
-        generatedAt: "2026-07-20T08:00:00.000Z",
-        dataMode: "fixtures",
-        runtimeTier: "fixture",
-        sourcePolicySatisfied: false,
-        completeness: "complete",
-        cache: { status: "miss", ageSeconds: 0 },
-        observations: [
-          {
-            sourceId: "portfolio:0",
-            sourceLabel: "Tiny wallet fixture",
-            sourceType: "fixture",
-            fetchedAt: "2026-07-20T08:00:00.000Z",
-            freshness: "fresh",
-            ageSeconds: 0,
-          },
-        ],
-        productionSafe: false,
-        quotes: [quote],
-        opportunities: [],
-        portfolio,
-        portfolioSummary: portfolio.summary,
-        protocolAvailability: [{ protocolId: "aave-v3", status: "available" }],
-        warnings: [],
-      }),
-    });
+  await connectAndScan(page);
+  await page.getByRole("button", { name: "Continue to amount" }).click();
+  await expect(page.getByText(/Estimated provider limit: up to/)).toBeVisible();
+  await expect(
+    page.getByText(/OWN fixed-term capacity is not published/),
+  ).toBeVisible();
+  await expect(page.getByText("Amount shortcuts")).toBeVisible();
+  await page.getByLabel("Borrow amount in USDC").fill("1000");
+  await page.getByRole("button", { name: "Compare borrowing paths" }).click();
+  const providerGroup = page.getByRole("radiogroup", {
+    name: "Immediately available providers",
   });
-
-  await page.goto("/");
+  const providerLabels = await providerGroup
+    .locator("[data-provider-label]")
+    .allTextContents();
+  expect(providerLabels).toEqual(["Aave", "Spark", "Morpho", "Compound"]);
+  const aave = providerGroup.getByRole("radio", { name: /Aave/i });
+  await expect(aave).toBeVisible();
+  await expect(aave).toBeEnabled();
+  await expect(providerGroup.getByRole("radio", { name: /OWN/i })).toHaveCount(
+    0,
+  );
+  await aave.click();
   await expect(
-    page.getByRole("radio", {
-      name: /Aave.*Estimated borrowing power.*\$0.93/i,
-    }),
-  ).toHaveAttribute("aria-checked", "true");
-  await expect(
-    page
-      .getByRole("region", { name: "Provider-matched collateral" })
-      .getByText("<$0.01"),
+    page.getByRole("heading", { name: "Wide liquidation buffer" }),
   ).toBeVisible();
-
-  const amount = page.getByLabel("Borrow amount (USDC)");
-  const slider = page.getByRole("slider", { name: "Borrowing power used" });
-  await expect(amount).toHaveValue("0.47");
-  await expect(slider).toHaveValue("51");
-  await page.getByRole("button", { name: /Max.*\$0.93/ }).click();
-  await expect(amount).toHaveValue("0.93");
-  await expect(slider).toHaveValue("100");
+  await expect(
+    page.getByText("Projected health factor", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Liquidation headroom")).toBeVisible();
+  await expect(page.getByText("Recommended limit used")).toBeVisible();
+  const amountSlider = page.getByLabel("Borrow amount");
+  await expect(amountSlider).toBeVisible();
+  await amountSlider.fill("0");
+  await expect(
+    page.getByRole("heading", { name: "No debt selected" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Review on Aave" }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "100%", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Reduced liquidation buffer" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Projected health factor", { exact: true }).locator(".."),
+  ).toContainText("1.35");
+  await expect(
+    page.getByRole("button", { name: "Review on Aave" }),
+  ).toBeEnabled();
 });
 
-test("the public result has no automatically detectable WCAG A or AA violations", async ({
+test("OWN stays visible but exposes no unapproved capacity or repayment number", async ({
   page,
 }) => {
-  await page.goto("/");
+  await connectAndScan(page);
+  await page.getByRole("button", { name: "Continue to amount" }).click();
+  await page.getByLabel("Borrow amount in USDC").fill("1000");
+  await page.getByRole("button", { name: "Compare borrowing paths" }).click();
+  const ownOption = page.locator('section[aria-labelledby="own-option-title"]');
+  await expect(ownOption.getByText("Policy review required")).toBeVisible();
+  await expect(ownOption.getByText("Request assessment")).toBeVisible();
+  await expect(ownOption.getByText(/Up to \$/)).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "Borrowing power for powerrr.eth" }),
-  ).toBeVisible();
+    ownOption.getByRole("button", { name: "Select OWN fixed-term option" }),
+  ).toHaveCount(0);
+  await expect(page.getByText("Estimated total repayment")).toHaveCount(0);
+  await expect(page.getByText("Illustrative terms")).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Request with OWN" }),
+  ).toHaveCount(0);
+});
 
+test("the static result remains usable on a phone viewport", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await connectAndScan(page);
+  await expect(
+    page.getByRole("heading", { name: "Choose collateral" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Continue to amount" }).click();
+  await page.getByLabel("Borrow amount in USDC").fill("1000");
+  await page.getByRole("button", { name: "Compare borrowing paths" }).click();
+  await expect(page.getByText("Request assessment")).toBeVisible();
+  await page.getByRole("radio", { name: /Aave/i }).click();
+  await expect(
+    page.getByRole("button", { name: "Review on Aave" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("the connected result has no detectable WCAG A or AA violations", async ({
+  page,
+}) => {
+  await connectAndScan(page);
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag22aa"])
     .analyze();
-
   expect(results.violations).toEqual([]);
 });
 
-test("internal workbench gates unverified evidence and runs all stresses", async ({
+test("dark mode remains accessible through the pooled risk review flow", async ({
   page,
 }) => {
-  await page.goto("http://127.0.0.1:3001");
-  await expect(
-    page.getByRole("heading", { name: "Powerrr Risk" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "within policy" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Unverified evidence" }).click();
-  await expect(
-    page.getByRole("heading", { name: "manual review" }),
-  ).toBeVisible();
-  await expect(page.getByText("Evidence review required")).toBeVisible();
-  await page.getByRole("button", { name: "Run all stresses" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Stress scenarios" }),
-  ).toBeVisible();
-  await expect(page.locator(".scenario-row")).toHaveCount(5);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await connectAndScan(page);
+  await expect(page.getByTestId("theme-toggle")).toHaveAccessibleName(
+    "Switch to light mode",
+  );
+  expect(
+    await page.evaluate(
+      () => getComputedStyle(document.documentElement).backgroundColor,
+    ),
+  ).toBe("rgb(11, 20, 21)");
+
+  await page.getByRole("button", { name: "Continue to amount" }).click();
+  await page.getByLabel("Borrow amount in USDC").fill("1000");
+  await page.getByRole("button", { name: "Compare borrowing paths" }).click();
+  expect(
+    await page
+      .locator('section[aria-labelledby="own-option-title"] .own-logo')
+      .evaluate((element) => getComputedStyle(element).backgroundColor),
+  ).toBe("rgb(98, 184, 183)");
+  await page.getByRole("radio", { name: /Aave/i }).click();
+  await expect(page.getByText("Projected position")).toBeVisible();
+  const results = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag22aa"])
+    .analyze();
+  expect(results.violations).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });

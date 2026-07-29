@@ -9,6 +9,60 @@ export type RateType = "fixed" | "variable" | "mixed" | "unknown";
 export type AnnualRateConvention = "apr" | "apy";
 export type FreshnessStatus = "fresh" | "stale" | "unknown";
 export type RuntimeTier = "fixture" | "public-rpc-preview" | "production";
+
+export type WalletProviderDescriptor = {
+  uuid: string;
+  name: string;
+  rdns: string;
+  icon?: string;
+};
+
+export type OnchainPriceRoute =
+  | { kind: "aave-oracle"; oracle: HexAddress; asset: HexAddress }
+  | { kind: "unavailable"; reason: string };
+
+export type TokenRegistryEntry = {
+  chainId: 1;
+  address: HexAddress;
+  symbol: string;
+  name: string;
+  decimals: number;
+  iconKey: string;
+  priceRoute: OnchainPriceRoute;
+  ownPolicy: {
+    eligible: true;
+    advanceRate: number;
+    valuationHaircut: number;
+    contributionCapUsd: number;
+    concentrationFamily: string;
+    provisional: boolean;
+  };
+};
+
+export type DiscoveryProgress = {
+  phase: "connecting" | "balances" | "valuation" | "providers" | "complete";
+  completed: number;
+  total: number;
+  message: string;
+};
+
+export type ReadReceipt = {
+  walletName: string;
+  account: HexAddress;
+  chainId: 1;
+  blockNumber: string;
+  blockTimestamp: string;
+  blockAgeSeconds: number;
+  registryVersion: string;
+  policyVersion: string;
+  multicallAddress: HexAddress;
+  callsAttempted: number;
+  callsSucceeded: number;
+  callsFailed: number;
+  chunkSizes: number[];
+  priceSources: string[];
+  postedToPowerrr: false;
+};
 export type LiquidationRisk =
   | "none-assumed-own"
   | "health-factor"
@@ -46,6 +100,17 @@ export type PortfolioAsset = {
     toSymbol: string;
     rate: string;
   };
+  balanceReadStatus?: "success" | "failed";
+  balanceReadReason?: string;
+  valuationStatus?: "available" | "manual-review" | "failed";
+  valuationReason?: string;
+  priceProvenance?: string;
+  ownEligible?: boolean;
+  ownAdvanceRate?: number;
+  ownValuationHaircut?: number;
+  ownContributionCapUsd?: number;
+  ownCapacityContributionUsd?: number;
+  observedBlockNumber?: string;
 };
 
 export type PortfolioSummary = {
@@ -109,6 +174,7 @@ export type ProtocolBorrowQuote = {
   safeBorrowUsd: number | null;
   existingDebtUsd?: number | null;
   availableLiquidityUsd?: number | null;
+  minimumBorrowUsd?: number | null;
   targetBorrowAsset: string;
   rateType: RateType;
   indicativeApr?: number | null;
@@ -169,6 +235,7 @@ export type QuoteRequest = {
   };
   mode: QuoteMode;
   targetBorrowAssets?: string[];
+  collateralTokens?: HexAddress[];
   safetyProfile?: SafetyProfile;
   includeProtocols?: string[];
   asOfBlock?: string | null;
