@@ -276,10 +276,15 @@ function buildDirectRpcResponses(): Record<string, string> {
 
 async function installWallet(
   page: Page,
-  options: { nameDelayMs?: number; namesAvailable?: boolean } = {},
+  options: {
+    nameDelayMs?: number;
+    namesAvailable?: boolean;
+    nativeBalanceHex?: string;
+  } = {},
 ): Promise<void> {
   const nameDelayMs = options.nameDelayMs ?? 0;
   const namesAvailable = options.namesAvailable ?? true;
+  const nativeBalanceHex = options.nativeBalanceHex ?? "0x0";
   await page.addInitScript(
     ({
       account,
@@ -291,6 +296,7 @@ async function installWallet(
       gnsNameNft,
       nameDelayMs,
       namesAvailable,
+      nativeBalanceHex,
       directRpcResponses,
     }) => {
       const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
@@ -320,7 +326,7 @@ async function installWallet(
             };
           }
           if (method === "eth_getCode") return "0x60016000";
-          if (method === "eth_getBalance") return "0x0";
+          if (method === "eth_getBalance") return nativeBalanceHex;
           if (method === "eth_call") {
             state.__ethCallCount = (state.__ethCallCount ?? 0) + 1;
             const to = (
@@ -392,6 +398,7 @@ async function installWallet(
       gnsNameNft: GNS_NAME_NFT,
       nameDelayMs,
       namesAvailable,
+      nativeBalanceHex,
       directRpcResponses,
     },
   );
@@ -417,6 +424,38 @@ async function connectAndScan(page: Page): Promise<void> {
     0,
   );
 }
+
+test("wallet motion communicates active work and respects reduced motion", async ({
+  page,
+}) => {
+  await installWallet(page, { nameDelayMs: 700 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Connect wallet" }).first().click();
+  await expect(
+    page.getByRole("heading", { name: "Checking your wallet" }),
+  ).toBeVisible();
+  await expect(page.locator(".scan-dial-sweep")).toHaveCSS(
+    "animation-name",
+    "scan-dial-turn",
+  );
+  await expect(
+    page.getByRole("heading", { name: /Wallet snapshot for/ }),
+  ).toBeVisible();
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.reload();
+  await page.getByRole("button", { name: "Connect wallet" }).first().click();
+  await expect(
+    page.getByRole("heading", { name: "Checking your wallet" }),
+  ).toBeVisible();
+  const reducedDurationMs = await page
+    .locator(".scan-dial-sweep")
+    .evaluate(
+      (element) =>
+        Number.parseFloat(getComputedStyle(element).animationDuration) * 1_000,
+    );
+  expect(reducedDurationMs).toBeLessThanOrEqual(0.01);
+});
 
 test("wallet read disclosure opens without shifting the landing layout", async ({
   page,
@@ -472,6 +511,17 @@ test("the interface stays light regardless of system preference", async ({
   await page.goto("/");
   await expect(page.getByTestId("theme-toggle")).toHaveCount(0);
   await expect(page.locator("html")).not.toHaveAttribute("data-theme");
+  await expect(page.getByText("No browser wallet found")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Connect wallet" }),
+  ).toHaveCount(0);
+  await page.evaluate(() => document.fonts.ready);
+  expect(
+    await page.evaluate(() => document.fonts.check('16px "Inter Variable"')),
+  ).toBe(true);
+  expect(
+    await page.evaluate(() => getComputedStyle(document.body).fontFamily),
+  ).toContain("Inter Variable");
   expect(
     await page.evaluate(
       () => getComputedStyle(document.documentElement).backgroundColor,
@@ -507,6 +557,21 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
   await expect(
     page.getByText(/No account, balance, or request was posted/),
   ).toBeVisible();
+  const assetWorkspace = page.locator("[data-asset-workspace-main]");
+  const selectionSummary = page.locator("[data-selection-summary]");
+  const assetWorkspaceBounds = await assetWorkspace.boundingBox();
+  const selectionSummaryBounds = await selectionSummary.boundingBox();
+  expect(assetWorkspaceBounds).not.toBeNull();
+  expect(selectionSummaryBounds).not.toBeNull();
+  expect(selectionSummaryBounds?.x ?? 0).toBeGreaterThan(
+    (assetWorkspaceBounds?.x ?? 0) + (assetWorkspaceBounds?.width ?? 0),
+  );
+  await expect(selectionSummary).toHaveCSS("position", "sticky");
+  await expect(
+    selectionSummary.getByRole("button", {
+      name: "Compare 1 selected asset",
+    }),
+  ).toBeVisible();
   await expect(
     page.getByText("Registry and policy", { exact: true }),
   ).toHaveCount(0);
@@ -528,10 +593,35 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
   await expect(
     page.getByRole("heading", { name: "Compare borrowing paths" }),
   ).toBeVisible();
-  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("1,844");
+  const comparisonControl = page.locator("[data-comparison-control]");
+  const providerField = page.locator("[data-provider-field]");
+  const comparisonControlBounds = await comparisonControl.boundingBox();
+  const providerFieldBounds = await providerField.boundingBox();
+  expect(comparisonControlBounds).not.toBeNull();
+  expect(providerFieldBounds).not.toBeNull();
+  expect(comparisonControlBounds?.x ?? Infinity).toBeLessThan(
+    providerFieldBounds?.x ?? 0,
+  );
+  await expect(comparisonControl).toHaveCSS("position", "sticky");
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("3,000");
+  const fiftyPercentLtv = page.getByRole("button", {
+    name: /50% projected LTV/,
+  });
+  await expect(fiftyPercentLtv).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: /25% projected LTV/ }).click();
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("1,500");
+  await fiftyPercentLtv.click();
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("3,000");
   await expect(page.locator('input[type="range"]')).toHaveCount(1);
   await page.getByLabel("Borrow amount in USDC").fill("1000");
   await expect(page.getByText(/pooled providers cover \$1,000/)).toBeVisible();
+  await expect(page.getByText(/recommend/i)).toHaveCount(0);
+  await expect(
+    page.locator('[data-protocol-id="aave"] [data-health-factor]'),
+  ).toHaveAttribute("data-risk-band", "wide");
+  await expect(
+    page.locator('[data-protocol-id="aave"] [data-health-factor]'),
+  ).toHaveClass(/text-moss/);
 });
 
 test("pooled risk responds to the selected amount without an always-green state", async ({
@@ -540,22 +630,42 @@ test("pooled risk responds to the selected amount without an always-green state"
   await connectAndScan(page);
   await page.getByRole("button", { name: "Compare 1 selected asset" }).click();
   await expect(
-    page.getByText(/comparison range, not approved credit/i),
+    page.getByText(
+      /for comparison only—not approved credit or a preferred borrowing level/i,
+    ),
   ).toBeVisible();
   await expect(page.getByText("Amount shortcuts")).toHaveCount(0);
   await page.getByLabel("Borrow amount in USDC").fill("1000");
   const aave = page.locator('[data-protocol-id="aave"]');
+  const aaveAction = aave.locator("[data-provider-action] a");
   await expect(aave).toBeVisible();
+  await expect(aaveAction).toBeVisible();
+  await expect(aaveAction).toHaveAttribute("aria-disabled", "false");
+  const compoundAction = page
+    .locator('[data-protocol-id="compound-iii"]')
+    .locator("[data-provider-action] a");
+  await expect(compoundAction).toBeVisible();
+  await expect(compoundAction).toHaveAttribute("aria-disabled", "true");
   await aave.getByRole("button").first().click();
   await expect(
-    aave.getByRole("heading", { name: "Why this limit" }),
+    aave.getByRole("heading", { name: "How this path is calculated" }),
   ).toBeVisible();
   await expect(
-    aave.getByRole("heading", { name: "Your assets" }),
+    aave.getByRole("heading", { name: "Contributing assets" }),
   ).toBeVisible();
+  const providerAssetRows = aave.locator("ul li");
+  await expect(providerAssetRows.first()).toContainText("WETH");
+  await expect(providerAssetRows.first()).toContainText("$6,000");
   await expect(
     aave.getByText("Liquidation threshold", { exact: true }),
   ).toBeVisible();
+  const actionBounds = await aaveAction.boundingBox();
+  const assetsBounds = await aave
+    .getByRole("heading", { name: "Contributing assets" })
+    .boundingBox();
+  expect(actionBounds).not.toBeNull();
+  expect(assetsBounds).not.toBeNull();
+  expect(actionBounds?.y ?? Infinity).toBeLessThan(assetsBounds?.y ?? 0);
   const amountSlider = page.getByLabel("Borrow amount comparison range");
   await expect(amountSlider).toBeVisible();
   await amountSlider.fill("0");
@@ -568,6 +678,61 @@ test("pooled risk responds to the selected amount without an always-green state"
   ).toHaveAttribute("aria-disabled", "false");
 });
 
+test("native ETH and WETH both contribute to a WETH collateral path", async ({
+  page,
+}) => {
+  await installWallet(page, {
+    nativeBalanceHex: "0xde0b6b3a7640000",
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Connect wallet" }).first().click();
+  await expect(
+    page.getByRole("heading", { name: /Wallet snapshot for/ }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Compare 2 selected assets" }).click();
+
+  const aave = page.locator('[data-protocol-id="aave"]');
+  await aave.getByRole("button").first().click();
+  const contributionRows = aave.locator("ul li");
+  await expect(contributionRows).toHaveCount(2);
+  await expect(contributionRows.nth(0)).toContainText("WETH");
+  await expect(contributionRows.nth(0)).toContainText("$6,000");
+  await expect(contributionRows.nth(1)).toContainText("ETH");
+  await expect(contributionRows.nth(1)).toContainText("$3,000");
+  await expect(contributionRows.nth(1)).toContainText("Wrap required");
+});
+
+test("provider detail disclosure uses bounded motion and respects reduced motion", async ({
+  page,
+}) => {
+  await connectAndScan(page);
+  await page.getByRole("button", { name: "Compare 1 selected asset" }).click();
+  await page.getByLabel("Borrow amount in USDC").fill("1000");
+
+  const aave = page.locator('[data-protocol-id="aave"]');
+  const toggle = aave.getByRole("button").first();
+  await toggle.click();
+  const disclosure = aave.locator("[data-provider-disclosure]");
+  await expect(disclosure).toBeVisible();
+  const standardDurations = await disclosure.evaluate((element) =>
+    getComputedStyle(element)
+      .transitionDuration.split(",")
+      .map((value) => Number.parseFloat(value) * 1_000),
+  );
+  expect(Math.max(...standardDurations)).toBeGreaterThanOrEqual(180);
+  expect(Math.max(...standardDurations)).toBeLessThanOrEqual(240);
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const reducedDurations = await disclosure.evaluate((element) =>
+    getComputedStyle(element)
+      .transitionDuration.split(",")
+      .map((value) => Number.parseFloat(value) * 1_000),
+  );
+  expect(Math.max(...reducedDurations)).toBeLessThanOrEqual(0.01);
+  await toggle.click();
+  await expect(disclosure).toHaveCount(0);
+});
+
 test("OWN appears only above $1,000 and links to its public borrow form", async ({
   page,
 }) => {
@@ -577,7 +742,15 @@ test("OWN appears only above $1,000 and links to its public borrow form", async 
   await expect(page.locator('[data-protocol-id="own"]')).toHaveCount(0);
   await page.getByLabel("Borrow amount in USDC").fill("1001");
   const ownOption = page.locator('[data-protocol-id="own"]');
+  const ownAction = ownOption.getByRole("link", {
+    name: "Discuss this request with OWN",
+  });
   await expect(ownOption).toBeVisible();
+  await expect(ownAction).toBeVisible();
+  await expect(ownAction).toHaveAttribute(
+    "href",
+    "https://own.casa/borrow#contact",
+  );
   await ownOption.getByRole("button").click();
   await expect(
     ownOption.getByText("A direct route for non-standard collateral"),
@@ -585,9 +758,11 @@ test("OWN appears only above $1,000 and links to its public borrow form", async 
   await expect(ownOption.getByText("$1,001")).toBeVisible();
   await expect(page.getByText("Estimated total repayment")).toHaveCount(0);
   await expect(page.getByText("Illustrative terms")).toHaveCount(0);
-  await expect(
-    page.getByRole("link", { name: "Discuss this request with OWN" }),
-  ).toHaveAttribute("href", "https://own.casa/borrow#contact");
+  const ownActionBounds = await ownAction.boundingBox();
+  const ownAssetsBounds = await ownOption.locator("ul").boundingBox();
+  expect(ownActionBounds).not.toBeNull();
+  expect(ownAssetsBounds).not.toBeNull();
+  expect(ownActionBounds?.y ?? Infinity).toBeLessThan(ownAssetsBounds?.y ?? 0);
 });
 
 test("the static result remains usable on a phone viewport", async ({
@@ -598,8 +773,33 @@ test("the static result remains usable on a phone viewport", async ({
   await expect(
     page.getByRole("heading", { name: "Choose collateral" }),
   ).toBeVisible();
+  const mobileAssetWorkspaceBounds = await page
+    .locator("[data-asset-workspace-main]")
+    .boundingBox();
+  const mobileSelectionSummary = page.locator("[data-selection-summary]");
+  const mobileSelectionSummaryBounds =
+    await mobileSelectionSummary.boundingBox();
+  expect(mobileAssetWorkspaceBounds).not.toBeNull();
+  expect(mobileSelectionSummaryBounds).not.toBeNull();
+  expect(mobileSelectionSummaryBounds?.y ?? 0).toBeGreaterThan(
+    (mobileAssetWorkspaceBounds?.y ?? 0) +
+      (mobileAssetWorkspaceBounds?.height ?? 0),
+  );
+  await expect(mobileSelectionSummary).toHaveCSS("position", "static");
   await page.getByRole("button", { name: "Compare 1 selected asset" }).click();
   await page.getByLabel("Borrow amount in USDC").fill("1000");
+  const mobileComparisonControl = page.locator("[data-comparison-control]");
+  const mobileProviderField = page.locator("[data-provider-field]");
+  const mobileComparisonControlBounds =
+    await mobileComparisonControl.boundingBox();
+  const mobileProviderFieldBounds = await mobileProviderField.boundingBox();
+  expect(mobileComparisonControlBounds).not.toBeNull();
+  expect(mobileProviderFieldBounds).not.toBeNull();
+  expect(mobileProviderFieldBounds?.y ?? 0).toBeGreaterThan(
+    (mobileComparisonControlBounds?.y ?? 0) +
+      (mobileComparisonControlBounds?.height ?? 0),
+  );
+  await expect(mobileComparisonControl).toHaveCSS("position", "static");
   await expect(page.locator('[data-protocol-id="own"]')).toHaveCount(0);
   const termsBounds = await page
     .locator('section[aria-labelledby="terms-title"]')
@@ -655,7 +855,7 @@ test("the light mobile risk review remains accessible", async ({ page }) => {
   const aave = page.locator('[data-protocol-id="aave"]');
   await aave.getByRole("button").first().click();
   await expect(
-    aave.getByRole("heading", { name: "Why this limit" }),
+    aave.getByRole("heading", { name: "How this path is calculated" }),
   ).toBeVisible();
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag22aa"])

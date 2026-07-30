@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   amountForUtilization,
+  amountForTargetLtv,
   amountInputStep,
   filterSmallBalances,
   formatUsdValue,
@@ -70,6 +71,12 @@ describe("estimator UX helpers", () => {
     expect(amountInputStep(12.03)).toBe(0.01);
     expect(amountInputStep(750)).toBe(1);
     expect(amountInputStep(100_000)).toBe(100);
+  });
+
+  it("calculates a borrow amount for a projected LTV scenario", () => {
+    expect(amountForTargetLtv(6_000, 0, 50)).toBe(3_000);
+    expect(amountForTargetLtv(100_000, 10_000, 50)).toBe(40_000);
+    expect(amountForTargetLtv(10_000, 7_000, 50)).toBe(0);
   });
 
   it("summarizes available provider capacity", () => {

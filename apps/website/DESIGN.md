@@ -24,44 +24,51 @@ colors:
   danger-surface: "#f9e7e3"
 typography:
   display:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
-    fontSize: "2.25rem"
-    fontWeight: 600
-    lineHeight: "2.5rem"
-    letterSpacing: "-0.045em"
+    fontFamily: "Inter Variable, Inter, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "2.75rem"
+    fontWeight: 650
+    lineHeight: 0.98
+    letterSpacing: "-0.035em"
   display-wide:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
-    fontSize: "3.75rem"
-    fontWeight: 600
-    lineHeight: 1
-    letterSpacing: "-0.045em"
+    fontFamily: "Inter Variable, Inter, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "5rem"
+    fontWeight: 650
+    lineHeight: 0.98
+    letterSpacing: "-0.035em"
   headline:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontFamily: "Inter Variable, Inter, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1.5rem"
-    fontWeight: 600
+    fontWeight: 650
     lineHeight: "2rem"
     letterSpacing: "-0.025em"
   title:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontFamily: "Inter Variable, Inter, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1.25rem"
-    fontWeight: 600
+    fontWeight: 650
     lineHeight: "1.75rem"
+    letterSpacing: "-0.02em"
+  subtitle:
+    fontFamily: "Inter Variable, Inter, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "1.125rem"
+    fontWeight: 650
+    lineHeight: "1.5rem"
+    letterSpacing: "-0.0125em"
   body:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontFamily: "Inter Variable, Inter, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1rem"
-    fontWeight: 400
+    fontWeight: 420
     lineHeight: "1.75rem"
   body-small:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontFamily: "Inter Variable, Inter, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 400
     lineHeight: "1.5rem"
   label:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontFamily: "Inter Variable, Inter, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.75rem"
-    fontWeight: 700
+    fontWeight: 650
     lineHeight: "1rem"
-    letterSpacing: "0.14em"
+    letterSpacing: "0.08em"
 rounded:
   compact: "6px"
   control: "8px"
@@ -168,24 +175,27 @@ The palette combines Mineral Red and Limestone Paper with warm near-black and um
 
 **The Semantic Restraint Rule.** Moss, coral, gold, information blue, and warning amber carry meaning only. Never scatter them through neutral evidence for visual variety.
 
+**The Health Factor Signal.** Always pair color with the numeric health factor and a plain-language buffer label: moss at 1.60 and above, ochre from 1.20 to 1.59, and terracotta below 1.20. A value at or below 1.00 is at or beyond the liquidation boundary. These are transparent proximity bands, never a recommendation or probability.
+
 **The Daylight Instrument Rule.** The palette is deliberately light-only and ignores operating-system dark preference. Do not auto-invert it or quietly restore a second theme.
 
 ## Typography
 
-**Display Font:** Inter with the system sans-serif fallback stack.
+**Display Font:** Self-hosted Inter Variable with the system sans-serif fallback stack.
 
-**Body Font:** Inter with the system sans-serif fallback stack.
+**Body Font:** Self-hosted Inter Variable with the system sans-serif fallback stack.
 
-**Character:** One pragmatic sans-serif family keeps the interface neutral and computational. Hierarchy comes from size, weight, spacing, and tabular figures rather than from decorative type pairing.
+**Character:** One pragmatic sans-serif family keeps the interface neutral and computational. The app ships one variable weight asset with `font-display: swap`; it does not request a separate italic or second family. Hierarchy comes from size, weight, spacing, and tabular lining figures rather than from decorative type pairing.
 
 ### Hierarchy
 
-- **Display** (600, 2.25rem; 3.75rem from 640px, tight line-height, -0.045em): the pre-connect product promise only.
-- **Headline** (600, 1.5rem, 2rem line-height): result identity and major state headings.
-- **Title** (600, 1.25rem, 1.75rem line-height): workflow panels and local task sections.
-- **Body** (400, 1rem, 1.75rem line-height): explanatory product copy, generally constrained to readable measures around 36rem to 48rem.
+- **Display** (650, fluid 2.75rem–5rem, 0.98 line-height, -0.035em): the pre-connect product promise only, constrained to 11 characters per line.
+- **Headline** (650, 1.5rem, 2rem line-height, -0.025em): result identity and major state headings.
+- **Title** (650, 1.25rem, 1.75rem line-height, -0.02em): workflow panels and local task sections.
+- **Subtitle** (650, 1.125rem, 1.5rem line-height, -0.0125em): provider identity and compact subsection headings.
+- **Body** (420, 1rem, 1.75rem line-height): explanatory product copy, generally constrained to readable measures around 36rem to 48rem.
 - **Body Small** (400–600, 0.875rem, 1.5rem line-height): controls, evidence descriptions, and most operational copy.
-- **Label** (700, 0.75rem, 1rem line-height, up to 0.14em tracking, uppercase when it establishes a step or category): short orientation labels only.
+- **Label** (650, 0.75rem, 1rem line-height, 0.08em tracking, uppercase when it establishes a step or category): short orientation labels only.
 
 Numeric estimates, amounts, ratios, block numbers, and counts use tabular figures. Tracked uppercase labels stay short; paragraphs remain sentence case.
 
@@ -196,6 +206,10 @@ Numeric estimates, amounts, ratios, block numbers, and counts use tabular figure
 ## Layout
 
 The application uses a centered working canvas with a maximum width of 1360px and page gutters of 16px, expanding to 24px and 32px at larger breakpoints. The pre-connect state narrows to a 1152px region with copy constrained around 576px so the wallet action remains the only decision. A sticky 64px header preserves identity and wallet state without becoming a navigation system.
+
+The collateral stage becomes a selection workspace from 1024px upward: the asset field occupies the flexible primary column while a 288–320px summary rail stays within reach at the right edge. The rail carries the selected count, priced value, privacy context, and the Compare action; it does not duplicate asset evidence. Below 1024px the same DOM order stacks the summary after the asset field, preserving a linear choose-then-continue path for touch and assistive technology.
+
+The comparison stage becomes a workbench from 1280px upward: a 320px request controller stays sticky in the left column while the provider evidence field receives the wider right column. Amount and range controls stack inside the rail, keeping the request visible while expanded provider evidence grows vertically. Below 1280px, the controller returns to a full-width horizontal composition where space permits and remains ahead of providers in both visual and DOM order.
 
 Spacing follows an 8px-led rhythm with useful intermediate 12px and 20px steps. Major panels usually use 20–24px internal padding; dense evidence cells use 12px; adjacent workflow sections use 12–20px gaps. The layout is information-dense but never compressed below reliable touch or reading sizes.
 
@@ -217,6 +231,18 @@ Powerrr is flat by default. Warm Graphite outlines and paper-toned contrast esta
 **The Border First Rule.** A border or tonal change must explain the structure before a shadow is added.
 
 **The Ambient, Not Floating Rule.** Shadows are diffuse and low-drama. Do not use hard drop shadows, colored glows, glassmorphism, or stacked elevation for ordinary content.
+
+## Motion
+
+Motion explains progress and spatial relationship. The primary sequence is the **instrument aperture**: the landing surface closes toward the wallet action, the scan dial occupies that same focal center while reads are active, and the completed workspace opens back onto the working plane. It uses a bounded clip, slight focus change, and opacity over 320–460ms with confident exponential deceleration.
+
+Moving between collateral and comparison uses a quiet paper handoff: a 90ms exit followed by a 160ms arrival with only a two-pixel vertical settle and modest opacity change. It deliberately avoids directional travel, clipping, and blur so routine navigation stays subordinate to the wallet-read aperture. Wallet identity changes use a compact 220ms horizontal aperture, scan messages change in 160ms, and the progress fill moves by transform over 360ms. The scan dial is the only loop and exists only while a real wallet read is active.
+
+Provider details unfold from the persistent action rail by opening their content track over 240ms with confident deceleration; closing resolves in 160ms. This disclosure motion explains where the evidence belongs without animating individual metrics or asset rows.
+
+**The Motion Carries State Rule.** Animate only wallet state, active scanning, the quiet workflow handoff, and explicit provider disclosure. Static evidence and repeated provider rows do not receive decorative entrances.
+
+**The Immediate Alternative Rule.** Under `prefers-reduced-motion: reduce`, scrolling, transitions, and the scan dial resolve nearly instantly without hiding any content or state.
 
 ## Shapes
 
@@ -261,6 +287,8 @@ Components feel restrained, tactile, and evidence-first. State changes use short
 - **Error / Disabled:** Alert Coral or the danger pair accompanies explicit corrective text. Disabled state never relies on opacity alone when the reason matters.
 - **Range:** an 8px track shows completed Mineral Red against Warm Graphite, with a 28px Porcelain Surface thumb outlined in red clay and given a small contact shadow.
 
+On the comparison workbench, the amount field and range form one sticky request controller at wide widths. The controller never competes with provider evidence for horizontal space before 1280px; at intermediate widths its internal field and range may sit side by side, while at wide and phone widths they stack.
+
 ### Navigation
 
 - **Header:** a sticky 64px Porcelain Surface layer with a restrained bottom border and slight backdrop blur. It contains only product identity and wallet state.
@@ -271,9 +299,11 @@ Components feel restrained, tactile, and evidence-first. State changes use short
 
 Asset choices are 12px-radius bordered buttons with a minimum height around 128px. Selection uses a Mineral Red border, a one-pixel reinforcing ring, Information Surface, and a checked circular marker. Token imagery stays at 44px and secondary valuation or provenance copy remains visible.
 
+At wide widths, asset choices sit in the primary workspace beside a sticky selection summary rather than sharing one long panel with the final action. Two columns protect intermediate widths; a third appears only when the primary field has enough room after the rail. Collapsible small and unpriced groups keep the same column behavior.
+
 ### Protocol Comparison Rows
 
-Protocol and OWN paths share the same expandable 12px-radius bordered-row structure. The collapsed view leads with provider identity and availability, followed by a consistent evidence grid. Expansion reveals constraints, asset eligibility, and source detail. OWN may state its distinct fixed-term mechanism, but it must not gain stronger elevation, scale, saturation, or placement than peer paths.
+Protocol and OWN paths share the same expandable 12px-radius bordered-row structure. The collapsed view leads with provider identity and availability, followed by a consistent evidence grid and a restrained persistent action rail. The action remains in that rail when details open, ahead of constraints and the asset list, so it never moves below a long disclosure. Expansion reveals constraints, asset eligibility, and source detail. OWN may state its distinct fixed-term mechanism, but it must not gain stronger elevation, scale, saturation, or placement than peer paths.
 
 **The Equal Evidence Rule.** Comparison paths share one structural grammar even when their mechanisms differ.
 

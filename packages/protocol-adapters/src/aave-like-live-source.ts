@@ -1,4 +1,5 @@
 import type {
+  PortfolioAsset,
   ProtocolAdapterInput,
   ProtocolAssetEvaluation,
 } from "@powerrr/shared-types";
@@ -143,12 +144,16 @@ export async function loadAaveLikeSnapshot(
     );
   }
 
-  const walletAssets = new Map(
-    input.portfolio.map((asset) => [
-      getAddress((asset.protocolAssetToken ?? asset.token) as Address),
+  const walletAssets = new Map<Address, PortfolioAsset[]>();
+  for (const asset of input.portfolio) {
+    const protocolToken = getAddress(
+      (asset.protocolAssetToken ?? asset.token) as Address,
+    );
+    walletAssets.set(protocolToken, [
+      ...(walletAssets.get(protocolToken) ?? []),
       asset,
-    ]),
-  );
+    ]);
+  }
   const selectedTokens = new Set(
     (
       input.selectedCollateralTokens ??
@@ -304,20 +309,22 @@ export async function loadAaveLikeSnapshot(
       ]);
       const decimals = Number(configuration[0]);
       const priceUsd = Number(priceRaw) / Number(baseCurrencyUnit);
-      const walletAsset = [...walletAssets.entries()].find(([token]) =>
-        isAddressEqual(token, reserve.tokenAddress),
-      )?.[1];
+      const matchingWalletAssets =
+        walletAssets.get(getAddress(reserve.tokenAddress)) ?? [];
+      const selectedWalletAssets = matchingWalletAssets.filter((asset) =>
+        selectedTokens.has(asset.token.toLowerCase()),
+      );
       const walletBalanceRaw =
         input.mode === "existing-position"
           ? (userReserve?.[0] ?? ZERO)
-          : BigInt(
-              walletAsset?.protocolBalanceRaw ?? walletAsset?.balanceRaw ?? "0",
+          : selectedWalletAssets.reduce(
+              (sum, asset) =>
+                sum +
+                BigInt(asset.protocolBalanceRaw ?? asset.balanceRaw ?? "0"),
+              ZERO,
             );
       const selected =
-        input.mode === "existing-position" ||
-        Boolean(
-          walletAsset && selectedTokens.has(walletAsset.token.toLowerCase()),
-        );
+        input.mode === "existing-position" || selectedWalletAssets.length > 0;
       const balanceRaw = selected ? walletBalanceRaw : ZERO;
       const debtRaw =
         input.mode === "existing-position"
@@ -331,7 +338,6 @@ export async function loadAaveLikeSnapshot(
       return {
         reserve,
         configuration,
-        walletAsset,
         walletBalanceRaw,
         selected,
         balanceRaw,
@@ -410,6 +416,20 @@ export async function loadAaveLikeSnapshot(
     const eligible = reasons.length === 0;
     const contributesAfterConversion =
       conversionRequired && selected && protocolReasons.length === 0;
+    const walletEstimateContributionUsd =
+      Number(
+        formatUnits(
+          BigInt(asset.protocolBalanceRaw ?? asset.balanceRaw ?? "0"),
+          Number(row.configuration[0]),
+        ),
+      ) * row.priceUsd;
+    const contributionUsd =
+      input.mode === "existing-position"
+        ? !conversionRequired &&
+          isAddressEqual(asset.token as Address, row.reserve.tokenAddress)
+          ? row.valueUsd
+          : 0
+        : walletEstimateContributionUsd;
     return {
       token: asset.token,
       symbol: asset.symbol,
@@ -440,7 +460,7 @@ export async function loadAaveLikeSnapshot(
       ltv: Number(row.configuration[1]) / BPS,
       liquidationThreshold: Number(row.configuration[2]) / BPS,
       ...(selected && (eligible || contributesAfterConversion)
-        ? { contributionUsd: row.valueUsd }
+        ? { contributionUsd }
         : {}),
       ...(asset.requiredAction
         ? {

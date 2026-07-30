@@ -118,6 +118,59 @@ describe("Compound III live Comet snapshot source", () => {
     );
   });
 
+  it("aggregates native ETH and WETH into one WETH collateral balance", async () => {
+    const eth = "0xEeeeeEeeeEeEeeEeEeeEEEeeeeEeeeeeeeEEeE" as const;
+    const snapshot = await loadCompoundUsdcCometSnapshot({
+      rpc: createCompoundRpcMock({
+        mode: "wallet-estimate",
+        borrowBalanceRaw: 0n,
+        collateralBalances: {},
+      }),
+      address: account,
+      chainId: 1,
+      mode: "wallet-estimate",
+      portfolio: [
+        {
+          chainId: 1,
+          token: eth,
+          symbol: "ETH",
+          name: "Ether",
+          decimals: 18,
+          balance: "1",
+          balanceRaw: parseUnits("1", 18).toString(),
+          protocolAssetToken: weth,
+          protocolBalanceRaw: parseUnits("1", 18).toString(),
+          requiredAction: "wrap",
+          marketPriceUsd: 3_500,
+          protocolEligible: { "compound-iii": true },
+        },
+        buildPortfolioAsset("WETH", 2),
+      ],
+      selectedCollateralTokens: [eth, weth],
+      targetBorrowAssets: ["USDC"],
+      safetyProfile: "balanced",
+    });
+
+    expect(snapshot.collateral).toEqual([
+      expect.objectContaining({ symbol: "WETH", valueUsd: 10_500 }),
+    ]);
+    expect(snapshot.assetEvaluations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          symbol: "ETH",
+          eligibilityStatus: "supported",
+          contributionUsd: 3_500,
+          reasonCodes: ["CONVERSION_REQUIRED"],
+        }),
+        expect.objectContaining({
+          symbol: "WETH",
+          contributionUsd: 7_000,
+          reasonCodes: ["INCLUDED"],
+        }),
+      ]),
+    );
+  });
+
   it("builds an existing-position snapshot from supplied Comet collateral and borrow balance", async () => {
     const rpc = createCompoundRpcMock({
       mode: "existing-position",

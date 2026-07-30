@@ -205,9 +205,35 @@ export async function loadStaticMorphoSnapshot(input: {
       ),
     );
     const selected = selectedTokens.has(asset.token.toLowerCase());
-    const selectedMarket = markets.find((market) =>
-      isAddressEqual(market.token as Address, asset.token as Address),
+    const selectedMarket = markets.find(
+      (market) => market.marketId === manifest?.marketId,
     );
+    const matchingSelectedAssets = manifest
+      ? input.portfolio.filter(
+          (candidate) =>
+            positiveRawBalance(candidate) &&
+            selectedTokens.has(candidate.token.toLowerCase()) &&
+            isAddressEqual(
+              (candidate.protocolAssetToken ?? candidate.token) as Address,
+              manifest.collateralToken,
+            ),
+        )
+      : [];
+    const combinedBalanceRaw = matchingSelectedAssets.reduce(
+      (sum, candidate) =>
+        sum + BigInt(candidate.protocolBalanceRaw ?? candidate.balanceRaw),
+      0n,
+    );
+    const assetBalanceRaw = selected
+      ? BigInt(asset.protocolBalanceRaw ?? asset.balanceRaw)
+      : 0n;
+    const contributionUsd = selectedMarket
+      ? proportionalUsd(
+          selectedMarket.valueUsd,
+          assetBalanceRaw,
+          combinedBalanceRaw,
+        )
+      : 0;
     const balanceUsd =
       Number(asset.balance) * Math.max(0, asset.marketPriceUsd ?? 0);
     if (!manifest) {
@@ -232,7 +258,9 @@ export async function loadStaticMorphoSnapshot(input: {
           ? "selected"
           : "not-selected",
       eligibilityStatus: conversionRequired
-        ? "unsupported"
+        ? selectedMarket
+          ? "supported"
+          : "temporarily-unavailable"
         : selected
           ? selectedMarket
             ? "included"
@@ -246,7 +274,9 @@ export async function loadStaticMorphoSnapshot(input: {
             : ["MARKET_STATE_UNAVAILABLE"]
           : ["SUPPORTED_NOT_SELECTED"],
       reason: conversionRequired
-        ? `Convert ${asset.symbol} to ${manifest.collateralSymbol} before supplying collateral.`
+        ? selectedMarket
+          ? `${asset.symbol} must be converted to ${manifest.collateralSymbol} before supply. Its ${manifest.collateralSymbol}-equivalent value is included in this estimate.`
+          : `Convert ${asset.symbol} to ${manifest.collateralSymbol} before supply; the reviewed market did not expose usable liquidity and price state.`
         : selected
           ? selectedMarket
             ? "Included in this market estimate."
@@ -254,7 +284,7 @@ export async function loadStaticMorphoSnapshot(input: {
           : "A reviewed market supports this asset, but it is not selected.",
       ltv: Number(manifest.lltv) / Number(WAD),
       liquidationThreshold: Number(manifest.lltv) / Number(WAD),
-      ...(selectedMarket ? { contributionUsd: selectedMarket.valueUsd } : {}),
+      ...(contributionUsd > 0 ? { contributionUsd } : {}),
       ...(conversionRequired
         ? { requiredAction: `Convert to ${manifest.collateralSymbol}` }
         : {}),
@@ -312,6 +342,19 @@ function positiveRawBalance(asset: PortfolioAsset): boolean {
   } catch {
     return false;
   }
+}
+
+function proportionalUsd(
+  totalValueUsd: number,
+  numerator: bigint,
+  denominator: bigint,
+): number {
+  if (numerator <= 0n || denominator <= 0n) return 0;
+  const precision = 1_000_000_000n;
+  const value =
+    (totalValueUsd * Number((numerator * precision) / denominator)) /
+    Number(precision);
+  return Math.round(value * 100) / 100;
 }
 
 async function readMarketParams(

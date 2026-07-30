@@ -36,10 +36,7 @@ defineExpose({
     >
       <div class="min-w-0">
         <div class="flex flex-wrap items-center gap-2">
-          <h1
-            id="result-title"
-            class="text-xl font-semibold tracking-tight sm:text-2xl"
-          >
+          <h1 id="result-title" class="type-headline">
             Wallet snapshot for
             {{ names.length ? names.join(" · ") : address }}
           </h1>

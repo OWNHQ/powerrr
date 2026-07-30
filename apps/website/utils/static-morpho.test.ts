@@ -159,6 +159,17 @@ describe("static Morpho market reader", () => {
         balanceRaw: "2000000000000000000",
         protocolAssetToken: manifest.collateralToken,
         protocolBalanceRaw: "2000000000000000000",
+        requiredAction: "wrap",
+        protocolEligible: { "morpho-blue": true },
+      },
+      {
+        chainId: 1,
+        token: manifest.collateralToken,
+        symbol: "WETH",
+        name: "Wrapped Ether",
+        decimals: 18,
+        balance: "1",
+        balanceRaw: "1000000000000000000",
         protocolEligible: { "morpho-blue": true },
       },
     ];
@@ -174,11 +185,27 @@ describe("static Morpho market reader", () => {
       availableLiquidityUsd: 600_000,
     });
     expect(snapshot.markets[0]).toMatchObject({
-      symbol: "ETH",
-      valueUsd: 6_000,
+      symbol: "ETH + WETH",
+      valueUsd: 9_000,
       lltv: 0.86,
       availableLiquidityUsd: 600_000,
     });
+    expect(snapshot.assetEvaluations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          symbol: "ETH",
+          eligibilityStatus: "supported",
+          contributionUsd: 6_000,
+          reasonCodes: ["CONVERSION_REQUIRED"],
+        }),
+        expect.objectContaining({
+          symbol: "WETH",
+          eligibilityStatus: "included",
+          contributionUsd: 3_000,
+          reasonCodes: ["INCLUDED"],
+        }),
+      ]),
+    );
     expect(snapshot.markets[0]?.borrowApy).toBeCloseTo(0.05127, 4);
     expect(borrowAssetsSeenByIrm).toHaveLength(2);
     expect(borrowAssetsSeenByIrm[1]).toBeGreaterThan(borrowAssetsSeenByIrm[0]!);

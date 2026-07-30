@@ -8,10 +8,11 @@ import {
   PhWarningCircle,
 } from "@phosphor-icons/vue";
 import {
-  amountForUtilization,
+  amountForTargetLtv,
   formatUsdValue,
   summarizeEstimatorCapacity,
 } from "./utils/estimator-ux";
+import { pooledBorrowAvailableUsd } from "./utils/borrow-preview";
 import { formatLocalDateTime } from "./utils/date-time";
 import {
   groupWebsiteQuoteRows,
@@ -126,6 +127,31 @@ const providerMaximumUsd = computed(
 const providerPathCount = computed(
   () => capacitySummary.value.providerPathCount,
 );
+const ltvReferenceProvider = computed(() =>
+  providerItems.value.find(
+    (provider) =>
+      providerCapacity(provider) > 0 &&
+      providerStatus(provider)?.status !== "unavailable" &&
+      provider.group?.primaryQuote.collateralUsed.some(
+        (collateral) => collateral.valueUsd > 0,
+      ),
+  ),
+);
+const ltvReferenceQuote = computed(
+  () => ltvReferenceProvider.value?.group?.primaryQuote,
+);
+const ltvReferenceCollateralUsd = computed(
+  () =>
+    ltvReferenceQuote.value?.collateralUsed.reduce(
+      (sum, collateral) => sum + collateral.valueUsd,
+      0,
+    ) ?? 0,
+);
+const ltvReferenceExistingDebtUsd = computed(() =>
+  ltvReferenceQuote.value?.mode === "existing-position"
+    ? Math.max(0, ltvReferenceQuote.value.existingDebtUsd ?? 0)
+    : 0,
+);
 const coveringProviderCount = computed(
   () =>
     providerItems.value.filter(
@@ -191,14 +217,12 @@ async function enterComparison(): Promise<void> {
   currentStage.value = "comparison";
   expandedProviderId.value = "";
   if (borrowAmountUsd.value <= 0) {
-    borrowAmountUsd.value = amountForUtilization(
-      providerMaximumUsd.value > 0
-        ? providerMaximumUsd.value
-        : matchedCollateralUsd.value,
+    borrowAmountUsd.value = amountForTargetLtv(
+      ltvReferenceCollateralUsd.value,
+      ltvReferenceExistingDebtUsd.value,
       50,
     );
   }
-  await scrollToWorkflow();
 }
 
 async function continueFromAssets(): Promise<void> {
@@ -249,7 +273,9 @@ function connectFromMenu(
 }
 
 function providerCapacity(provider: ProviderItem): number {
-  return provider.group?.primaryQuote.safeBorrowUsd ?? 0;
+  return provider.group
+    ? pooledBorrowAvailableUsd(provider.group.primaryQuote)
+    : 0;
 }
 
 function providerStatus(provider: ProviderItem) {
@@ -276,55 +302,57 @@ async function scrollToWorkflow(): Promise<void> {
       <div
         class="mx-auto flex h-16 w-full max-w-[1360px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8"
       >
-        <a
-          href="/"
-          class="focus-ring rounded-md text-2xl font-bold tracking-[-0.04em]"
-        >
-          Powerrr
-        </a>
+        <a href="/" class="type-wordmark focus-ring rounded-md"> Powerrr </a>
         <div class="flex min-w-0 items-center gap-2">
           <div class="relative min-w-0">
-            <button
-              v-if="receipt"
-              type="button"
-              class="focus-ring flex h-11 min-w-0 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm font-medium hover:border-river"
-              :aria-label="`Disconnect wallet ${walletIdentityTitle}`"
-              @click="disconnect"
-            >
-              <PhUser :size="18" aria-hidden="true" />
-              <span
-                class="max-w-20 truncate sm:max-w-48"
-                :title="walletIdentityTitle"
-                >{{ walletIdentityLabel }}</span
+            <Transition name="wallet-control" mode="out-in">
+              <button
+                v-if="receipt"
+                key="connected"
+                type="button"
+                class="focus-ring flex h-11 min-w-0 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm font-medium hover:border-river"
+                :aria-label="`Disconnect wallet ${walletIdentityTitle}`"
+                @click="disconnect"
               >
-              <span
-                class="h-2 w-2 rounded-full bg-moss"
-                aria-hidden="true"
-              ></span>
-              <span class="text-slate">Disconnect</span>
-            </button>
-            <button
-              v-else-if="isScanning && account"
-              type="button"
-              class="flex h-11 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm font-medium text-slate"
-              aria-label="Resolving wallet name"
-              disabled
-            >
-              <PhUser :size="18" aria-hidden="true" />
-              <span>Checking name…</span>
-            </button>
-            <button
-              v-else
-              type="button"
-              class="focus-ring flex h-11 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm font-semibold hover:border-river"
-              :aria-expanded="
-                announcedProviders.length > 1 ? showWalletMenu : undefined
-              "
-              @click="connectFromHeader"
-            >
-              <PhWallet :size="18" aria-hidden="true" />
-              Connect wallet
-            </button>
+                <PhUser :size="18" aria-hidden="true" />
+                <span
+                  class="max-w-20 truncate sm:max-w-48"
+                  :title="walletIdentityTitle"
+                  >{{ walletIdentityLabel }}</span
+                >
+                <span
+                  class="h-2 w-2 rounded-full bg-moss"
+                  aria-hidden="true"
+                ></span>
+                <span class="text-slate">Disconnect</span>
+              </button>
+              <button
+                v-else-if="isScanning && account"
+                key="resolving"
+                type="button"
+                class="flex h-11 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm font-medium text-slate"
+                aria-label="Resolving wallet name"
+                disabled
+              >
+                <PhUser :size="18" aria-hidden="true" />
+                <span>Checking name…</span>
+              </button>
+              <button
+                v-else-if="
+                  !walletDiscoveryComplete || announcedProviders.length > 0
+                "
+                key="connect"
+                type="button"
+                class="focus-ring flex h-11 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm font-semibold hover:border-river"
+                :aria-expanded="
+                  announcedProviders.length > 1 ? showWalletMenu : undefined
+                "
+                @click="connectFromHeader"
+              >
+                <PhWallet :size="18" aria-hidden="true" />
+                Connect wallet
+              </button>
+            </Transition>
             <div
               v-if="!receipt && showWalletMenu && announcedProviders.length > 1"
               class="absolute right-0 top-12 z-40 w-64 overflow-hidden rounded-xl border border-line bg-surface p-2 shadow-panel"
@@ -351,375 +379,411 @@ async function scrollToWorkflow(): Promise<void> {
       </div>
     </header>
 
-    <section
-      v-if="isScanning"
-      class="mx-auto grid min-h-[calc(100vh-4rem)] max-w-5xl place-items-center px-4 py-16"
-      aria-live="polite"
-    >
-      <div class="mx-auto max-w-xl text-center">
-        <div
-          class="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-line border-t-river"
-        ></div>
-        <h1 class="mt-6 text-2xl font-semibold">Checking your wallet</h1>
-        <p class="mt-2 text-sm leading-6 text-slate">
-          {{ progress?.message ?? "Waiting for your wallet…" }}
-        </p>
-        <div
-          class="mx-auto mt-5 h-1.5 max-w-sm overflow-hidden rounded-full bg-line/55"
-          role="progressbar"
-          aria-label="Wallet scan progress"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          :aria-valuenow="scanProgressPercent"
-        >
-          <div
-            class="h-full rounded-full bg-river transition-[width] duration-300"
-            :style="{ width: `${scanProgressPercent}%` }"
-          ></div>
-        </div>
-        <p class="mt-3 text-xs tabular-nums text-slate">
-          {{ scanProgressPercent }}% · Read-only. No signature or transaction.
-        </p>
-      </div>
-    </section>
-
-    <section
-      v-else-if="!receipt"
-      class="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl place-items-center px-4 py-16"
-    >
-      <div id="wallet-options" class="w-full max-w-3xl text-center">
-        <h1 class="text-4xl font-semibold tracking-[-0.04em] sm:text-6xl">
-          See what your wallet can unlock.
-        </h1>
-        <p
-          class="mx-auto mt-5 max-w-xl text-base leading-7 text-slate sm:text-lg"
-        >
-          Connect a wallet to see usable collateral, compare borrowing paths,
-          and review risk before you borrow.
-        </p>
-
-        <ul
-          class="mx-auto mt-5 flex max-w-2xl flex-wrap justify-center gap-x-5 gap-y-2 text-sm text-slate"
-          aria-label="Wallet scan safeguards"
-        >
-          <li class="inline-flex items-center gap-1.5">
-            <PhCheck :size="16" weight="bold" class="text-moss" /> Read-only
-            connection
-          </li>
-          <li class="inline-flex items-center gap-1.5">
-            <PhCheck :size="16" weight="bold" class="text-moss" /> No signature
-            or transaction
-          </li>
-          <li class="inline-flex items-center gap-1.5">
-            <PhCheck :size="16" weight="bold" class="text-moss" /> One-block
-            snapshot
-          </li>
-        </ul>
-
-        <div
-          v-if="announcedProviders.length"
-          class="mx-auto mt-9 flex max-w-2xl flex-wrap justify-center gap-3"
-        >
-          <button
-            v-for="wallet in announcedProviders"
-            :key="wallet.descriptor.uuid"
-            type="button"
-            class="focus-ring inline-flex h-12 items-center justify-center gap-3 rounded-lg bg-river px-6 text-sm font-semibold text-accent-contrast hover:bg-river/90"
-            @click="connect(wallet)"
-          >
-            <img
-              v-if="wallet.descriptor.icon"
-              :src="wallet.descriptor.icon"
-              alt=""
-              class="h-6 w-6 rounded"
-            />
-            <PhWallet v-else :size="20" aria-hidden="true" />
-            Connect
-            {{
-              announcedProviders.length > 1 ? wallet.descriptor.name : "wallet"
-            }}
-          </button>
-        </div>
-        <p v-else-if="!walletDiscoveryComplete" class="mt-9 text-sm text-slate">
-          Looking for a browser wallet…
-        </p>
-        <div
-          v-else
-          class="mx-auto mt-9 max-w-xl rounded-xl border border-line bg-surface p-5"
-        >
-          <p class="font-semibold">No browser wallet found</p>
-          <p class="mt-1 text-sm text-slate">
-            Install an injected wallet or open Powerrr inside your wallet
-            browser.
-          </p>
-        </div>
-
-        <div
-          class="relative mx-auto mt-3 max-w-lg text-xs text-slate"
-          @keydown.escape="showWalletReadInfo = false"
-        >
-          <button
-            type="button"
-            class="focus-ring rounded font-semibold text-river"
-            aria-controls="wallet-read-info"
-            :aria-expanded="showWalletReadInfo"
-            @click="showWalletReadInfo = !showWalletReadInfo"
-          >
-            How it works
-          </button>
-          <p
-            v-if="showWalletReadInfo"
-            id="wallet-read-info"
-            class="absolute left-1/2 top-full z-20 mt-3 w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-line bg-surface p-4 text-left leading-5 shadow-panel"
-          >
-            After you connect, a chunked Multicall3 read checks the reviewed
-            250-token Ethereum registry at one block. Onchain names, prices, and
-            provider rules are then read through the same wallet. Name lookup
-            never uses an HTTP gateway. No signature, transaction, analytics
-            request, or Powerrr API is used.
-          </p>
-        </div>
-
-        <div
-          v-if="error"
-          class="mx-auto mt-5 flex max-w-2xl items-start gap-3 rounded-xl border border-coral/25 bg-danger-surface px-4 py-3 text-left text-sm text-danger"
-          role="alert"
-        >
-          <PhWarningCircle
-            :size="20"
-            class="mt-0.5 shrink-0"
-            aria-hidden="true"
-          />
-          <span>{{ error }}</span>
-          <button
-            v-if="/Ethereum Mainnet/i.test(error)"
-            type="button"
-            class="focus-ring ml-auto shrink-0 font-semibold underline"
-            @click="switchToMainnet"
-          >
-            Switch network
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <div
-      v-else
-      class="mx-auto w-full max-w-[1360px] px-4 py-7 sm:px-6 lg:px-8 lg:py-10"
-    >
-      <EstimatorResultSummary
-        :demo="false"
-        :address="compactAccount"
-        :names="resolvedWalletNames"
-        :matched-collateral="formatUsdValue(matchedCollateralUsd)"
-        :asset-count="positiveAssets.length"
-        :selected-asset-count="selectedCollateralTokens.length"
-        :provider-count="providerPathCount"
-        stale-label=""
-        :refreshing="isScanning"
-        :refresh-complete="false"
-        @refresh="refreshEstimate"
-      />
-
-      <nav
-        aria-label="Estimator steps"
-        class="compact-progress mb-5 mt-4 grid grid-cols-2 gap-2"
+    <Transition name="instrument-state" mode="out-in" appear>
+      <section
+        v-if="isScanning"
+        key="scanning"
+        class="mx-auto grid min-h-[calc(100vh-4rem)] max-w-5xl place-items-center px-4 py-16"
+        aria-live="polite"
       >
-        <button
-          type="button"
-          class="compact-step text-left"
-          :class="
-            currentStage === 'assets'
-              ? 'compact-step-active'
-              : 'compact-step-complete'
-          "
-          :aria-current="currentStage === 'assets' ? 'step' : undefined"
-          @click="goToStage('assets')"
-        >
-          <span class="progress-number">
-            <PhCheck
-              v-if="currentStage !== 'assets'"
-              :size="15"
-              weight="bold"
+        <div class="mx-auto max-w-xl text-center">
+          <div class="scan-dial mx-auto" aria-hidden="true">
+            <span class="scan-dial-track"></span>
+            <span class="scan-dial-sweep"></span>
+            <span class="scan-dial-core"><PhWallet :size="22" /></span>
+          </div>
+          <h1 class="type-headline mt-6">Checking your wallet</h1>
+          <Transition name="scan-reading" mode="out-in">
+            <p
+              :key="`${progress?.phase ?? 'waiting'}-${progress?.message ?? ''}`"
+              class="mt-2 text-sm leading-6 text-slate"
+            >
+              {{ progress?.message ?? "Waiting for your wallet…" }}
+            </p>
+          </Transition>
+          <div
+            class="mx-auto mt-5 h-1.5 max-w-sm overflow-hidden rounded-full bg-line/55"
+            role="progressbar"
+            aria-label="Wallet scan progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            :aria-valuenow="scanProgressPercent"
+          >
+            <div
+              class="scan-progress-bar h-full w-full origin-left rounded-full bg-river"
+              :style="{ transform: `scaleX(${scanProgressPercent / 100})` }"
+            ></div>
+          </div>
+          <p class="mt-3 text-xs tabular-nums text-slate">
+            {{ scanProgressPercent }}% · Read-only. No signature or transaction.
+          </p>
+        </div>
+      </section>
+
+      <section
+        v-else-if="!receipt"
+        key="landing"
+        class="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl place-items-center px-4 py-16"
+      >
+        <div id="wallet-options" class="w-full max-w-3xl text-center">
+          <h1 class="type-display landing-display-balanced mx-auto max-w-none">
+            <span class="block whitespace-nowrap">See what your</span>
+            <span class="block whitespace-nowrap">wallet can unlock.</span>
+          </h1>
+          <p
+            class="type-body mx-auto mt-6 max-w-xl text-slate sm:text-lg sm:leading-8"
+          >
+            Connect a wallet to see usable collateral, compare borrowing paths,
+            and review risk before you borrow.
+          </p>
+
+          <ul
+            class="mx-auto mt-5 flex max-w-2xl flex-wrap justify-center gap-x-5 gap-y-2 text-sm text-slate"
+            aria-label="Wallet scan safeguards"
+          >
+            <li class="inline-flex items-center gap-1.5">
+              <PhCheck :size="16" weight="bold" class="text-moss" /> Read-only
+              connection
+            </li>
+            <li class="inline-flex items-center gap-1.5">
+              <PhCheck :size="16" weight="bold" class="text-moss" /> No
+              signature or transaction
+            </li>
+            <li class="inline-flex items-center gap-1.5">
+              <PhCheck :size="16" weight="bold" class="text-moss" /> One-block
+              snapshot
+            </li>
+          </ul>
+
+          <div
+            v-if="announcedProviders.length"
+            class="mx-auto mt-9 flex max-w-2xl flex-wrap justify-center gap-3"
+          >
+            <button
+              v-for="wallet in announcedProviders"
+              :key="wallet.descriptor.uuid"
+              type="button"
+              class="focus-ring inline-flex h-12 items-center justify-center gap-3 rounded-lg bg-river px-6 text-sm font-semibold text-accent-contrast hover:bg-river/90"
+              @click="connect(wallet)"
+            >
+              <img
+                v-if="wallet.descriptor.icon"
+                :src="wallet.descriptor.icon"
+                alt=""
+                class="h-6 w-6 rounded"
+              />
+              <PhWallet v-else :size="20" aria-hidden="true" />
+              Connect
+              {{
+                announcedProviders.length > 1
+                  ? wallet.descriptor.name
+                  : "wallet"
+              }}
+            </button>
+          </div>
+          <p
+            v-else-if="!walletDiscoveryComplete"
+            class="mt-9 text-sm text-slate"
+          >
+            Looking for a browser wallet…
+          </p>
+          <div
+            v-else
+            class="mx-auto mt-9 max-w-xl rounded-xl border border-line bg-surface p-5"
+          >
+            <p class="font-semibold">No browser wallet found</p>
+            <p class="mt-1 text-sm text-slate">
+              Install an injected wallet or open Powerrr inside your wallet
+              browser.
+            </p>
+          </div>
+
+          <div
+            class="relative mx-auto mt-3 max-w-lg text-xs text-slate"
+            @keydown.escape="showWalletReadInfo = false"
+          >
+            <button
+              type="button"
+              class="focus-ring rounded font-semibold text-river"
+              aria-controls="wallet-read-info"
+              :aria-expanded="showWalletReadInfo"
+              @click="showWalletReadInfo = !showWalletReadInfo"
+            >
+              How it works
+            </button>
+            <p
+              v-if="showWalletReadInfo"
+              id="wallet-read-info"
+              class="absolute left-1/2 top-full z-20 mt-3 w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-line bg-surface p-4 text-left leading-5 shadow-panel"
+            >
+              After you connect, a chunked Multicall3 read checks the reviewed
+              250-token Ethereum registry at one block. Onchain names, prices,
+              and provider rules are then read through the same wallet. Name
+              lookup never uses an HTTP gateway. No signature, transaction,
+              analytics request, or Powerrr API is used.
+            </p>
+          </div>
+
+          <div
+            v-if="error"
+            class="mx-auto mt-5 flex max-w-2xl items-start gap-3 rounded-xl border border-coral/25 bg-danger-surface px-4 py-3 text-left text-sm text-danger"
+            role="alert"
+          >
+            <PhWarningCircle
+              :size="20"
+              class="mt-0.5 shrink-0"
               aria-hidden="true"
             />
-            <template v-else>1</template>
-          </span>
-          <span><strong>Assets</strong><small>Choose collateral</small></span>
-        </button>
-        <button
-          type="button"
-          class="compact-step text-left"
-          :class="currentStage === 'comparison' ? 'compact-step-active' : ''"
-          :aria-current="currentStage === 'comparison' ? 'step' : undefined"
-          :disabled="!selectedCollateralTokens.length || isComparing"
-          @click="goToStage('comparison')"
-        >
-          <span class="progress-number">2</span>
-          <span
-            ><strong>Compare</strong
-            ><small>Amount, terms, and risk</small></span
-          >
-        </button>
-      </nav>
-
-      <p
-        v-if="error || stageError"
-        class="mb-4 flex items-start gap-3 rounded-xl border border-coral/25 bg-danger-surface px-4 py-3 text-sm text-danger"
-        role="alert"
-      >
-        <PhWarningCircle :size="20" class="shrink-0" aria-hidden="true" />
-        {{ stageError || error }}
-      </p>
-
-      <div id="workflow" class="scroll-mt-28">
-        <template v-if="currentStage === 'assets'">
-          <EstimatorAssets
-            :assets="positiveAssets"
-            :selected-tokens="selectedCollateralTokens"
-            :loading="isComparing"
-            @change-address="disconnect"
-            @toggle="setAssetSelected"
-            @continue="continueFromAssets"
-          />
-
-          <details
-            v-if="manualReviewAssets.length || failedAssets.length"
-            class="panel mt-4 overflow-hidden"
-          >
-            <summary
-              class="focus-ring cursor-pointer px-5 py-4 text-sm font-semibold sm:px-6"
+            <span>{{ error }}</span>
+            <button
+              v-if="/Ethereum Mainnet/i.test(error)"
+              type="button"
+              class="focus-ring ml-auto shrink-0 font-semibold underline"
+              @click="switchToMainnet"
             >
-              Pricing and read details
-              <template v-if="failedAssets.length">
-                · {{ failedAssets.length }} reads failed</template
-              >
-            </summary>
-            <div
-              class="border-t border-line px-5 py-4 text-sm text-slate sm:px-6"
-            >
-              <p
-                v-for="asset in manualReviewAssets"
-                :key="asset.token"
-                class="py-1"
-              >
-                <strong class="text-ink">{{ asset.symbol }}</strong> ·
-                {{ asset.balance }} — {{ asset.valuationReason }}
-              </p>
-              <p v-for="asset in failedAssets" :key="asset.token" class="py-1">
-                <strong class="text-ink">{{ asset.symbol }}</strong> —
-                {{ asset.balanceReadReason }}
-              </p>
-            </div>
-          </details>
-        </template>
-
-        <template v-else>
-          <EstimatorTerms
-            v-model:amount="borrowAmountUsd"
-            :comparison-ceiling-usd="comparisonCeilingUsd"
-            :provider-maximum-usd="providerMaximumUsd"
-            :selected-asset-value-usd="matchedCollateralUsd"
-            :error="stageError"
-            @back="goToStage('assets')"
-          />
-
-          <section class="mt-4" aria-labelledby="providers-title">
-            <div
-              class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"
-            >
-              <div>
-                <h2 id="providers-title" class="text-lg font-semibold">
-                  Borrowing paths
-                </h2>
-                <p class="text-sm text-slate">
-                  Sorted by recommended capacity. Expand any path to inspect its
-                  support and risk evidence.
-                </p>
-              </div>
-              <p class="text-sm text-slate">
-                <strong class="font-semibold text-ink tabular-nums">
-                  {{ coveringProviderCount }}/{{ providerItems.length }}
-                </strong>
-                pooled providers cover
-                {{ formatUsdValue(borrowAmountUsd) }}
-              </p>
-            </div>
-
-            <div class="grid gap-3">
-              <ProtocolComparisonCard
-                v-for="provider in providerItems"
-                :id="provider.id"
-                :key="provider.id"
-                :label="provider.label"
-                :link="provider.link"
-                :quote="provider.group?.primaryQuote"
-                :status="providerStatus(provider)"
-                :amount-usd="borrowAmountUsd"
-                :assets="positiveAssets"
-                :expanded="expandedProviderId === provider.id"
-                @toggle="toggleProvider"
-              />
-              <OwnComparisonCard
-                v-if="ownVisible"
-                :amount-usd="borrowAmountUsd"
-                :assets="positiveAssets"
-                :selected-tokens="selectedCollateralTokens"
-                :expanded="expandedProviderId === 'own'"
-                @toggle="toggleProvider('own')"
-              />
-            </div>
-          </section>
-        </template>
-      </div>
-
-      <details class="panel mt-5 overflow-hidden">
-        <summary
-          class="focus-ring flex min-h-14 cursor-pointer items-center gap-2 px-5 py-4 text-sm font-semibold sm:px-6"
-        >
-          <PhInfo :size="18" aria-hidden="true" />
-          About this estimate
-          <PhCaretDown :size="14" class="ml-auto" aria-hidden="true" />
-        </summary>
-        <div
-          class="grid gap-5 border-t border-line px-5 py-5 text-sm sm:grid-cols-2 sm:px-6 lg:grid-cols-5"
-        >
-          <div>
-            <p class="text-slate">Wallet</p>
-            <p class="mt-1 font-semibold">
-              {{ receipt.walletName }} · {{ walletIdentityTitle }}
-            </p>
-          </div>
-          <div>
-            <p class="text-slate">Ethereum block</p>
-            <p class="mt-1 font-semibold">
-              {{ receipt.blockNumber }} ·
-              <time :datetime="receipt.blockTimestamp">
-                Loaded {{ blockLoadedAtLabel }}
-              </time>
-            </p>
-          </div>
-          <div>
-            <p class="text-slate">Balance calls</p>
-            <p class="mt-1 font-semibold">
-              {{ receipt.callsSucceeded }}/{{ receipt.callsAttempted }}
-              succeeded
-            </p>
-          </div>
-          <div>
-            <p class="text-slate">Asset registry</p>
-            <p class="mt-1 font-semibold" :title="registrySource">
-              {{ receipt.registryVersion }}
-            </p>
-          </div>
-          <div>
-            <p class="text-slate">Privacy</p>
-            <p class="mt-1 font-semibold text-moss">
-              No account, balance, or request was posted to Powerrr.
-            </p>
+              Switch network
+            </button>
           </div>
         </div>
-      </details>
-    </div>
+      </section>
+
+      <div
+        v-else
+        key="workspace"
+        class="mx-auto w-full max-w-[1360px] px-4 py-7 sm:px-6 lg:px-8 lg:py-10"
+      >
+        <EstimatorResultSummary
+          :demo="false"
+          :address="compactAccount"
+          :names="resolvedWalletNames"
+          :matched-collateral="formatUsdValue(matchedCollateralUsd)"
+          :asset-count="positiveAssets.length"
+          :selected-asset-count="selectedCollateralTokens.length"
+          :provider-count="providerPathCount"
+          stale-label=""
+          :refreshing="isScanning"
+          :refresh-complete="false"
+          @refresh="refreshEstimate"
+        />
+
+        <nav
+          aria-label="Estimator steps"
+          class="compact-progress mb-5 mt-4 grid grid-cols-2 gap-2"
+        >
+          <button
+            type="button"
+            class="compact-step text-left"
+            :class="
+              currentStage === 'assets'
+                ? 'compact-step-active'
+                : 'compact-step-complete'
+            "
+            :aria-current="currentStage === 'assets' ? 'step' : undefined"
+            @click="goToStage('assets')"
+          >
+            <span class="progress-number">
+              <PhCheck
+                v-if="currentStage !== 'assets'"
+                :size="15"
+                weight="bold"
+                aria-hidden="true"
+              />
+              <template v-else>1</template>
+            </span>
+            <span><strong>Assets</strong><small>Choose collateral</small></span>
+          </button>
+          <button
+            type="button"
+            class="compact-step text-left"
+            :class="currentStage === 'comparison' ? 'compact-step-active' : ''"
+            :aria-current="currentStage === 'comparison' ? 'step' : undefined"
+            :disabled="!selectedCollateralTokens.length || isComparing"
+            @click="goToStage('comparison')"
+          >
+            <span class="progress-number">2</span>
+            <span
+              ><strong>Compare</strong
+              ><small>Amount, terms, and risk</small></span
+            >
+          </button>
+        </nav>
+
+        <p
+          v-if="error || stageError"
+          class="mb-4 flex items-start gap-3 rounded-xl border border-coral/25 bg-danger-surface px-4 py-3 text-sm text-danger"
+          role="alert"
+        >
+          <PhWarningCircle :size="20" class="shrink-0" aria-hidden="true" />
+          {{ stageError || error }}
+        </p>
+
+        <div id="workflow" class="scroll-mt-28 overflow-x-clip">
+          <Transition name="workflow-stage" mode="out-in">
+            <div v-if="currentStage === 'assets'" key="assets">
+              <EstimatorAssets
+                :assets="positiveAssets"
+                :selected-tokens="selectedCollateralTokens"
+                :loading="isComparing"
+                @change-address="disconnect"
+                @toggle="setAssetSelected"
+                @continue="continueFromAssets"
+              />
+
+              <details
+                v-if="manualReviewAssets.length || failedAssets.length"
+                class="panel mt-4 overflow-hidden"
+              >
+                <summary
+                  class="focus-ring cursor-pointer px-5 py-4 text-sm font-semibold sm:px-6"
+                >
+                  Pricing and read details
+                  <template v-if="failedAssets.length">
+                    · {{ failedAssets.length }} reads failed</template
+                  >
+                </summary>
+                <div
+                  class="border-t border-line px-5 py-4 text-sm text-slate sm:px-6"
+                >
+                  <p
+                    v-for="asset in manualReviewAssets"
+                    :key="asset.token"
+                    class="py-1"
+                  >
+                    <strong class="text-ink">{{ asset.symbol }}</strong> ·
+                    {{ asset.balance }} — {{ asset.valuationReason }}
+                  </p>
+                  <p
+                    v-for="asset in failedAssets"
+                    :key="asset.token"
+                    class="py-1"
+                  >
+                    <strong class="text-ink">{{ asset.symbol }}</strong> —
+                    {{ asset.balanceReadReason }}
+                  </p>
+                </div>
+              </details>
+            </div>
+
+            <div
+              v-else
+              key="comparison"
+              class="grid gap-4 xl:grid-cols-[20rem_minmax(0,1fr)] xl:items-start"
+            >
+              <div class="xl:sticky xl:top-24" data-comparison-control>
+                <EstimatorTerms
+                  v-model:amount="borrowAmountUsd"
+                  :comparison-ceiling-usd="comparisonCeilingUsd"
+                  :provider-maximum-usd="providerMaximumUsd"
+                  :selected-asset-value-usd="matchedCollateralUsd"
+                  :ltv-reference-provider="ltvReferenceProvider?.label ?? ''"
+                  :ltv-reference-collateral-usd="ltvReferenceCollateralUsd"
+                  :ltv-reference-existing-debt-usd="ltvReferenceExistingDebtUsd"
+                  :error="stageError"
+                  @back="goToStage('assets')"
+                />
+              </div>
+
+              <section data-provider-field aria-labelledby="providers-title">
+                <div
+                  class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"
+                >
+                  <div>
+                    <h2 id="providers-title" class="type-subtitle">
+                      Borrowing paths
+                    </h2>
+                    <p class="text-sm text-slate">
+                      Expand any path to inspect its support, constraints, and
+                      risk evidence.
+                    </p>
+                  </div>
+                  <p class="text-sm text-slate">
+                    <strong class="font-semibold text-ink tabular-nums">
+                      {{ coveringProviderCount }}/{{ providerItems.length }}
+                    </strong>
+                    pooled providers cover
+                    {{ formatUsdValue(borrowAmountUsd) }}
+                  </p>
+                </div>
+
+                <div class="grid gap-3">
+                  <ProtocolComparisonCard
+                    v-for="provider in providerItems"
+                    :id="provider.id"
+                    :key="provider.id"
+                    :label="provider.label"
+                    :link="provider.link"
+                    :quote="provider.group?.primaryQuote"
+                    :status="providerStatus(provider)"
+                    :amount-usd="borrowAmountUsd"
+                    :assets="positiveAssets"
+                    :expanded="expandedProviderId === provider.id"
+                    @toggle="toggleProvider"
+                  />
+                  <OwnComparisonCard
+                    v-if="ownVisible"
+                    :amount-usd="borrowAmountUsd"
+                    :assets="positiveAssets"
+                    :selected-tokens="selectedCollateralTokens"
+                    :expanded="expandedProviderId === 'own'"
+                    @toggle="toggleProvider('own')"
+                  />
+                </div>
+              </section>
+            </div>
+          </Transition>
+        </div>
+
+        <details class="panel mt-5 overflow-hidden">
+          <summary
+            class="focus-ring flex min-h-14 cursor-pointer items-center gap-2 px-5 py-4 text-sm font-semibold sm:px-6"
+          >
+            <PhInfo :size="18" aria-hidden="true" />
+            About this estimate
+            <PhCaretDown :size="14" class="ml-auto" aria-hidden="true" />
+          </summary>
+          <div
+            class="grid gap-5 border-t border-line px-5 py-5 text-sm sm:grid-cols-2 sm:px-6 lg:grid-cols-5"
+          >
+            <div class="min-w-0">
+              <p class="text-slate">Wallet</p>
+              <p
+                class="mt-1 truncate whitespace-nowrap font-semibold"
+                :title="`${receipt.walletName} · ${walletIdentityTitle}`"
+              >
+                {{ receipt.walletName }} · {{ walletIdentityTitle }}
+              </p>
+            </div>
+            <div>
+              <p class="text-slate">Ethereum block</p>
+              <p class="mt-1 font-semibold">
+                {{ receipt.blockNumber }} ·
+                <time :datetime="receipt.blockTimestamp">
+                  Loaded {{ blockLoadedAtLabel }}
+                </time>
+              </p>
+            </div>
+            <div>
+              <p class="text-slate">Balance calls</p>
+              <p class="mt-1 font-semibold">
+                {{ receipt.callsSucceeded }}/{{ receipt.callsAttempted }}
+                succeeded
+              </p>
+            </div>
+            <div>
+              <p class="text-slate">Asset registry</p>
+              <p class="mt-1 font-semibold" :title="registrySource">
+                {{ receipt.registryVersion }}
+              </p>
+            </div>
+            <div>
+              <p class="text-slate">Privacy</p>
+              <p class="mt-1 font-semibold text-moss">
+                No account, balance, or request was posted to Powerrr.
+              </p>
+            </div>
+          </div>
+        </details>
+      </div>
+    </Transition>
   </main>
 </template>

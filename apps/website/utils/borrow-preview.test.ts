@@ -2,6 +2,7 @@ import type { ProtocolBorrowQuote } from "@powerrr/shared-types";
 import { describe, expect, it } from "vitest";
 import {
   calculatePooledBorrowPreview,
+  pooledBorrowAvailableUsd,
   pooledRiskDescription,
   pooledRiskTitle,
   riskBandFromHealthFactor,
@@ -55,10 +56,10 @@ describe("pooled borrowing risk preview", () => {
     expect(result.liquidationSafetyRatio).toBe(1.7);
     expect(result.healthFactor).toBe(1.7);
     expect(result.liquidationHeadroomUsd).toBe(35_000);
-    expect(result.recommendedLimitUtilization).toBeCloseTo(2 / 3);
+    expect(result.modeledLimitUtilization).toBeCloseTo(2 / 3);
     expect(result.riskBand).toBe("wide");
     expect(result.actionable).toBe(true);
-    expect(result.reasonCodes).toContain("within-recommended-limit");
+    expect(result.reasonCodes).toContain("within-modeled-limit");
     expect(result.status).toBe("below-liquidation-threshold");
   });
 
@@ -133,7 +134,7 @@ describe("pooled borrowing risk preview", () => {
     expect(atThreshold.liquidationSafetyRatio).toBe(1);
     expect(atThreshold.riskBand).toBe("at-boundary");
     expect(atThreshold.actionable).toBe(false);
-    expect(atThreshold.reasonCodes).toContain("above-recommended-limit");
+    expect(atThreshold.reasonCodes).toContain("above-modeled-limit");
     expect(atThreshold.reasonCodes).toContain("at-liquidation-boundary");
     expect(atThreshold.status).toBe("at-or-above-liquidation-threshold");
     expect(oneCentBelow.liquidationSafetyRatio).toBeGreaterThan(1);
@@ -217,14 +218,46 @@ describe("pooled borrowing risk preview", () => {
     },
   );
 
-  it("rejects an amount above the recommended provider limit", () => {
+  it("rejects an amount above the modeled provider limit", () => {
     const result = calculatePooledBorrowPreview(
       { ...quote, mode: "wallet-estimate", existingDebtUsd: 0 },
       60_000.01,
     );
 
     expect(result.actionable).toBe(false);
-    expect(result.reasonCodes).toContain("above-recommended-limit");
+    expect(result.reasonCodes).toContain("above-modeled-limit");
+  });
+
+  it("uses the protocol and liquidity limits instead of a hidden safety recommendation", () => {
+    const morphoQuote: ProtocolBorrowQuote = {
+      ...quote,
+      mode: "wallet-estimate",
+      existingDebtUsd: 0,
+      theoreticalBorrowUsd: 13_346,
+      safeBorrowUsd: 11_344,
+      availableLiquidityUsd: 419_618,
+      capacityBreakdown: {
+        collateralValueUsd: 15_519,
+        protocolBorrowLimitUsd: 13_346,
+        safetyAdjustedLimitUsd: 11_344,
+        liquidityLimitUsd: 419_618,
+        recommendedMaxUsd: 11_344,
+        bindingConstraint: "safety-buffer",
+      },
+      collateralUsed: [
+        {
+          ...quote.collateralUsed[0]!,
+          valueUsd: 15_519,
+          ltv: 0.86,
+          liquidationThreshold: 0.86,
+        },
+      ],
+    };
+
+    expect(pooledBorrowAvailableUsd(morphoQuote)).toBe(13_346);
+    expect(calculatePooledBorrowPreview(morphoQuote, 11_639).actionable).toBe(
+      true,
+    );
   });
 
   it("rejects a projected Compound debt below the protocol minimum", () => {

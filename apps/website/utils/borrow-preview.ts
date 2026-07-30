@@ -11,7 +11,7 @@ export type PooledBorrowPreview = {
   liquidationSafetyRatio: number;
   healthFactor: number | null;
   liquidationHeadroomUsd: number;
-  recommendedLimitUtilization: number;
+  modeledLimitUtilization: number;
   minimumBorrowUsd: number;
   riskBand: PooledRiskBand;
   actionable: boolean;
@@ -25,8 +25,8 @@ export type PooledRiskBand =
 export type PooledPreviewReasonCode =
   | "no-debt-selected"
   | "below-protocol-minimum"
-  | "within-recommended-limit"
-  | "above-recommended-limit"
+  | "within-modeled-limit"
+  | "above-modeled-limit"
   | "at-liquidation-boundary"
   | "above-liquidation-threshold";
 
@@ -100,22 +100,19 @@ export function calculatePooledBorrowPreview(
     ? liquidationSafetyRatio
     : null;
   const liquidationHeadroomUsd = liquidationCapacityUsd - projectedDebtUsd;
-  const recommendedLimitUsd = Math.max(0, quote.safeBorrowUsd ?? 0);
+  const modeledLimitUsd = pooledBorrowAvailableUsd(quote);
   const minimumBorrowUsd = Math.max(0, quote.minimumBorrowUsd ?? 0);
-  const recommendedLimitUtilization = ratio(
-    borrowAmountUsd,
-    recommendedLimitUsd,
-  );
+  const modeledLimitUtilization = ratio(borrowAmountUsd, modeledLimitUsd);
   const riskBand = riskBandFromHealthFactor(healthFactor, projectedDebtUsd);
   const reasonCodes: PooledPreviewReasonCode[] = [];
   if (projectedDebtUsd <= 0) reasonCodes.push("no-debt-selected");
   if (projectedDebtUsd > 0 && projectedDebtUsd < minimumBorrowUsd) {
     reasonCodes.push("below-protocol-minimum");
   }
-  if (borrowAmountUsd > recommendedLimitUsd) {
-    reasonCodes.push("above-recommended-limit");
+  if (borrowAmountUsd > modeledLimitUsd) {
+    reasonCodes.push("above-modeled-limit");
   } else if (borrowAmountUsd > 0) {
-    reasonCodes.push("within-recommended-limit");
+    reasonCodes.push("within-modeled-limit");
   }
   if (riskBand === "at-boundary") {
     reasonCodes.push("at-liquidation-boundary");
@@ -124,8 +121,8 @@ export function calculatePooledBorrowPreview(
   }
   const actionable =
     borrowAmountUsd > 0 &&
-    recommendedLimitUsd > 0 &&
-    borrowAmountUsd <= recommendedLimitUsd &&
+    modeledLimitUsd > 0 &&
+    borrowAmountUsd <= modeledLimitUsd &&
     projectedDebtUsd >= minimumBorrowUsd &&
     riskBand !== "at-boundary" &&
     riskBand !== "above-threshold";
@@ -145,13 +142,32 @@ export function calculatePooledBorrowPreview(
     liquidationSafetyRatio,
     healthFactor,
     liquidationHeadroomUsd: roundUsd(liquidationHeadroomUsd),
-    recommendedLimitUtilization,
+    modeledLimitUtilization,
     minimumBorrowUsd: roundUsd(minimumBorrowUsd),
     riskBand,
     actionable,
     reasonCodes,
     status,
   };
+}
+
+export function pooledBorrowAvailableUsd(quote: ProtocolBorrowQuote): number {
+  if (!quote.capacityBreakdown) {
+    return Math.max(0, quote.safeBorrowUsd ?? 0);
+  }
+
+  const protocolLimitUsd = Math.max(
+    0,
+    quote.capacityBreakdown.protocolBorrowLimitUsd,
+  );
+  const liquidityLimitUsd = Math.max(
+    0,
+    quote.capacityBreakdown.liquidityLimitUsd ??
+      quote.availableLiquidityUsd ??
+      0,
+  );
+
+  return Math.min(protocolLimitUsd, liquidityLimitUsd);
 }
 
 export function riskBandFromHealthFactor(

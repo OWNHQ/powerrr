@@ -11,6 +11,15 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: [
+          "Inter Variable",
+          "Inter",
+          "ui-sans-serif",
+          "system-ui",
+          "sans-serif",
+        ],
+      },
       colors: {
         ink: token("ink"),
         paper: token("paper"),

@@ -76,16 +76,15 @@ function collateralLabel(): string {
       </span>
       <span
         v-if="!meetsAmount"
-        class="max-w-28 rounded bg-slate/10 px-2 py-1 text-right text-[0.65rem] font-bold uppercase leading-4 text-slate"
+        class="max-w-28 rounded bg-slate/10 px-2 py-1 text-right text-xs font-bold uppercase leading-4 text-slate"
       >
         {{ availabilityLabel }}
       </span>
     </span>
-    <span
-      class="mt-6 block text-xs font-medium uppercase tracking-wide text-slate"
-      >{{ quote ? "Estimated provider limit" : "Provider limit" }}</span
-    >
-    <strong class="mt-1 block text-xl tabular-nums tracking-tight">{{
+    <span class="type-label mt-6 block text-slate">{{
+      quote ? "Estimated provider limit" : "Provider limit"
+    }}</span>
+    <strong class="type-data mt-1 block text-xl">{{
       quote ? formatUsdValue(capacity) : "—"
     }}</strong>
     <span

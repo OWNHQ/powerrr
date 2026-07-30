@@ -308,7 +308,7 @@
     "typographyMeta": {
       "display": {
         "displayName": "Compact Display",
-        "purpose": "The pre-connect product promise at narrow widths."
+        "purpose": "The self-hosted Inter Variable product promise at narrow widths."
       },
       "display-wide": {
         "displayName": "Wide Display",
@@ -322,9 +322,13 @@
         "displayName": "Panel Title",
         "purpose": "Workflow panels and local task sections."
       },
+      "subtitle": {
+        "displayName": "Compact Subtitle",
+        "purpose": "Provider identity and compact subsection headings."
+      },
       "body": {
         "displayName": "Explanatory Body",
-        "purpose": "Product explanation and decision context."
+        "purpose": "Inter Variable product explanation and decision context at a readable 1.75rem line-height."
       },
       "body-small": {
         "displayName": "Operational Body",
@@ -354,6 +358,26 @@
         "purpose": "Short hover, color, border, and disclosure state transitions."
       },
       {
+        "name": "instrument-aperture",
+        "value": "460ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "The landing, active scan, and completed workspace handoff through one bounded focal aperture."
+      },
+      {
+        "name": "workflow-handoff",
+        "value": "160ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "A quiet opacity handoff with a two-pixel settle between collateral selection and amount comparison."
+      },
+      {
+        "name": "wallet-control",
+        "value": "220ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Compact continuity between connect, resolving, and connected wallet controls."
+      },
+      {
+        "name": "active-scan-dial",
+        "value": "1100ms linear",
+        "purpose": "The only loop; communicates a real wallet read and is removed when scanning stops."
+      },
+      {
         "name": "reduced-motion",
         "value": "0.01ms",
         "purpose": "Near-instant fallback for animation and transitions when reduced motion is requested."
@@ -381,7 +405,7 @@
       "refersTo": "button-primary",
       "description": "The single high-emphasis action in a workflow region.",
       "html": "<button class=\"ds-btn-primary\" type=\"button\">Compare borrowing paths</button>",
-      "css": ".ds-btn-primary { min-height: 48px; border: 0; border-radius: 8px; background: rgb(var(--color-river)); color: rgb(var(--color-accent-contrast)); padding: 0 24px; font: 600 14px/20px Inter, ui-sans-serif, system-ui, sans-serif; transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-btn-primary:hover { background: rgb(var(--color-river) / 0.9); } .ds-btn-primary:focus-visible { outline: 2px solid rgb(var(--color-river)); outline-offset: 2px; box-shadow: 0 0 0 2px rgb(var(--color-paper)); }"
+      "css": ".ds-btn-primary { min-height: 48px; border: 0; border-radius: 8px; background: rgb(var(--color-river)); color: rgb(var(--color-accent-contrast)); padding: 0 24px; font: 600 14px/20px \"Inter Variable\", Inter, ui-sans-serif, system-ui, sans-serif; transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-btn-primary:hover { background: rgb(var(--color-river) / 0.9); } .ds-btn-primary:focus-visible { outline: 2px solid rgb(var(--color-river)); outline-offset: 2px; box-shadow: 0 0 0 2px rgb(var(--color-paper)); }"
     },
     {
       "name": "Secondary Button",
@@ -389,7 +413,7 @@
       "refersTo": "button-secondary",
       "description": "A restrained bordered action for refresh, navigation, and disclosure support.",
       "html": "<button class=\"ds-btn-secondary\" type=\"button\">Refresh</button>",
-      "css": ".ds-btn-secondary { min-height: 44px; border: 1px solid rgb(var(--color-line)); border-radius: 8px; background: rgb(var(--color-surface)); color: rgb(var(--color-river)); padding: 0 16px; font: 600 14px/20px Inter, ui-sans-serif, system-ui, sans-serif; } .ds-btn-secondary:hover { border-color: rgb(var(--color-river)); } .ds-btn-secondary:focus-visible { outline: 2px solid rgb(var(--color-river)); outline-offset: 2px; box-shadow: 0 0 0 2px rgb(var(--color-paper)); }"
+      "css": ".ds-btn-secondary { min-height: 44px; border: 1px solid rgb(var(--color-line)); border-radius: 8px; background: rgb(var(--color-surface)); color: rgb(var(--color-river)); padding: 0 16px; font: 600 14px/20px \"Inter Variable\", Inter, ui-sans-serif, system-ui, sans-serif; } .ds-btn-secondary:hover { border-color: rgb(var(--color-river)); } .ds-btn-secondary:focus-visible { outline: 2px solid rgb(var(--color-river)); outline-offset: 2px; box-shadow: 0 0 0 2px rgb(var(--color-paper)); }"
     },
     {
       "name": "Panel",
@@ -397,7 +421,7 @@
       "refersTo": "panel",
       "description": "The standard flat, bounded region for one operational task.",
       "html": "<section class=\"ds-panel\"><div class=\"ds-panel-kicker\">STEP 1 OF 2</div><h3>Choose collateral</h3><p>Select the assets to compare across borrowing paths.</p></section>",
-      "css": ".ds-panel { border: 1px solid rgb(var(--color-line)); border-radius: 12px; background: rgb(var(--color-surface)); color: rgb(var(--color-ink)); padding: 20px 24px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; } .ds-panel h3 { margin: 4px 0 0; font-size: 20px; line-height: 28px; font-weight: 600; } .ds-panel p { margin: 8px 0 0; color: rgb(var(--color-slate)); font-size: 14px; line-height: 24px; } .ds-panel-kicker { color: rgb(var(--color-river)); font-size: 12px; line-height: 16px; font-weight: 700; letter-spacing: 0.14em; }"
+      "css": ".ds-panel { border: 1px solid rgb(var(--color-line)); border-radius: 12px; background: rgb(var(--color-surface)); color: rgb(var(--color-ink)); padding: 20px 24px; font-family: \"Inter Variable\", Inter, ui-sans-serif, system-ui, sans-serif; } .ds-panel h3 { margin: 4px 0 0; font-size: 20px; line-height: 28px; font-weight: 650; letter-spacing: -0.02em; } .ds-panel p { margin: 8px 0 0; color: rgb(var(--color-slate)); font-size: 14px; line-height: 24px; } .ds-panel-kicker { color: rgb(var(--color-river)); font-size: 12px; line-height: 16px; font-weight: 650; letter-spacing: 0.08em; }"
     },
     {
       "name": "Amount Field",
@@ -405,7 +429,14 @@
       "refersTo": "field",
       "description": "The prominent monetary control used to compare one request across every path.",
       "html": "<label class=\"ds-amount-field\"><span class=\"ds-amount-label\">BORROW AMOUNT</span><span class=\"ds-amount-line\"><span aria-hidden=\"true\">$</span><input aria-label=\"Borrow amount in USDC\" inputmode=\"decimal\" value=\"12,500\"><span>USDC</span></span></label>",
-      "css": ".ds-amount-field { display: block; border: 1px solid rgb(var(--color-line)); border-radius: 12px; background: rgb(var(--color-surface)); color: rgb(var(--color-ink)); padding: 16px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; } .ds-amount-field:focus-within { border-color: rgb(var(--color-river)); box-shadow: 0 0 0 1px rgb(var(--color-river)); } .ds-amount-label { display: block; color: rgb(var(--color-slate)); font-size: 12px; font-weight: 600; letter-spacing: 0.1em; } .ds-amount-line { display: flex; align-items: center; gap: 12px; margin-top: 8px; } .ds-amount-line input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: rgb(var(--color-ink)); font: 600 30px/36px Inter, ui-sans-serif, system-ui, sans-serif; font-variant-numeric: tabular-nums; }"
+      "css": ".ds-amount-field { display: block; border: 1px solid rgb(var(--color-line)); border-radius: 12px; background: rgb(var(--color-surface)); color: rgb(var(--color-ink)); padding: 16px; font-family: \"Inter Variable\", Inter, ui-sans-serif, system-ui, sans-serif; } .ds-amount-field:focus-within { border-color: rgb(var(--color-river)); box-shadow: 0 0 0 1px rgb(var(--color-river)); } .ds-amount-label { display: block; color: rgb(var(--color-slate)); font-size: 12px; font-weight: 650; letter-spacing: 0.08em; } .ds-amount-line { display: flex; align-items: center; gap: 12px; margin-top: 8px; } .ds-amount-line input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: rgb(var(--color-ink)); font: 650 30px/36px \"Inter Variable\", Inter, ui-sans-serif, system-ui, sans-serif; font-variant-numeric: tabular-nums lining-nums; letter-spacing: -0.015em; }"
+    },
+    {
+      "name": "Comparison Workbench",
+      "kind": "layout",
+      "description": "A wide-screen 320px sticky request controller beside a flexible provider evidence field; the regions stack in request-then-providers order below 1280px.",
+      "html": "<section class=\"ds-comparison-workbench\"><aside class=\"ds-request-controller\">Amount and comparison range</aside><div class=\"ds-provider-field\">Borrowing paths</div></section>",
+      "css": ".ds-comparison-workbench { display: grid; align-items: start; gap: 16px; } .ds-request-controller, .ds-provider-field { min-width: 0; } @media (min-width: 1280px) { .ds-comparison-workbench { grid-template-columns: 320px minmax(0, 1fr); } .ds-request-controller { position: sticky; top: 96px; } }"
     },
     {
       "name": "Workflow Steps",
@@ -413,6 +444,13 @@
       "description": "Two compact peer panels that preserve task orientation without becoming a full navigation system.",
       "html": "<nav class=\"ds-steps\" aria-label=\"Estimator steps\"><button class=\"ds-step ds-step-active\" type=\"button\" aria-current=\"step\"><span class=\"ds-step-number\">1</span><strong>Assets</strong></button><button class=\"ds-step\" type=\"button\"><span class=\"ds-step-number\">2</span><strong>Compare</strong></button></nav>",
       "css": ".ds-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .ds-step { min-height: 64px; display: flex; align-items: center; gap: 12px; border: 1px solid rgb(var(--color-line)); border-radius: 12px; background: rgb(var(--color-surface)); color: rgb(var(--color-slate)); padding: 8px 12px; } .ds-step-active { border-color: rgb(var(--color-river)); background: rgb(var(--color-info-surface)); } .ds-step-number { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid rgb(var(--color-line)); border-radius: 9999px; } .ds-step-active .ds-step-number { border-color: rgb(var(--color-river)); background: rgb(var(--color-river)); color: rgb(var(--color-accent-contrast)); }"
+    },
+    {
+      "name": "Asset Selection Workspace",
+      "kind": "layout",
+      "description": "A wide-screen primary asset field with a sticky 288–320px decision summary; the same regions stack in choose-then-continue order below 1024px.",
+      "html": "<section class=\"ds-asset-workspace\"><div class=\"ds-asset-field\">Asset choices</div><aside class=\"ds-selection-summary\"><strong>Selection</strong><span>1 selected · $6,000</span><button type=\"button\">Compare 1 selected asset</button></aside></section>",
+      "css": ".ds-asset-workspace { display: grid; align-items: start; gap: 16px; } .ds-asset-field, .ds-selection-summary { border: 1px solid rgb(var(--color-line)); border-radius: 12px; background: rgb(var(--color-surface)); } .ds-selection-summary { padding: 20px; } @media (min-width: 1024px) { .ds-asset-workspace { grid-template-columns: minmax(0, 1fr) 288px; } .ds-selection-summary { position: sticky; top: 96px; } } @media (min-width: 1280px) { .ds-asset-workspace { grid-template-columns: minmax(0, 1fr) 320px; } }"
     },
     {
       "name": "Selection Card",
@@ -424,9 +462,9 @@
     {
       "name": "Protocol Comparison Row",
       "kind": "custom",
-      "description": "The shared evidence grammar for pooled protocols and OWN.",
-      "html": "<article class=\"ds-protocol-row\"><button type=\"button\" aria-expanded=\"false\"><strong>Aave</strong><span class=\"ds-protocol-grid\"><span><small>Recommended max</small><strong>$18,420</strong></span><span><small>Rate</small><strong>4.8% variable APR</strong></span></span></button></article>",
-      "css": ".ds-protocol-row { overflow: hidden; border: 1px solid rgb(var(--color-line)); border-radius: 12px; background: rgb(var(--color-surface)); color: rgb(var(--color-ink)); } .ds-protocol-row button { width: 100%; border: 0; background: transparent; color: inherit; padding: 16px 20px; text-align: left; } .ds-protocol-row button:hover { background: rgb(var(--color-mist) / 0.35); } .ds-protocol-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; } .ds-protocol-grid small { display: block; color: rgb(var(--color-slate)); } .ds-protocol-grid strong { font-variant-numeric: tabular-nums; }"
+      "description": "The shared evidence grammar for pooled protocols and OWN, with one persistent action rail above expandable detail.",
+      "html": "<article class=\"ds-protocol-row\"><button type=\"button\" aria-expanded=\"false\"><strong>Aave</strong><span class=\"ds-protocol-grid\"><span><small>Rate</small><strong>4.8% variable APR</strong></span><span><small>Health factor</small><strong>1.62 · Wide buffer</strong></span></span></button><div class=\"ds-protocol-action\"><a href=\"#\">Review on Aave</a></div></article>",
+      "css": ".ds-protocol-row { overflow: hidden; border: 1px solid rgb(var(--color-line)); border-radius: 12px; background: rgb(var(--color-surface)); color: rgb(var(--color-ink)); } .ds-protocol-row button { width: 100%; border: 0; background: transparent; color: inherit; padding: 16px 20px; text-align: left; } .ds-protocol-row button:hover { background: rgb(var(--color-mist) / 0.35); } .ds-protocol-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; } .ds-protocol-grid small { display: block; color: rgb(var(--color-slate)); font-weight: 480; } .ds-protocol-grid strong { font-weight: 650; font-variant-numeric: tabular-nums lining-nums; letter-spacing: -0.015em; } .ds-protocol-action { min-height: 56px; display: flex; align-items: center; justify-content: flex-end; border-top: 1px solid rgb(var(--color-line)); background: rgb(var(--color-mist) / 0.3); padding: 8px 20px; } .ds-protocol-action a { min-height: 44px; display: inline-flex; align-items: center; border: 1px solid rgb(var(--color-line)); border-radius: 8px; background: rgb(var(--color-surface)); color: rgb(var(--color-river)); padding: 0 16px; font: 600 14px/20px \"Inter Variable\", Inter, ui-sans-serif, system-ui, sans-serif; }"
     },
     {
       "name": "Status Chip",
@@ -434,7 +472,7 @@
       "refersTo": "status-chip",
       "description": "A compact semantic annotation, never a primary action.",
       "html": "<span class=\"ds-status-chip\">Example data</span>",
-      "css": ".ds-status-chip { display: inline-flex; align-items: center; border-radius: 9999px; background: rgb(var(--color-warning-surface)); color: rgb(var(--color-warning-text)); padding: 4px 10px; font: 600 12px/16px Inter, ui-sans-serif, system-ui, sans-serif; }"
+      "css": ".ds-status-chip { display: inline-flex; align-items: center; border-radius: 9999px; background: rgb(var(--color-warning-surface)); color: rgb(var(--color-warning-text)); padding: 4px 10px; font: 600 12px/16px \"Inter Variable\", Inter, ui-sans-serif, system-ui, sans-serif; }"
     }
   ],
   "narrative": {

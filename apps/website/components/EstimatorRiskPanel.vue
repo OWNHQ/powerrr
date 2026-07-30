@@ -16,9 +16,9 @@ const props = defineProps<{
 function pooledStatusClass(): string {
   switch (props.pooledPreview?.riskBand) {
     case "wide":
-      return "text-river";
+      return "text-moss";
     case "reduced":
-      return "text-warning";
+      return "text-gold";
     case "thin":
     case "at-boundary":
     case "above-threshold":
@@ -76,7 +76,7 @@ function formatHealth(value: number | null | undefined): string {
           <div class="flex flex-wrap items-center gap-2">
             <h3
               id="risk-title"
-              class="text-lg font-semibold"
+              class="type-subtitle"
               :class="pooledStatusClass()"
             >
               {{ riskTitle }}
@@ -88,10 +88,8 @@ function formatHealth(value: number | null | undefined): string {
         </div>
       </div>
       <div class="shrink-0 sm:text-right">
-        <p class="text-xs font-medium uppercase tracking-wide text-slate">
-          Amount reviewed
-        </p>
-        <p class="mt-1 text-xl font-semibold tabular-nums">
+        <p class="type-label text-slate">Amount reviewed</p>
+        <p class="type-data mt-1 text-xl">
           {{ formatUsdValue(amountUsd) }} USDC
         </p>
         <p class="mt-1 text-xs text-slate">
@@ -102,9 +100,7 @@ function formatHealth(value: number | null | undefined): string {
     </div>
 
     <template v-if="pooledPreview">
-      <p
-        class="bg-surface px-5 pt-4 text-xs font-bold uppercase tracking-[0.12em] text-slate"
-      >
+      <p class="type-label bg-surface px-5 pt-4 text-slate">
         Projected position
       </p>
       <dl
@@ -125,7 +121,7 @@ function formatHealth(value: number | null | undefined): string {
           </dt>
           <dd>
             {{ formatUsdValue(pooledPreview.startingDebtUsd) }}
-            <span class="mt-1 block text-[0.7rem] leading-4 text-slate">
+            <span class="type-metric-label mt-1 block text-slate">
               {{
                 pooledPreview.mode === "existing-position"
                   ? "Before this borrow"
@@ -142,22 +138,22 @@ function formatHealth(value: number | null | undefined): string {
           <dt>Liquidation headroom</dt>
           <dd>
             {{ formatUsdValue(pooledPreview.liquidationHeadroomUsd) }}
-            <span class="mt-1 block text-[0.7rem] leading-4 text-slate">
+            <span class="type-metric-label mt-1 block text-slate">
               Capacity at threshold minus debt
             </span>
           </dd>
         </div>
         <div class="p-4 sm:p-5">
-          <dt>Recommended limit used</dt>
+          <dt>Comparison constraint used</dt>
           <dd>
-            {{ formatPercent(pooledPreview.recommendedLimitUtilization, 0) }}
+            {{ formatPercent(pooledPreview.modeledLimitUtilization, 0) }}
           </dd>
         </div>
         <div class="p-4 sm:p-5">
           <dt>Borrow rate</dt>
           <dd>
             {{ pooledRateLabel }}
-            <span class="mt-1 block text-[0.7rem] leading-4 text-slate">
+            <span class="type-metric-label mt-1 block text-slate">
               Indicative until executed
             </span>
           </dd>
@@ -165,7 +161,7 @@ function formatHealth(value: number | null | undefined): string {
       </dl>
 
       <p
-        class="border-t border-line bg-surface px-5 pt-4 text-xs font-bold uppercase tracking-[0.12em] text-slate"
+        class="type-label border-t border-line bg-surface px-5 pt-4 text-slate"
       >
         Protocol thresholds
       </p>
@@ -177,7 +173,7 @@ function formatHealth(value: number | null | undefined): string {
           <dt>Projected LTV</dt>
           <dd>
             {{ formatPercent(pooledPreview.projectedLtv) }}
-            <span class="mt-1 block text-[0.7rem] leading-4 text-slate">
+            <span class="type-metric-label mt-1 block text-slate">
               Projected debt ÷ collateral
             </span>
           </dd>
@@ -193,8 +189,10 @@ function formatHealth(value: number | null | undefined): string {
         <div class="p-4 sm:p-5">
           <dt>Projected health factor</dt>
           <dd>
-            {{ formatHealth(pooledPreview.healthFactor) }}
-            <span class="mt-1 block text-[0.7rem] leading-4 text-slate">
+            <span :class="pooledStatusClass()">
+              {{ formatHealth(pooledPreview.healthFactor) }}
+            </span>
+            <span class="type-metric-label mt-1 block text-slate">
               1.00 = liquidation threshold
             </span>
           </dd>

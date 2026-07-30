@@ -11,20 +11,24 @@ and keeps unpriced or unsupported balances visible. Balances below $5 move into
 
 ## 2. Compare protocols
 
-The second screen has one global USDC amount input and one slider. The slider
-ceiling is the greater of selected asset value or the highest pooled estimate;
-it is a comparison range, not approved credit.
+The second screen has one global USDC amount input, one slider, and 25%, 50%,
+and 75% projected-LTV scenario controls. The initial amount uses 50% projected
+LTV against the accepted collateral of the highest-capacity available pooled
+path, after accounting for existing debt. This is a convenience, not a
+preferred borrowing level. The slider ceiling is the greater of selected asset
+value or the highest pooled estimate; it is a comparison range, not approved
+credit or a suggested borrowing amount.
 
 Aave, Spark, Compound, and Morpho use the same amount. Expand any row—even an
 unavailable one—to inspect:
 
-- recommended capacity, rate, weighted LTV, liquidation threshold or LLTV, and projected health factor;
+- rate, weighted LTV, liquidation threshold or LLTV, and a color-coded projected health factor;
 - eligible collateral, protocol limit, safety adjustment, liquidity, and the binding constraint; and
-- every positive wallet asset, including supported-but-unselected, unsupported, conversion-required, small, and unpriced balances.
+- contributing collateral assets, ordered by their USD contribution.
 
 An RPC failure is labeled “Support could not be checked,” not “Unsupported.”
 
-OWN appears only above a $5,000 request. Every wallet asset is eligible for an
+OWN appears only above a $1,000 request. Every wallet asset is eligible for an
 OWN assessment, but the estimator does not invent capacity, LTV, liquidation
 terms, or a rate. **Contact OWN** opens
 `https://own.casa/borrow#contact`; Powerrr sends no wallet data to that site.

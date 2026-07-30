@@ -260,39 +260,54 @@ export async function loadCompoundUsdcCometSnapshot(
     const factorsValid =
       listed.borrowCollateralFactor > ZERO_BIGINT &&
       listed.liquidateCollateralFactor > ZERO_BIGINT;
-    const supported = factorsValid && !portfolioAsset.requiredAction;
+    const conversionRequired = Boolean(portfolioAsset.requiredAction);
+    const supported = factorsValid;
     const temporarilyUnavailable = selected && supported && !included;
+    const combinedBalanceRaw = walletBalanceFor(input, listed.asset);
+    const assetBalanceRaw = selected
+      ? BigInt(
+          portfolioAsset.protocolBalanceRaw ?? portfolioAsset.balanceRaw ?? "0",
+        )
+      : ZERO_BIGINT;
+    const contributionUsd = included
+      ? proportionalUsd(included.valueUsd, assetBalanceRaw, combinedBalanceRaw)
+      : 0;
+    const protocolSymbol = tokenMetadataFor(listed.asset).symbol;
     return {
       token: portfolioAsset.token,
       symbol: portfolioAsset.symbol,
       ...(balanceUsd > 0 ? { balanceUsd } : {}),
       selectionStatus,
-      eligibilityStatus: !supported
+      eligibilityStatus: !factorsValid
         ? "unsupported"
-        : temporarilyUnavailable
-          ? "temporarily-unavailable"
-          : selected
-            ? "included"
-            : "supported",
-      reasonCodes: !supported
-        ? [portfolioAsset.requiredAction ? "CONVERSION_REQUIRED" : "ZERO_LTV"]
-        : temporarilyUnavailable
-          ? ["MARKET_STATE_UNAVAILABLE"]
-          : [selected ? "INCLUDED" : "SUPPORTED_NOT_SELECTED"],
-      reason: !supported
-        ? portfolioAsset.requiredAction
-          ? "This asset must be converted before it can be supplied."
-          : "This market currently assigns the asset a zero collateral factor."
-        : temporarilyUnavailable
-          ? "The asset is listed, but protocol price or supply-cap checks prevented inclusion."
-          : selected
-            ? "Included in this protocol estimate."
-            : "Supported by this protocol, but not selected as collateral.",
+        : conversionRequired
+          ? "supported"
+          : temporarilyUnavailable
+            ? "temporarily-unavailable"
+            : selected
+              ? "included"
+              : "supported",
+      reasonCodes: !factorsValid
+        ? ["ZERO_LTV"]
+        : conversionRequired
+          ? ["CONVERSION_REQUIRED"]
+          : temporarilyUnavailable
+            ? ["MARKET_STATE_UNAVAILABLE"]
+            : [selected ? "INCLUDED" : "SUPPORTED_NOT_SELECTED"],
+      reason: !factorsValid
+        ? "This market currently assigns the asset a zero collateral factor."
+        : conversionRequired
+          ? `${portfolioAsset.symbol} must be converted to ${protocolSymbol} before supply. Its ${protocolSymbol}-equivalent value is included in this estimate.`
+          : temporarilyUnavailable
+            ? "The asset is listed, but protocol price or supply-cap checks prevented inclusion."
+            : selected
+              ? "Included in this protocol estimate."
+              : "Supported by this protocol, but not selected as collateral.",
       ltv: Number(formatUnits(listed.borrowCollateralFactor, 18)),
       liquidationThreshold: Number(
         formatUnits(listed.liquidateCollateralFactor, 18),
       ),
-      ...(included ? { contributionUsd: included.valueUsd } : {}),
+      ...(selected && contributionUsd > 0 ? { contributionUsd } : {}),
       ...(portfolioAsset.requiredAction
         ? {
             requiredAction: `Convert ${portfolioAsset.symbol} before supplying collateral.`,
@@ -421,23 +436,35 @@ function toHexBlockNumber(value: string): Hex {
 }
 
 function walletBalanceFor(input: ProtocolAdapterInput, asset: Address): bigint {
-  const match = input.portfolio.find((item) =>
+  const matches = input.portfolio.filter((item) =>
     isAddressEqual((item.protocolAssetToken ?? item.token) as Address, asset),
   );
+  const selectedTokens = input.selectedCollateralTokens
+    ? new Set(
+        input.selectedCollateralTokens.map((token) => token.toLowerCase()),
+      )
+    : null;
 
-  if (
-    match &&
-    input.selectedCollateralTokens &&
-    !input.selectedCollateralTokens.some(
-      (token) => token.toLowerCase() === match.token.toLowerCase(),
-    )
-  ) {
-    return ZERO_BIGINT;
-  }
+  return matches.reduce(
+    (sum, match) =>
+      selectedTokens && !selectedTokens.has(match.token.toLowerCase())
+        ? sum
+        : sum + BigInt(match.protocolBalanceRaw ?? match.balanceRaw),
+    ZERO_BIGINT,
+  );
+}
 
-  return match
-    ? BigInt(match.protocolBalanceRaw ?? match.balanceRaw)
-    : ZERO_BIGINT;
+function proportionalUsd(
+  totalValueUsd: number,
+  numerator: bigint,
+  denominator: bigint,
+): number {
+  if (numerator <= ZERO_BIGINT || denominator <= ZERO_BIGINT) return 0;
+  const precision = 1_000_000_000n;
+  const value =
+    (totalValueUsd * Number((numerator * precision) / denominator)) /
+    Number(precision);
+  return Math.round(value * 100) / 100;
 }
 
 function tokenMetadataFor(asset: Address): {

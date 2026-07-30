@@ -43,6 +43,22 @@ export function amountForUtilization(
   return roundAmount((maximumUsd * percent) / 100, maximumUsd);
 }
 
+export function amountForTargetLtv(
+  collateralValueUsd: number,
+  existingDebtUsd: number,
+  targetLtvPercent: number,
+): number {
+  if (!Number.isFinite(collateralValueUsd) || collateralValueUsd <= 0) return 0;
+  const targetLtv = clamp(targetLtvPercent, 0, 100) / 100;
+  const startingDebt = Number.isFinite(existingDebtUsd)
+    ? Math.max(0, existingDebtUsd)
+    : 0;
+  return roundAmount(
+    Math.max(0, collateralValueUsd * targetLtv - startingDebt),
+    collateralValueUsd,
+  );
+}
+
 export function utilizationForAmount(
   maximumUsd: number,
   amountUsd: number,

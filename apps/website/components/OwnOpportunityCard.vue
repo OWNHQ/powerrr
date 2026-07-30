@@ -51,11 +51,7 @@ const collateralLabel = computed(
       </span>
 
       <span>
-        <span
-          class="block text-xs font-medium uppercase tracking-wide text-slate"
-        >
-          Status
-        </span>
+        <span class="type-label block text-slate"> Status </span>
         <span class="mt-1 block text-sm font-semibold text-ink">
           {{
             selected ? "Selected for assessment" : "Available for assessment"
@@ -67,14 +63,8 @@ const collateralLabel = computed(
       </span>
 
       <span>
-        <span
-          class="block text-xs font-medium uppercase tracking-wide text-slate"
-        >
-          Fixed-term route
-        </span>
-        <span
-          class="mt-1 block text-lg font-semibold tabular-nums tracking-tight"
-        >
+        <span class="type-label block text-slate"> Fixed-term route </span>
+        <span class="type-data mt-1 block text-lg">
           {{ formatUsdValue(amountUsd) }} requested
         </span>
         <span class="mt-1 block text-xs leading-5 text-slate">

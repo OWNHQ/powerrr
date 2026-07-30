@@ -120,6 +120,65 @@ describe("Aave-like live source", () => {
     );
   });
 
+  it("aggregates ETH and WETH once while preserving each contribution", async () => {
+    const eth = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" as const;
+    const snapshot = await loadAaveLikeSnapshot({
+      address: account,
+      chainId: 1,
+      mode: "wallet-estimate",
+      safetyProfile: "balanced",
+      targetBorrowAssets: ["USDC"],
+      selectedCollateralTokens: [eth, weth],
+      portfolio: [
+        {
+          chainId: 1,
+          token: eth,
+          symbol: "ETH",
+          name: "Ether",
+          decimals: 18,
+          balance: "4",
+          balanceRaw: "4000000000000000000",
+          protocolAssetToken: weth,
+          protocolBalanceRaw: "4000000000000000000",
+          requiredAction: "wrap",
+          marketPriceUsd: 3_000,
+          protocolEligible: { "aave-v3": true },
+        },
+        {
+          chainId: 1,
+          token: weth,
+          symbol: "WETH",
+          name: "Wrapped Ether",
+          decimals: 18,
+          balance: "1",
+          balanceRaw: "1000000000000000000",
+          marketPriceUsd: 3_000,
+          protocolEligible: { "aave-v3": true },
+        },
+      ],
+      rpc: createRpcMock(),
+      deployment: AAVE_V3_ETHEREUM,
+    });
+
+    expect(snapshot.collateral).toEqual([
+      expect.objectContaining({ symbol: "WETH", valueUsd: 15_000 }),
+    ]);
+    expect(snapshot.assetEvaluations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          symbol: "ETH",
+          contributionUsd: 12_000,
+          reasonCodes: ["CONVERSION_REQUIRED"],
+        }),
+        expect.objectContaining({
+          symbol: "WETH",
+          contributionUsd: 3_000,
+          reasonCodes: ["INCLUDED"],
+        }),
+      ]),
+    );
+  });
+
   it("limits borrowable liquidity to the remaining target reserve cap", async () => {
     const snapshot = await loadAaveLikeSnapshot({
       address: account,
