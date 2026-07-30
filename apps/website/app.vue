@@ -237,7 +237,6 @@ async function goToStage(stage: EstimatorStage): Promise<void> {
   }
   currentStage.value = stage;
   stageError.value = "";
-  await scrollToWorkflow();
 }
 
 function toggleProvider(id: string): void {
@@ -284,13 +283,6 @@ function providerStatus(provider: ProviderItem) {
   );
 }
 
-async function scrollToWorkflow(): Promise<void> {
-  await nextTick();
-  document.querySelector<HTMLElement>("#workflow")?.scrollIntoView({
-    behavior: "smooth",
-    block: "start",
-  });
-}
 </script>
 
 <template>
