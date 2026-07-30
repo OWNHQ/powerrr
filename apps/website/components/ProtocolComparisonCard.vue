@@ -87,12 +87,12 @@ function formatPercent(value: number | undefined): string {
 }
 
 function evaluationLabel(item: ProtocolAssetEvaluation): string {
+  if (item.reasonCodes.includes("CONVERSION_REQUIRED")) return "Wrap required";
   if (item.eligibilityStatus === "included") return "Included";
   if (item.eligibilityStatus === "supported") return "Supported · not selected";
   if (item.eligibilityStatus === "temporarily-unavailable")
     return "Temporarily unavailable";
   if (item.eligibilityStatus === "unknown") return "Support not checked";
-  if (item.reasonCodes.includes("CONVERSION_REQUIRED")) return "Wrap required";
   if (item.reasonCodes.includes("PRICE_UNAVAILABLE"))
     return "Price unavailable";
   return "Not supported";

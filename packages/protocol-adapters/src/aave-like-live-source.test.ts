@@ -77,6 +77,49 @@ describe("Aave-like live source", () => {
     expect(new Set(rpc.blockTags)).toEqual(new Set(["0x160d6f0"]));
   });
 
+  it("shows native ETH's WETH-equivalent contribution and required wrap", async () => {
+    const snapshot = await loadAaveLikeSnapshot({
+      address: account,
+      chainId: 1,
+      mode: "wallet-estimate",
+      safetyProfile: "balanced",
+      targetBorrowAssets: ["USDC"],
+      selectedCollateralTokens: ["0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"],
+      portfolio: [
+        {
+          chainId: 1,
+          token: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+          symbol: "ETH",
+          name: "Ether",
+          decimals: 18,
+          balance: "2",
+          balanceRaw: "2000000000000000000",
+          protocolAssetToken: weth,
+          protocolBalanceRaw: "2000000000000000000",
+          requiredAction: "wrap",
+          marketPriceUsd: 3_000,
+          protocolEligible: { "aave-v3": true },
+        },
+      ],
+      rpc: createRpcMock(),
+      deployment: AAVE_V3_ETHEREUM,
+    });
+
+    expect(snapshot.collateral).toEqual([
+      expect.objectContaining({ symbol: "WETH", valueUsd: 6_000 }),
+    ]);
+    expect(snapshot.assetEvaluations).toContainEqual(
+      expect.objectContaining({
+        symbol: "ETH",
+        selectionStatus: "unselectable",
+        eligibilityStatus: "supported",
+        reasonCodes: ["CONVERSION_REQUIRED"],
+        contributionUsd: 6_000,
+        requiredAction: "Convert ETH before supplying collateral.",
+      }),
+    );
+  });
+
   it("limits borrowable liquidity to the remaining target reserve cap", async () => {
     const snapshot = await loadAaveLikeSnapshot({
       address: account,

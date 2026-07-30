@@ -34,6 +34,12 @@ const UNISWAP_V3_FEES = [100, 500, 3_000, 10_000] as const;
 const UNISWAP_TWAP_SECONDS = 1_800;
 const MIN_TWAP_LIQUIDITY_USD = 25_000;
 const MIN_SPOT_LIQUIDITY_USD = 100_000;
+// A direct USD valuation outside this range is not credible collateral data.
+// This is deliberately generous (sub-picodollar through $1m per token) and
+// prevents manipulated or abandoned pools near Uniswap's tick limits from
+// dominating a wallet total.
+const MIN_CREDIBLE_TOKEN_PRICE_USD = 1e-12;
+const MAX_CREDIBLE_TOKEN_PRICE_USD = 1_000_000;
 export const MAX_BLOCK_AGE_SECONDS = 300;
 
 export type Eip1193Request = {
@@ -508,8 +514,15 @@ async function loadPrices(
       });
       return;
     }
+    const priceUsd = Number(raw) / Number(unit);
+    if (!isCredibleTokenPriceUsd(priceUsd)) {
+      result.set(token.address.toLowerCase(), {
+        reason: `${token.symbol} returned an implausible USD price from its pinned protocol oracle.`,
+      });
+      return;
+    }
     result.set(token.address.toLowerCase(), {
-      priceUsd: Number(raw) / Number(unit),
+      priceUsd,
       source: `Onchain oracle ${token.priceRoute.oracle}`,
       confidence: "high",
       route: `${token.symbol}/USD protocol oracle`,
@@ -606,7 +619,7 @@ async function loadChainlinkPrices(
         return;
       }
       const priceUsd = Number(answer) / 10 ** Number(decimals);
-      if (!Number.isFinite(priceUsd) || priceUsd <= 0) return;
+      if (!isCredibleTokenPriceUsd(priceUsd)) return;
       output.set(token.address.toLowerCase(), {
         priceUsd,
         source: `Chainlink Feed Registry ${CHAINLINK_FEED_REGISTRY}`,
@@ -762,8 +775,7 @@ async function loadUniswapPrices(
           ? MIN_TWAP_LIQUIDITY_USD
           : MIN_SPOT_LIQUIDITY_USD;
       if (
-        !Number.isFinite(priceUsd) ||
-        priceUsd <= 0 ||
+        !isCredibleTokenPriceUsd(priceUsd) ||
         !Number.isFinite(liquidityUsd) ||
         liquidityUsd < threshold
       ) {
@@ -808,6 +820,14 @@ async function loadUniswapPrices(
       liquidityUsd: best.liquidityUsd,
     });
   }
+}
+
+export function isCredibleTokenPriceUsd(priceUsd: number): boolean {
+  return (
+    Number.isFinite(priceUsd) &&
+    priceUsd >= MIN_CREDIBLE_TOKEN_PRICE_USD &&
+    priceUsd <= MAX_CREDIBLE_TOKEN_PRICE_USD
+  );
 }
 
 function floorDiv(numerator: bigint, denominator: bigint): number {

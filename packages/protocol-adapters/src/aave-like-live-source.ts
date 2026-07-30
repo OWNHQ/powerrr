@@ -403,34 +403,45 @@ export async function loadAaveLikeSnapshot(
           : {}),
       } satisfies ProtocolAssetEvaluation;
     }
-    const reasons = aaveExclusionReasons(row);
-    if (asset.requiredAction) reasons.unshift("CONVERSION_REQUIRED");
+    const protocolReasons = aaveExclusionReasons(row);
+    const conversionRequired = Boolean(asset.requiredAction);
+    const reasons = [...protocolReasons];
+    if (conversionRequired) reasons.unshift("CONVERSION_REQUIRED");
     const eligible = reasons.length === 0;
+    const contributesAfterConversion =
+      conversionRequired && selected && protocolReasons.length === 0;
     return {
       token: asset.token,
       symbol: asset.symbol,
       ...(balanceUsd > 0 ? { balanceUsd } : {}),
       selectionStatus,
-      eligibilityStatus: eligible
-        ? selected
-          ? "included"
-          : "supported"
-        : reasons.some((reason) =>
-              ["FROZEN", "PAUSED", "SUPPLY_CAP_REACHED"].includes(reason),
-            )
-          ? "temporarily-unavailable"
-          : "unsupported",
+      eligibilityStatus:
+        conversionRequired && protocolReasons.length === 0
+          ? "supported"
+          : eligible
+            ? selected
+              ? "included"
+              : "supported"
+            : reasons.some((reason) =>
+                  ["FROZEN", "PAUSED", "SUPPLY_CAP_REACHED"].includes(reason),
+                )
+              ? "temporarily-unavailable"
+              : "unsupported",
       reasonCodes: eligible
         ? [selected ? "INCLUDED" : "SUPPORTED_NOT_SELECTED"]
         : reasons,
-      reason: eligible
-        ? selected
-          ? "Included in this protocol estimate."
-          : "Supported by this protocol, but not selected as collateral."
-        : aaveReasonLabel(reasons[0]),
+      reason: contributesAfterConversion
+        ? `${asset.symbol} must be wrapped to ${row.reserve.symbol} before supply. Its ${row.reserve.symbol}-equivalent value is included in this estimate.`
+        : eligible
+          ? selected
+            ? "Included in this protocol estimate."
+            : "Supported by this protocol, but not selected as collateral."
+          : aaveReasonLabel(reasons[0]),
       ltv: Number(row.configuration[1]) / BPS,
       liquidationThreshold: Number(row.configuration[2]) / BPS,
-      ...(eligible && selected ? { contributionUsd: row.valueUsd } : {}),
+      ...(selected && (eligible || contributesAfterConversion)
+        ? { contributionUsd: row.valueUsd }
+        : {}),
       ...(asset.requiredAction
         ? {
             requiredAction: `Convert ${asset.symbol} before supplying collateral.`,

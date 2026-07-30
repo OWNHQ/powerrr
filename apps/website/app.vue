@@ -625,7 +625,7 @@ async function scrollToWorkflow(): Promise<void> {
           class="focus-ring flex min-h-14 cursor-pointer items-center gap-2 px-5 py-4 text-sm font-semibold sm:px-6"
         >
           <PhInfo :size="18" aria-hidden="true" />
-          How this was calculated
+          About this estimate
           <PhCaretDown :size="14" class="ml-auto" aria-hidden="true" />
         </summary>
         <div

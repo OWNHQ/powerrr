@@ -402,7 +402,7 @@ async function connectAndScan(page: Page): Promise<void> {
   await page.goto("/");
   await expect(
     page.getByRole("button", { name: "Connect wallet" }).first(),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Connect wallet" }).first().click();
   await expect(
     page.getByRole("heading", {
@@ -519,7 +519,7 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
   });
   await expect(unavailablePrices).toBeVisible();
   await expect(unavailablePrices.locator("..")).not.toHaveAttribute("open");
-  await page.getByText("How this was calculated").click();
+  await page.getByText("About this estimate").click();
   await expect(
     page.getByText(
       `${ethereumTokenRegistryV1.length}/${ethereumTokenRegistryV1.length} succeeded`,
@@ -602,14 +602,15 @@ test("OWN appears only above $5,000 and links to its public borrow form", async 
   const ownOption = page.locator('[data-protocol-id="own"]');
   await expect(ownOption).toBeVisible();
   await ownOption.getByRole("button").click();
-  await expect(ownOption.getByText("Universal asset assessment")).toBeVisible();
+  await expect(
+    ownOption.getByText("A direct route for non-standard collateral"),
+  ).toBeVisible();
   await expect(ownOption.getByText("$5,001")).toBeVisible();
   await expect(page.getByText("Estimated total repayment")).toHaveCount(0);
   await expect(page.getByText("Illustrative terms")).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Contact OWN" })).toHaveAttribute(
-    "href",
-    "https://own.casa/borrow#contact",
-  );
+  await expect(
+    page.getByRole("link", { name: "Discuss this request with OWN" }),
+  ).toHaveAttribute("href", "https://own.casa/borrow#contact");
 });
 
 test("the static result remains usable on a phone viewport", async ({

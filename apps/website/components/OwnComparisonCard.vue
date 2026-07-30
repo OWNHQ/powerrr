@@ -21,7 +21,7 @@ function assetUsd(asset: PortfolioAsset): number | undefined {
 <template>
   <article
     data-protocol-id="own"
-    class="overflow-hidden rounded-xl border border-own/40 bg-surface"
+    class="overflow-hidden rounded-xl border border-line bg-surface"
   >
     <button
       type="button"
@@ -31,14 +31,11 @@ function assetUsd(asset: PortfolioAsset): number | undefined {
       @click="emit('toggle')"
     >
       <span class="flex items-start justify-between gap-4">
-        <span class="flex items-center gap-3">
-          <span class="w-14 text-own"><OwnLogo decorative /></span>
-          <span>
-            <strong class="block">OWN</strong>
-            <span class="mt-1 block text-xs font-semibold text-own"
-              >Available for assessment</span
-            >
-          </span>
+        <span>
+          <strong class="block text-base">OWN</strong>
+          <span class="mt-1 block text-xs font-semibold text-own"
+            >Direct borrowing assessment</span
+          >
         </span>
         <PhCaretDown
           :size="18"
@@ -55,20 +52,20 @@ function assetUsd(asset: PortfolioAsset): number | undefined {
           }}</strong></span
         >
         <span
-          ><span class="block text-xs text-slate">Term</span
-          ><strong>Fixed-term review</strong></span
+          ><span class="block text-xs text-slate">Asset scope</span
+          ><strong>Any asset considered</strong></span
         >
         <span
-          ><span class="block text-xs text-slate">Borrow LTV</span
-          ><strong>Set in review</strong></span
+          ><span class="block text-xs text-slate">Loan structure</span
+          ><strong>Fixed term</strong></span
         >
         <span
-          ><span class="block text-xs text-slate">Liquidation</span
-          ><strong>Set in review</strong></span
+          ><span class="block text-xs text-slate">Quote</span
+          ><strong>Direct from OWN</strong></span
         >
         <span
-          ><span class="block text-xs text-slate">Capacity</span
-          ><strong>Approval required</strong></span
+          ><span class="block text-xs text-slate">Next step</span
+          ><strong>Discuss with OWN</strong></span
         >
       </span>
     </button>
@@ -78,11 +75,14 @@ function assetUsd(asset: PortfolioAsset): number | undefined {
       id="own-comparison-details"
       class="border-t border-line px-4 py-5 sm:px-5"
     >
-      <h3 class="font-semibold">Universal asset assessment</h3>
+      <h3 class="font-semibold">A direct route for non-standard collateral</h3>
       <p class="mt-1 max-w-3xl text-sm leading-6 text-slate">
-        OWN can review every wallet asset. Capacity, LTV, liquidation terms,
-        rate, and funding are determined during underwriting and are not implied
-        by this estimator.
+        OWN can consider any wallet asset, including collateral that pooled
+        protocols do not support or cannot price. You discuss the request
+        directly with OWN, then receive a proposal stating the accepted
+        collateral, loan size, interest, term, and default or liquidation terms
+        before deciding whether to proceed. Powerrr does not pre-approve or
+        estimate those terms.
       </p>
       <ul class="mt-4 divide-y divide-line rounded-lg border border-line">
         <li
@@ -105,7 +105,7 @@ function assetUsd(asset: PortfolioAsset): number | undefined {
             >
           </span>
           <span class="text-right text-xs">
-            <strong class="block text-own">Eligible for assessment</strong>
+            <strong class="block text-own">Can be submitted to OWN</strong>
             <span class="text-slate">{{
               selectedTokens.some(
                 (token) => token.toLowerCase() === asset.token.toLowerCase(),
@@ -123,7 +123,7 @@ function assetUsd(asset: PortfolioAsset): number | undefined {
           rel="noopener noreferrer"
           class="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-own px-5 text-sm font-semibold text-white hover:bg-own/90"
         >
-          Contact OWN
+          Discuss this request with OWN
           <PhArrowSquareOut :size="17" aria-hidden="true" />
         </a>
       </div>

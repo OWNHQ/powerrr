@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   MULTICALL3_ADDRESS,
   createReadOnlyProvider,
+  isCredibleTokenPriceUsd,
   scanConnectedWallet,
   type Eip1193Provider,
   type Eip1193Request,
@@ -75,6 +76,13 @@ const multicall3Abi = [
 ] as const;
 
 describe("static connected-wallet discovery", () => {
+  it("rejects economically impossible prices before they reach portfolio totals", () => {
+    expect(isCredibleTokenPriceUsd(0.000004)).toBe(true);
+    expect(isCredibleTokenPriceUsd(100_000)).toBe(true);
+    expect(isCredibleTokenPriceUsd(6.38e41)).toBe(false);
+    expect(isCredibleTokenPriceUsd(Number.POSITIVE_INFINITY)).toBe(false);
+  });
+
   it("scans the complete reviewed registry through Multicall3 and values positive WETH", async () => {
     const mock = createMockProvider({ positiveWeth: true });
     const result = await scanConnectedWallet({
