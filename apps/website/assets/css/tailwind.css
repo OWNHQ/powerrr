@@ -5,82 +5,28 @@
 @layer base {
   :root {
     color-scheme: light;
-    --color-ink: 16 34 35;
-    --color-paper: 246 248 248;
-    --color-surface: 255 255 255;
-    --color-mist: 228 241 241;
-    --color-line: 215 226 226;
-    --color-slate: 72 97 99;
-    --color-moss: 79 125 61;
-    --color-river: 11 93 95;
-    --color-own: 11 93 95;
-    --color-ownsoft: 228 241 241;
-    --color-coral: 216 95 73;
-    --color-gold: 181 139 42;
+    --color-ink: 29 27 25;
+    --color-paper: 243 238 229;
+    --color-surface: 255 252 247;
+    --color-mist: 235 227 216;
+    --color-line: 155 141 126;
+    --color-slate: 95 87 79;
+    --color-moss: 62 106 78;
+    --color-river: 159 63 51;
+    --color-own: 159 63 51;
+    --color-ownsoft: 242 223 218;
+    --color-coral: 173 71 56;
+    --color-gold: 139 100 28;
     --color-accent-contrast: 255 255 255;
-    --color-overlay: 16 34 35;
-    --color-warning-text: 120 53 15;
-    --color-warning-surface: 255 251 235;
-    --color-warning-border: 253 230 138;
-    --color-info-text: 30 58 138;
-    --color-info-surface: 239 246 255;
-    --color-danger-text: 216 95 73;
-    --color-danger-surface: 254 242 242;
-    --shadow-panel: 0 8px 28px rgb(16 34 35 / 0.06);
-  }
-
-  :root[data-theme="dark"] {
-    color-scheme: dark;
-    --color-ink: 237 247 247;
-    --color-paper: 11 20 21;
-    --color-surface: 17 31 32;
-    --color-mist: 23 43 44;
-    --color-line: 41 65 67;
-    --color-slate: 168 188 188;
-    --color-moss: 145 199 124;
-    --color-river: 98 184 183;
-    --color-own: 98 184 183;
-    --color-ownsoft: 23 43 44;
-    --color-coral: 255 143 120;
-    --color-gold: 217 184 91;
-    --color-accent-contrast: 11 20 21;
-    --color-overlay: 0 0 0;
-    --color-warning-text: 242 210 123;
-    --color-warning-surface: 42 35 21;
-    --color-warning-border: 92 73 32;
-    --color-info-text: 184 223 243;
-    --color-info-surface: 20 42 51;
-    --color-danger-text: 255 143 120;
-    --color-danger-surface: 50 27 26;
-    --shadow-panel: 0 12px 32px rgb(0 0 0 / 0.28);
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme]) {
-      color-scheme: dark;
-      --color-ink: 237 247 247;
-      --color-paper: 11 20 21;
-      --color-surface: 17 31 32;
-      --color-mist: 23 43 44;
-      --color-line: 41 65 67;
-      --color-slate: 168 188 188;
-      --color-moss: 145 199 124;
-      --color-river: 98 184 183;
-      --color-own: 98 184 183;
-      --color-ownsoft: 23 43 44;
-      --color-coral: 255 143 120;
-      --color-gold: 217 184 91;
-      --color-accent-contrast: 11 20 21;
-      --color-overlay: 0 0 0;
-      --color-warning-text: 242 210 123;
-      --color-warning-surface: 42 35 21;
-      --color-warning-border: 92 73 32;
-      --color-info-text: 184 223 243;
-      --color-info-surface: 20 42 51;
-      --color-danger-text: 255 143 120;
-      --color-danger-surface: 50 27 26;
-      --shadow-panel: 0 12px 32px rgb(0 0 0 / 0.28);
-    }
+    --color-overlay: 29 27 25;
+    --color-warning-text: 112 76 13;
+    --color-warning-surface: 255 244 214;
+    --color-warning-border: 219 192 114;
+    --color-info-text: 49 89 106;
+    --color-info-surface: 233 241 240;
+    --color-danger-text: 159 63 51;
+    --color-danger-surface: 249 231 227;
+    --shadow-panel: 0 12px 34px rgb(68 45 32 / 0.12);
   }
 
   html {
@@ -123,7 +69,7 @@
   }
 
   .panel {
-    @apply rounded-xl border border-line bg-surface shadow-panel;
+    @apply rounded-xl border border-line bg-surface;
   }
 
   .field-label {
@@ -189,7 +135,8 @@
     @apply border-river bg-info-surface;
   }
 
-  .compact-step[aria-disabled="true"] {
+  .compact-step[aria-disabled="true"],
+  .compact-step:disabled {
     @apply cursor-default opacity-60;
   }
 

@@ -52,7 +52,7 @@ const statusTone = computed(() => {
 const statusLabel = computed(() => {
   if (props.status?.status === "unavailable") return "Data unavailable";
   if (capacity.value <= 0) return "No eligible collateral";
-  if (props.amountUsd <= capacity.value) return "Available";
+  if (props.amountUsd <= capacity.value) return "Covers request";
   return `Below request by ${formatUsdValue(props.amountUsd - capacity.value)}`;
 });
 const weightedLtv = computed(() => weightedFactor("ltv"));

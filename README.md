@@ -2,7 +2,7 @@
 
 Powerrr is a static Ethereum borrowing-capacity estimator. It reads a user-selected wallet through that wallet's EIP-1193 provider, compares Aave v3, SparkLend, Compound III, and reviewed Morpho markets, and performs every calculation in browser memory.
 
-There is no Powerrr backend, database, hosted RPC, analytics client, lead form, or internal underwriting application. The site never requests a signature or transaction and stores only an explicit light/dark theme preference.
+There is no Powerrr backend, database, hosted RPC, analytics client, lead form, or internal underwriting application. The site never requests a signature or transaction and stores no wallet, estimate, or preference data.
 
 ## Run locally
 

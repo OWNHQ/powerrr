@@ -50,6 +50,15 @@ const hideSmallAssets = computed(
     regularAssets.value.length > 0 &&
     regularAssets.value.length < pricedAssets.value.length,
 );
+const selectedValueUsd = computed(() =>
+  props.assets.reduce(
+    (sum, asset) =>
+      isSelected(asset) && asset.marketPriceUsd
+        ? sum + assetValueUsd(asset)
+        : sum,
+    0,
+  ),
+);
 
 function assetIcon(asset: PortfolioAsset): string | null {
   const iconKey = ethereumAssetMetadataByAddress(asset.token)?.iconKey;
@@ -68,14 +77,11 @@ function formatBalance(asset: PortfolioAsset): string {
 <template>
   <section class="panel overflow-hidden" aria-labelledby="assets-title">
     <div class="border-b border-line px-5 py-5 sm:px-6">
-      <div>
-        <p class="text-xs font-bold uppercase tracking-[0.14em] text-river">
-          Step 1 of 2
-        </p>
-        <h2 id="assets-title" class="mt-1 text-xl font-semibold">
-          Choose collateral
-        </h2>
-      </div>
+      <h2 id="assets-title" class="text-xl font-semibold">Choose collateral</h2>
+      <p class="mt-1 max-w-2xl text-sm leading-6 text-slate">
+        Priced balances above $5 are selected automatically. Review the set
+        before comparing every provider against the same collateral.
+      </p>
     </div>
 
     <div v-if="!assets.length" class="px-5 py-12 text-center sm:px-6">
@@ -236,6 +242,9 @@ function formatBalance(asset: PortfolioAsset): string {
           selectedTokens.length
         }}</strong>
         {{ selectedTokens.length === 1 ? "asset" : "assets" }} selected
+        <span class="tabular-nums">
+          · {{ formatUsdValue(selectedValueUsd) }}</span
+        >
       </p>
       <button
         type="button"
@@ -243,7 +252,13 @@ function formatBalance(asset: PortfolioAsset): string {
         :disabled="!selectedTokens.length || loading"
         @click="emit('continue')"
       >
-        {{ loading ? "Recalculating…" : "Compare borrowing paths" }}
+        {{
+          loading
+            ? "Recalculating…"
+            : `Compare ${selectedTokens.length} selected ${
+                selectedTokens.length === 1 ? "asset" : "assets"
+              }`
+        }}
       </button>
     </div>
   </section>

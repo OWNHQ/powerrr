@@ -406,7 +406,7 @@ async function connectAndScan(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Connect wallet" }).first().click();
   await expect(
     page.getByRole("heading", {
-      name: "Borrowing estimate for powerrr.eth · powerrr.gwei",
+      name: "Wallet snapshot for powerrr.eth · powerrr.gwei",
     }),
   ).toBeVisible();
   await expect(
@@ -465,44 +465,21 @@ test("wallet identity falls back to the address after name lookup completes", as
   ).toBeVisible();
 });
 
-test("theme follows the system and persists an explicit local choice", async ({
+test("the interface stays light regardless of system preference", async ({
   page,
 }) => {
-  await page.emulateMedia({ colorScheme: "light" });
-  await page.goto("/");
-  const themeToggle = page.getByTestId("theme-toggle");
-  await expect(themeToggle).toHaveAccessibleName("Switch to dark mode");
-  await expect(page.locator("html")).not.toHaveAttribute("data-theme");
-
   await page.emulateMedia({ colorScheme: "dark" });
-  await expect(themeToggle).toHaveAccessibleName("Switch to light mode");
+  await page.goto("/");
+  await expect(page.getByTestId("theme-toggle")).toHaveCount(0);
   await expect(page.locator("html")).not.toHaveAttribute("data-theme");
-
-  await themeToggle.click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  expect(
+    await page.evaluate(
+      () => getComputedStyle(document.documentElement).backgroundColor,
+    ),
+  ).toBe("rgb(243, 238, 229)");
   expect(await page.evaluate(() => localStorage.getItem("powerrr-theme"))).toBe(
-    "light",
+    null,
   );
-
-  await page.reload();
-  await expect(themeToggle).toHaveAccessibleName("Switch to dark mode");
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-
-  await themeToggle.click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  expect(await page.evaluate(() => localStorage.getItem("powerrr-theme"))).toBe(
-    "dark",
-  );
-
-  await page.evaluate(() => {
-    window.dispatchEvent(
-      new StorageEvent("storage", {
-        key: "powerrr-theme",
-        newValue: "light",
-      }),
-    );
-  });
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 });
 
 test("static wallet scan is explicit and uses no Powerrr API", async ({
@@ -547,21 +524,21 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
   expect(rpcMethods).not.toContain("eth_sendTransaction");
   expect(requests.some((url) => /\/api\/v[12]\//.test(url))).toBe(false);
 
-  await page.getByRole("button", { name: "Compare borrowing paths" }).click();
+  await page.getByRole("button", { name: "Compare 1 selected asset" }).click();
   await expect(
     page.getByRole("heading", { name: "Compare borrowing paths" }),
   ).toBeVisible();
   await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("1,844");
   await expect(page.locator('input[type="range"]')).toHaveCount(1);
   await page.getByLabel("Borrow amount in USDC").fill("1000");
-  await expect(page.getByText("Comparing $1,000")).toBeVisible();
+  await expect(page.getByText(/pooled providers cover \$1,000/)).toBeVisible();
 });
 
 test("pooled risk responds to the selected amount without an always-green state", async ({
   page,
 }) => {
   await connectAndScan(page);
-  await page.getByRole("button", { name: "Compare borrowing paths" }).click();
+  await page.getByRole("button", { name: "Compare 1 selected asset" }).click();
   await expect(
     page.getByText(/comparison range, not approved credit/i),
   ).toBeVisible();
@@ -591,21 +568,21 @@ test("pooled risk responds to the selected amount without an always-green state"
   ).toHaveAttribute("aria-disabled", "false");
 });
 
-test("OWN appears only above $5,000 and links to its public borrow form", async ({
+test("OWN appears only above $1,000 and links to its public borrow form", async ({
   page,
 }) => {
   await connectAndScan(page);
-  await page.getByRole("button", { name: "Compare borrowing paths" }).click();
-  await page.getByLabel("Borrow amount in USDC").fill("5000");
+  await page.getByRole("button", { name: "Compare 1 selected asset" }).click();
+  await page.getByLabel("Borrow amount in USDC").fill("1000");
   await expect(page.locator('[data-protocol-id="own"]')).toHaveCount(0);
-  await page.getByLabel("Borrow amount in USDC").fill("5001");
+  await page.getByLabel("Borrow amount in USDC").fill("1001");
   const ownOption = page.locator('[data-protocol-id="own"]');
   await expect(ownOption).toBeVisible();
   await ownOption.getByRole("button").click();
   await expect(
     ownOption.getByText("A direct route for non-standard collateral"),
   ).toBeVisible();
-  await expect(ownOption.getByText("$5,001")).toBeVisible();
+  await expect(ownOption.getByText("$1,001")).toBeVisible();
   await expect(page.getByText("Estimated total repayment")).toHaveCount(0);
   await expect(page.getByText("Illustrative terms")).toHaveCount(0);
   await expect(
@@ -621,9 +598,27 @@ test("the static result remains usable on a phone viewport", async ({
   await expect(
     page.getByRole("heading", { name: "Choose collateral" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Compare borrowing paths" }).click();
+  await page.getByRole("button", { name: "Compare 1 selected asset" }).click();
   await page.getByLabel("Borrow amount in USDC").fill("1000");
   await expect(page.locator('[data-protocol-id="own"]')).toHaveCount(0);
+  const termsBounds = await page
+    .locator('section[aria-labelledby="terms-title"]')
+    .boundingBox();
+  const amountBounds = await page
+    .locator('label:has(input[aria-label="Borrow amount in USDC"])')
+    .boundingBox();
+  const rangeBounds = await page
+    .getByLabel("Borrow amount comparison range")
+    .boundingBox();
+  expect(termsBounds).not.toBeNull();
+  expect(amountBounds).not.toBeNull();
+  expect(rangeBounds).not.toBeNull();
+  expect(
+    (amountBounds?.x ?? 0) + (amountBounds?.width ?? 0),
+  ).toBeLessThanOrEqual((termsBounds?.x ?? 0) + (termsBounds?.width ?? 0));
+  expect((rangeBounds?.x ?? 0) + (rangeBounds?.width ?? 0)).toBeLessThanOrEqual(
+    (termsBounds?.x ?? 0) + (termsBounds?.width ?? 0),
+  );
   const aave = page.locator('[data-protocol-id="aave"]');
   await aave.getByRole("button").first().click();
   await expect(
@@ -646,22 +641,16 @@ test("the connected result has no detectable WCAG A or AA violations", async ({
   expect(results.violations).toEqual([]);
 });
 
-test("dark mode remains accessible through the pooled risk review flow", async ({
-  page,
-}) => {
+test("the light mobile risk review remains accessible", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.emulateMedia({ colorScheme: "dark" });
   await connectAndScan(page);
-  await expect(page.getByTestId("theme-toggle")).toHaveAccessibleName(
-    "Switch to light mode",
-  );
   expect(
     await page.evaluate(
       () => getComputedStyle(document.documentElement).backgroundColor,
     ),
-  ).toBe("rgb(11, 20, 21)");
+  ).toBe("rgb(243, 238, 229)");
 
-  await page.getByRole("button", { name: "Compare borrowing paths" }).click();
+  await page.getByRole("button", { name: "Compare 1 selected asset" }).click();
   await page.getByLabel("Borrow amount in USDC").fill("1000");
   const aave = page.locator('[data-protocol-id="aave"]');
   await aave.getByRole("button").first().click();

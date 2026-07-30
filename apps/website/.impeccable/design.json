@@ -1,0 +1,534 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-30T08:30:02Z",
+  "title": "Design System: Powerrr",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "neutral",
+        "displayName": "Near-black Ink",
+        "canonical": "#1d1b19",
+        "tonalRamp": [
+          "oklch(15% 0.005 67.6)",
+          "oklch(27% 0.005 67.6)",
+          "oklch(39% 0.005 67.6)",
+          "oklch(51% 0.005 67.6)",
+          "oklch(63% 0.005 67.6)",
+          "oklch(75% 0.005 67.6)",
+          "oklch(87% 0.005 67.6)",
+          "oklch(95% 0.005 67.6)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Limestone Paper",
+        "canonical": "#f3eee5",
+        "tonalRamp": [
+          "oklch(15% 0.013 82.4)",
+          "oklch(27% 0.013 82.4)",
+          "oklch(39% 0.013 82.4)",
+          "oklch(51% 0.013 82.4)",
+          "oklch(63% 0.013 82.4)",
+          "oklch(75% 0.013 82.4)",
+          "oklch(87% 0.013 82.4)",
+          "oklch(95% 0.013 82.4)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Porcelain Surface",
+        "canonical": "#fffcf7",
+        "tonalRamp": [
+          "oklch(15% 0.007 80.7)",
+          "oklch(27% 0.007 80.7)",
+          "oklch(39% 0.007 80.7)",
+          "oklch(51% 0.007 80.7)",
+          "oklch(63% 0.007 80.7)",
+          "oklch(75% 0.007 80.7)",
+          "oklch(87% 0.007 80.7)",
+          "oklch(95% 0.007 80.7)"
+        ]
+      },
+      "mist": {
+        "role": "neutral",
+        "displayName": "Parchment Mist",
+        "canonical": "#ebe3d8",
+        "tonalRamp": [
+          "oklch(15% 0.017 76.1)",
+          "oklch(27% 0.017 76.1)",
+          "oklch(39% 0.017 76.1)",
+          "oklch(51% 0.017 76.1)",
+          "oklch(63% 0.017 76.1)",
+          "oklch(75% 0.017 76.1)",
+          "oklch(87% 0.017 76.1)",
+          "oklch(95% 0.017 76.1)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Warm Graphite",
+        "canonical": "#9b8d7e",
+        "tonalRamp": [
+          "oklch(15% 0.027 69.2)",
+          "oklch(27% 0.027 69.2)",
+          "oklch(39% 0.027 69.2)",
+          "oklch(51% 0.027 69.2)",
+          "oklch(63% 0.027 69.2)",
+          "oklch(75% 0.027 69.2)",
+          "oklch(87% 0.027 69.2)",
+          "oklch(95% 0.027 69.2)"
+        ]
+      },
+      "slate": {
+        "role": "neutral",
+        "displayName": "Measured Umber",
+        "canonical": "#5f574f",
+        "tonalRamp": [
+          "oklch(15% 0.016 67.4)",
+          "oklch(27% 0.016 67.4)",
+          "oklch(39% 0.016 67.4)",
+          "oklch(51% 0.016 67.4)",
+          "oklch(63% 0.016 67.4)",
+          "oklch(75% 0.016 67.4)",
+          "oklch(87% 0.016 67.4)",
+          "oklch(95% 0.016 67.4)"
+        ]
+      },
+      "moss": {
+        "role": "secondary",
+        "displayName": "Protective Moss",
+        "canonical": "#3e6a4e",
+        "tonalRamp": [
+          "oklch(15% 0.067 155.1)",
+          "oklch(27% 0.067 155.1)",
+          "oklch(39% 0.067 155.1)",
+          "oklch(51% 0.067 155.1)",
+          "oklch(63% 0.067 155.1)",
+          "oklch(75% 0.067 155.1)",
+          "oklch(87% 0.067 155.1)",
+          "oklch(95% 0.067 155.1)"
+        ]
+      },
+      "river": {
+        "role": "primary",
+        "displayName": "Mineral Red",
+        "canonical": "#9f3f33",
+        "tonalRamp": [
+          "oklch(15% 0.130 29.6)",
+          "oklch(27% 0.130 29.6)",
+          "oklch(39% 0.130 29.6)",
+          "oklch(51% 0.130 29.6)",
+          "oklch(63% 0.130 29.6)",
+          "oklch(75% 0.130 29.6)",
+          "oklch(87% 0.130 29.6)",
+          "oklch(95% 0.130 29.6)"
+        ]
+      },
+      "own": {
+        "role": "primary",
+        "displayName": "OWN Peer Mineral Red",
+        "canonical": "#9f3f33",
+        "tonalRamp": [
+          "oklch(15% 0.130 29.6)",
+          "oklch(27% 0.130 29.6)",
+          "oklch(39% 0.130 29.6)",
+          "oklch(51% 0.130 29.6)",
+          "oklch(63% 0.130 29.6)",
+          "oklch(75% 0.130 29.6)",
+          "oklch(87% 0.130 29.6)",
+          "oklch(95% 0.130 29.6)"
+        ]
+      },
+      "own-soft": {
+        "role": "neutral",
+        "displayName": "OWN Clay Wash",
+        "canonical": "#f2dfda",
+        "tonalRamp": [
+          "oklch(15% 0.022 35.1)",
+          "oklch(27% 0.022 35.1)",
+          "oklch(39% 0.022 35.1)",
+          "oklch(51% 0.022 35.1)",
+          "oklch(63% 0.022 35.1)",
+          "oklch(75% 0.022 35.1)",
+          "oklch(87% 0.022 35.1)",
+          "oklch(95% 0.022 35.1)"
+        ]
+      },
+      "coral": {
+        "role": "secondary",
+        "displayName": "Alert Terracotta",
+        "canonical": "#ad4738",
+        "tonalRamp": [
+          "oklch(15% 0.137 30.6)",
+          "oklch(27% 0.137 30.6)",
+          "oklch(39% 0.137 30.6)",
+          "oklch(51% 0.137 30.6)",
+          "oklch(63% 0.137 30.6)",
+          "oklch(75% 0.137 30.6)",
+          "oklch(87% 0.137 30.6)",
+          "oklch(95% 0.137 30.6)"
+        ]
+      },
+      "gold": {
+        "role": "secondary",
+        "displayName": "Caution Ochre",
+        "canonical": "#8b641c",
+        "tonalRamp": [
+          "oklch(15% 0.099 78.2)",
+          "oklch(27% 0.099 78.2)",
+          "oklch(39% 0.099 78.2)",
+          "oklch(51% 0.099 78.2)",
+          "oklch(63% 0.099 78.2)",
+          "oklch(75% 0.099 78.2)",
+          "oklch(87% 0.099 78.2)",
+          "oklch(95% 0.099 78.2)"
+        ]
+      },
+      "accent-contrast": {
+        "role": "neutral",
+        "displayName": "Accent Contrast",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0.000 89.9)",
+          "oklch(27% 0.000 89.9)",
+          "oklch(39% 0.000 89.9)",
+          "oklch(51% 0.000 89.9)",
+          "oklch(63% 0.000 89.9)",
+          "oklch(75% 0.000 89.9)",
+          "oklch(87% 0.000 89.9)",
+          "oklch(95% 0.000 89.9)"
+        ]
+      },
+      "warning-text": {
+        "role": "tertiary",
+        "displayName": "Warning Ink",
+        "canonical": "#704c0d",
+        "tonalRamp": [
+          "oklch(15% 0.088 75.3)",
+          "oklch(27% 0.088 75.3)",
+          "oklch(39% 0.088 75.3)",
+          "oklch(51% 0.088 75.3)",
+          "oklch(63% 0.088 75.3)",
+          "oklch(75% 0.088 75.3)",
+          "oklch(87% 0.088 75.3)",
+          "oklch(95% 0.088 75.3)"
+        ]
+      },
+      "warning-surface": {
+        "role": "tertiary",
+        "displayName": "Warning Wash",
+        "canonical": "#fff4d6",
+        "tonalRamp": [
+          "oklch(15% 0.041 90.2)",
+          "oklch(27% 0.041 90.2)",
+          "oklch(39% 0.041 90.2)",
+          "oklch(51% 0.041 90.2)",
+          "oklch(63% 0.041 90.2)",
+          "oklch(75% 0.041 90.2)",
+          "oklch(87% 0.041 90.2)",
+          "oklch(95% 0.041 90.2)"
+        ]
+      },
+      "warning-border": {
+        "role": "tertiary",
+        "displayName": "Warning Line",
+        "canonical": "#dbc072",
+        "tonalRamp": [
+          "oklch(15% 0.103 90.9)",
+          "oklch(27% 0.103 90.9)",
+          "oklch(39% 0.103 90.9)",
+          "oklch(51% 0.103 90.9)",
+          "oklch(63% 0.103 90.9)",
+          "oklch(75% 0.103 90.9)",
+          "oklch(87% 0.103 90.9)",
+          "oklch(95% 0.103 90.9)"
+        ]
+      },
+      "info-text": {
+        "role": "tertiary",
+        "displayName": "Information Ink",
+        "canonical": "#31596a",
+        "tonalRamp": [
+          "oklch(15% 0.053 227.4)",
+          "oklch(27% 0.053 227.4)",
+          "oklch(39% 0.053 227.4)",
+          "oklch(51% 0.053 227.4)",
+          "oklch(63% 0.053 227.4)",
+          "oklch(75% 0.053 227.4)",
+          "oklch(87% 0.053 227.4)",
+          "oklch(95% 0.053 227.4)"
+        ]
+      },
+      "info-surface": {
+        "role": "tertiary",
+        "displayName": "Information Wash",
+        "canonical": "#e9f1f0",
+        "tonalRamp": [
+          "oklch(15% 0.009 188.1)",
+          "oklch(27% 0.009 188.1)",
+          "oklch(39% 0.009 188.1)",
+          "oklch(51% 0.009 188.1)",
+          "oklch(63% 0.009 188.1)",
+          "oklch(75% 0.009 188.1)",
+          "oklch(87% 0.009 188.1)",
+          "oklch(95% 0.009 188.1)"
+        ]
+      },
+      "danger-text": {
+        "role": "tertiary",
+        "displayName": "Danger Ink",
+        "canonical": "#9f3f33",
+        "tonalRamp": [
+          "oklch(15% 0.130 29.6)",
+          "oklch(27% 0.130 29.6)",
+          "oklch(39% 0.130 29.6)",
+          "oklch(51% 0.130 29.6)",
+          "oklch(63% 0.130 29.6)",
+          "oklch(75% 0.130 29.6)",
+          "oklch(87% 0.130 29.6)",
+          "oklch(95% 0.130 29.6)"
+        ]
+      },
+      "danger-surface": {
+        "role": "tertiary",
+        "displayName": "Danger Wash",
+        "canonical": "#f9e7e3",
+        "tonalRamp": [
+          "oklch(15% 0.020 32.5)",
+          "oklch(27% 0.020 32.5)",
+          "oklch(39% 0.020 32.5)",
+          "oklch(51% 0.020 32.5)",
+          "oklch(63% 0.020 32.5)",
+          "oklch(75% 0.020 32.5)",
+          "oklch(87% 0.020 32.5)",
+          "oklch(95% 0.020 32.5)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Compact Display",
+        "purpose": "The pre-connect product promise at narrow widths."
+      },
+      "display-wide": {
+        "displayName": "Wide Display",
+        "purpose": "The same promise from the 640px breakpoint."
+      },
+      "headline": {
+        "displayName": "Operational Headline",
+        "purpose": "Result identity and major state headings."
+      },
+      "title": {
+        "displayName": "Panel Title",
+        "purpose": "Workflow panels and local task sections."
+      },
+      "body": {
+        "displayName": "Explanatory Body",
+        "purpose": "Product explanation and decision context."
+      },
+      "body-small": {
+        "displayName": "Operational Body",
+        "purpose": "Controls, evidence descriptions, and dense task copy."
+      },
+      "label": {
+        "displayName": "Instrument Label",
+        "purpose": "Short step and category orientation only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "floating-ambient",
+        "value": "0 12px 34px rgb(68 45 32 / 0.12)",
+        "purpose": "Gentle separation for menus and help surfaces that truly float above the working plane."
+      },
+      {
+        "name": "control-contact",
+        "value": "0 2px 7px rgb(var(--color-overlay) / 0.22)",
+        "purpose": "Tactile contact shadow for the amount slider thumb."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-standard",
+        "value": "150ms cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Short hover, color, border, and disclosure state transitions."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "0.01ms",
+        "purpose": "Near-instant fallback for animation and transitions when reduced motion is requested."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single high-emphasis action in a workflow region.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Compare borrowing paths</button>",
+      "css": ".ds-btn-primary { min-height: 48px; border: 0; border-radius: 8px; background: rgb(var(--color-river)); color: rgb(var(--color-accent-contrast)); padding: 0 24px; font: 600 14px/20px Inter, ui-sans-serif, system-ui, sans-serif; transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-btn-primary:hover { background: rgb(var(--color-river) / 0.9); } .ds-btn-primary:focus-visible { outline: 2px solid rgb(var(--color-river)); outline-offset: 2px; box-shadow: 0 0 0 2px rgb(var(--color-paper)); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A restrained bordered action for refresh, navigation, and disclosure support.",
+      "html": "<button class=\"ds-btn-secondary\" type=\"button\">Refresh</button>",
+      "css": ".ds-btn-secondary { min-height: 44px; border: 1px solid rgb(var(--color-line)); border-radius: 8px; background: rgb(var(--color-surface)); color: rgb(var(--color-river)); padding: 0 16px; font: 600 14px/20px Inter, ui-sans-serif, system-ui, sans-serif; } .ds-btn-secondary:hover { border-color: rgb(var(--color-river)); } .ds-btn-secondary:focus-visible { outline: 2px solid rgb(var(--color-river)); outline-offset: 2px; box-shadow: 0 0 0 2px rgb(var(--color-paper)); }"
+    },
+    {
+      "name": "Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "The standard flat, bounded region for one operational task.",
+      "html": "<section class=\"ds-panel\"><div class=\"ds-panel-kicker\">STEP 1 OF 2</div><h3>Choose collateral</h3><p>Select the assets to compare across borrowing paths.</p></section>",
+      "css": ".ds-panel { border: 1px solid rgb(var(--color-line)); border-radius: 12px; background: rgb(var(--color-surface)); color: rgb(var(--color-ink)); padding: 20px 24px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; } .ds-panel h3 { margin: 4px 0 0; font-size: 20px; line-height: 28px; font-weight: 600; } .ds-panel p { margin: 8px 0 0; color: rgb(var(--color-slate)); font-size: 14px; line-height: 24px; } .ds-panel-kicker { color: rgb(var(--color-river)); font-size: 12px; line-height: 16px; font-weight: 700; letter-spacing: 0.14em; }"
+    },
+    {
+      "name": "Amount Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "The prominent monetary control used to compare one request across every path.",
+      "html": "<label class=\"ds-amount-field\"><span class=\"ds-amount-label\">BORROW AMOUNT</span><span class=\"ds-amount-line\"><span aria-hidden=\"true\">$</span><input aria-label=\"Borrow amount in USDC\" inputmode=\"decimal\" value=\"12,500\"><span>USDC</span></span></label>",
+      "css": ".ds-amount-field { display: block; border: 1px solid rgb(var(--color-line)); border-radius: 12px; background: rgb(var(--color-surface)); color: rgb(var(--color-ink)); padding: 16px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; } .ds-amount-field:focus-within { border-color: rgb(var(--color-river)); box-shadow: 0 0 0 1px rgb(var(--color-river)); } .ds-amount-label { display: block; color: rgb(var(--color-slate)); font-size: 12px; font-weight: 600; letter-spacing: 0.1em; } .ds-amount-line { display: flex; align-items: center; gap: 12px; margin-top: 8px; } .ds-amount-line input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: rgb(var(--color-ink)); font: 600 30px/36px Inter, ui-sans-serif, system-ui, sans-serif; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Workflow Steps",
+      "kind": "nav",
+      "description": "Two compact peer panels that preserve task orientation without becoming a full navigation system.",
+      "html": "<nav class=\"ds-steps\" aria-label=\"Estimator steps\"><button class=\"ds-step ds-step-active\" type=\"button\" aria-current=\"step\"><span class=\"ds-step-number\">1</span><strong>Assets</strong></button><button class=\"ds-step\" type=\"button\"><span class=\"ds-step-number\">2</span><strong>Compare</strong></button></nav>",
+      "css": ".ds-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .ds-step { min-height: 64px; display: flex; align-items: center; gap: 12px; border: 1px solid rgb(var(--color-line)); border-radius: 12px; background: rgb(var(--color-surface)); color: rgb(var(--color-slate)); padding: 8px 12px; } .ds-step-active { border-color: rgb(var(--color-river)); background: rgb(var(--color-info-surface)); } .ds-step-number { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid rgb(var(--color-line)); border-radius: 9999px; } .ds-step-active .ds-step-number { border-color: rgb(var(--color-river)); background: rgb(var(--color-river)); color: rgb(var(--color-accent-contrast)); }"
+    },
+    {
+      "name": "Selection Card",
+      "kind": "custom",
+      "description": "A tactile asset choice that keeps balance and valuation evidence visible.",
+      "html": "<button class=\"ds-selection-card\" type=\"button\" aria-pressed=\"true\"><span class=\"ds-selection-check\" aria-hidden=\"true\">✓</span><span class=\"ds-token\">W</span><span><strong>WETH</strong><small>4.2 · $13,240</small></span></button>",
+      "css": ".ds-selection-card { position: relative; min-height: 128px; width: 100%; display: flex; align-items: center; gap: 16px; border: 1px solid rgb(var(--color-river)); border-radius: 12px; background: rgb(var(--color-info-surface)); color: rgb(var(--color-ink)); padding: 16px; text-align: left; box-shadow: 0 0 0 1px rgb(var(--color-river)); } .ds-selection-check { position: absolute; top: 12px; right: 12px; display: grid; width: 24px; height: 24px; place-items: center; border-radius: 9999px; background: rgb(var(--color-river)); color: rgb(var(--color-accent-contrast)); } .ds-token { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 9999px; background: rgb(var(--color-mist)); color: rgb(var(--color-river)); }"
+    },
+    {
+      "name": "Protocol Comparison Row",
+      "kind": "custom",
+      "description": "The shared evidence grammar for pooled protocols and OWN.",
+      "html": "<article class=\"ds-protocol-row\"><button type=\"button\" aria-expanded=\"false\"><strong>Aave</strong><span class=\"ds-protocol-grid\"><span><small>Recommended max</small><strong>$18,420</strong></span><span><small>Rate</small><strong>4.8% variable APR</strong></span></span></button></article>",
+      "css": ".ds-protocol-row { overflow: hidden; border: 1px solid rgb(var(--color-line)); border-radius: 12px; background: rgb(var(--color-surface)); color: rgb(var(--color-ink)); } .ds-protocol-row button { width: 100%; border: 0; background: transparent; color: inherit; padding: 16px 20px; text-align: left; } .ds-protocol-row button:hover { background: rgb(var(--color-mist) / 0.35); } .ds-protocol-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; } .ds-protocol-grid small { display: block; color: rgb(var(--color-slate)); } .ds-protocol-grid strong { font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "A compact semantic annotation, never a primary action.",
+      "html": "<span class=\"ds-status-chip\">Example data</span>",
+      "css": ".ds-status-chip { display: inline-flex; align-items: center; border-radius: 9999px; background: rgb(var(--color-warning-surface)); color: rgb(var(--color-warning-text)); padding: 4px 10px; font: 600 12px/16px Inter, ui-sans-serif, system-ui, sans-serif; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Private Instrument Panel",
+    "overview": "Powerrr should feel like a private analytical instrument: calm enough to reduce financial anxiety, exact enough to earn scrutiny, and protective enough to make constraints and uncertainty visible before action. The interface favors quiet evidence over spectacle. It presents complex onchain information in a sequence of bounded, readable decisions rather than recreating the density or urgency of a trading terminal.\n\nThe visual system is restrained, tactile, and evidence-first. Limestone Paper gives the product a warm, low-noise working field; Mineral Red marks action, selection, focus, and trusted orientation. Near-black ink and warm graphite outlines bring the precision of a printed instrument docket without copying another protocol's cream-and-coral identity. Standard panels stay flat and outlined; only truly floating help or menu surfaces receive ambient lift.",
+    "keyCharacteristics": [
+      "Warm mineral neutrals with one disciplined red-clay primary accent.",
+      "Clear outlined panels, gentle paper-toned grouping, and shadow only for floating surfaces.",
+      "Compact evidence grids that preserve readable labels and tabular values.",
+      "Rounded, tactile controls with visible keyboard focus and honest state language.",
+      "One deliberate light theme that remains stable regardless of system preference."
+    ],
+    "rules": [
+      {
+        "name": "The One Mineral Signal Rule",
+        "body": "Mineral Red is the only general-purpose interactive accent. Do not introduce protocol-by-protocol brand colors into the comparison hierarchy.",
+        "section": "colors"
+      },
+      {
+        "name": "The Semantic Restraint Rule",
+        "body": "Moss, terracotta, ochre, information blue, and warning amber carry meaning only. Never scatter them through neutral evidence for visual variety.",
+        "section": "colors"
+      },
+      {
+        "name": "The Daylight Instrument Rule",
+        "body": "The palette is deliberately light-only and ignores operating-system dark preference. Do not auto-invert it or quietly restore a second theme.",
+        "section": "colors"
+      },
+      {
+        "name": "The Instrument Readout Rule",
+        "body": "Financial values align with tabular figures and never compete with their explanatory labels through unnecessary color or weight.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Display Moment Rule",
+        "body": "Large tight display type belongs to the pre-connect promise. Operational screens return immediately to compact task hierarchy.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Decision Per Region Rule",
+        "body": "Each bounded region should make one task legible: choose collateral, set an amount, compare paths, or inspect evidence.",
+        "section": "layout"
+      },
+      {
+        "name": "The Stack Before Squeeze Rule",
+        "body": "When content no longer fits, stack or reduce columns before shrinking text, targets, or explanatory labels.",
+        "section": "layout"
+      },
+      {
+        "name": "The Border First Rule",
+        "body": "A border or tonal change must explain the structure before a shadow is added.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Ambient, Not Floating Rule",
+        "body": "Shadows are diffuse and low-drama. Do not use hard drop shadows, colored glows, glassmorphism, or stacked elevation for ordinary content.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Radius Ladder Rule",
+        "body": "Use 8px for controls, 12px for standard panels, and 16px only for a genuinely higher-order summary or feature region.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Circle Means Marker Rule",
+        "body": "Full circles indicate an asset, step, selection, status, or draggable point—not a generic container.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Equal Evidence Rule",
+        "body": "Comparison paths share one structural grammar even when their mechanisms differ.",
+        "section": "components"
+      },
+      {
+        "name": "The State Plus Reason Rule",
+        "body": "Every unavailable, unsupported, stale, risky, or disabled state pairs a visual treatment with human-readable evidence.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "**Do** use Mineral Red sparingly for action, selection, progress, focus, and trusted orientation.",
+      "**Do** let Warm Graphite and Parchment Mist organize dense evidence before adding elevation.",
+      "**Do** keep operational copy direct, measured, and visibly attached to the value or state it explains.",
+      "**Do** preserve tabular figures, readable labels, and the same evidence order across responsive layouts.",
+      "**Do** maintain the single light palette as a deliberate product surface.",
+      "**Do** give OWN the same comparison structure and visual weight as pooled protocols."
+    ],
+    "donts": [
+      "**Don't** introduce neon crypto palettes, protocol-brand rainbows, speculative gradients, or trading-terminal glow.",
+      "**Don't** use glassmorphism, hard shadows, floating card stacks, or decorative elevation for repeated evidence.",
+      "**Don't** turn OWN into a banner, hero, special offer, or visually dominant sales path.",
+      "**Don't** hide unsupported assets, unavailable providers, risk evidence, or explanatory labels to make the interface feel cleaner.",
+      "**Don't** shrink essential operational text below 0.75rem or interactive targets below 44px.",
+      "**Don't** use color alone to communicate availability, selection, risk, or error."
+    ]
+  }
+}

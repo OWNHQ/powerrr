@@ -3,8 +3,6 @@ import {
   PhCaretDown,
   PhCheck,
   PhInfo,
-  PhMoon,
-  PhSun,
   PhUser,
   PhWallet,
   PhWarningCircle,
@@ -29,7 +27,7 @@ type ProviderItem = {
   group?: WebsiteQuoteGroup;
 };
 
-const OWN_MIN_REQUEST_USD = 5_000;
+const OWN_MIN_REQUEST_USD = 1_000;
 
 const {
   announcedProviders,
@@ -57,7 +55,6 @@ const {
   setAssetSelected,
   compareSelectedAssets,
 } = useStaticEstimator();
-const { isDark, toggleLabel, toggleTheme } = useTheme();
 
 const currentStage = ref<EstimatorStage>("assets");
 const expandedProviderId = ref("");
@@ -129,6 +126,30 @@ const providerMaximumUsd = computed(
 const providerPathCount = computed(
   () => capacitySummary.value.providerPathCount,
 );
+const coveringProviderCount = computed(
+  () =>
+    providerItems.value.filter(
+      (provider) =>
+        providerCapacity(provider) > 0 &&
+        borrowAmountUsd.value <= providerCapacity(provider),
+    ).length,
+);
+const scanProgressPercent = computed(() => {
+  if (!progress.value) return 8;
+  const ratio =
+    progress.value.total > 0
+      ? Math.min(1, progress.value.completed / progress.value.total)
+      : 0;
+  const phases = {
+    connecting: [8, 14],
+    balances: [15, 52],
+    valuation: [53, 78],
+    providers: [79, 96],
+    complete: [100, 100],
+  } as const;
+  const [start, end] = phases[progress.value.phase];
+  return Math.round(start + (end - start) * ratio);
+});
 const matchedCollateralUsd = computed(() =>
   selectedAssets.value.reduce(
     (sum, asset) => sum + Number(asset.balance) * (asset.marketPriceUsd ?? 0),
@@ -159,29 +180,40 @@ watch(ownVisible, (visible) => {
   }
 });
 
-async function continueFromAssets(): Promise<void> {
+async function enterComparison(): Promise<void> {
   if (!selectedCollateralTokens.value.length) {
     stageError.value = "Select at least one collateral asset to continue.";
     return;
   }
   stageError.value = "";
   await compareSelectedAssets();
+  if (error.value) return;
   currentStage.value = "comparison";
   expandedProviderId.value = "";
-  borrowAmountUsd.value = amountForUtilization(
-    providerMaximumUsd.value > 0
-      ? providerMaximumUsd.value
-      : matchedCollateralUsd.value,
-    50,
-  );
+  if (borrowAmountUsd.value <= 0) {
+    borrowAmountUsd.value = amountForUtilization(
+      providerMaximumUsd.value > 0
+        ? providerMaximumUsd.value
+        : matchedCollateralUsd.value,
+      50,
+    );
+  }
   await scrollToWorkflow();
 }
 
-function goToStage(stage: EstimatorStage): void {
+async function continueFromAssets(): Promise<void> {
+  await enterComparison();
+}
+
+async function goToStage(stage: EstimatorStage): Promise<void> {
   if (stage === "comparison" && !selectedCollateralTokens.value.length) return;
+  if (stage === "comparison") {
+    await enterComparison();
+    return;
+  }
   currentStage.value = stage;
   stageError.value = "";
-  void scrollToWorkflow();
+  await scrollToWorkflow();
 }
 
 function toggleProvider(id: string): void {
@@ -251,18 +283,6 @@ async function scrollToWorkflow(): Promise<void> {
           Powerrr
         </a>
         <div class="flex min-w-0 items-center gap-2">
-          <button
-            type="button"
-            class="focus-ring grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-line bg-surface text-slate transition hover:border-river hover:text-ink"
-            :aria-label="toggleLabel"
-            :title="toggleLabel"
-            data-testid="theme-toggle"
-            @click="toggleTheme"
-          >
-            <PhSun v-if="isDark" :size="19" aria-hidden="true" />
-            <PhMoon v-else :size="19" aria-hidden="true" />
-          </button>
-
           <div class="relative min-w-0">
             <button
               v-if="receipt"
@@ -273,7 +293,7 @@ async function scrollToWorkflow(): Promise<void> {
             >
               <PhUser :size="18" aria-hidden="true" />
               <span
-                class="max-w-28 truncate sm:max-w-48"
+                class="max-w-20 truncate sm:max-w-48"
                 :title="walletIdentityTitle"
                 >{{ walletIdentityLabel }}</span
               >
@@ -281,7 +301,7 @@ async function scrollToWorkflow(): Promise<void> {
                 class="h-2 w-2 rounded-full bg-moss"
                 aria-hidden="true"
               ></span>
-              <span class="hidden text-slate sm:inline">Disconnect</span>
+              <span class="text-slate">Disconnect</span>
             </button>
             <button
               v-else-if="isScanning && account"
@@ -344,8 +364,21 @@ async function scrollToWorkflow(): Promise<void> {
         <p class="mt-2 text-sm leading-6 text-slate">
           {{ progress?.message ?? "Waiting for your wallet…" }}
         </p>
-        <p class="mt-3 text-xs text-slate">
-          Read-only. No signature or transaction will be requested.
+        <div
+          class="mx-auto mt-5 h-1.5 max-w-sm overflow-hidden rounded-full bg-line/55"
+          role="progressbar"
+          aria-label="Wallet scan progress"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          :aria-valuenow="scanProgressPercent"
+        >
+          <div
+            class="h-full rounded-full bg-river transition-[width] duration-300"
+            :style="{ width: `${scanProgressPercent}%` }"
+          ></div>
+        </div>
+        <p class="mt-3 text-xs tabular-nums text-slate">
+          {{ scanProgressPercent }}% · Read-only. No signature or transaction.
         </p>
       </div>
     </section>
@@ -355,10 +388,7 @@ async function scrollToWorkflow(): Promise<void> {
       class="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl place-items-center px-4 py-16"
     >
       <div id="wallet-options" class="w-full max-w-3xl text-center">
-        <p class="text-sm font-bold uppercase tracking-[0.18em] text-river">
-          Borrow with your onchain assets
-        </p>
-        <h1 class="mt-4 text-4xl font-semibold tracking-[-0.045em] sm:text-6xl">
+        <h1 class="text-4xl font-semibold tracking-[-0.04em] sm:text-6xl">
           See what your wallet can unlock.
         </h1>
         <p
@@ -367,6 +397,24 @@ async function scrollToWorkflow(): Promise<void> {
           Connect a wallet to see usable collateral, compare borrowing paths,
           and review risk before you borrow.
         </p>
+
+        <ul
+          class="mx-auto mt-5 flex max-w-2xl flex-wrap justify-center gap-x-5 gap-y-2 text-sm text-slate"
+          aria-label="Wallet scan safeguards"
+        >
+          <li class="inline-flex items-center gap-1.5">
+            <PhCheck :size="16" weight="bold" class="text-moss" /> Read-only
+            connection
+          </li>
+          <li class="inline-flex items-center gap-1.5">
+            <PhCheck :size="16" weight="bold" class="text-moss" /> No signature
+            or transaction
+          </li>
+          <li class="inline-flex items-center gap-1.5">
+            <PhCheck :size="16" weight="bold" class="text-moss" /> One-block
+            snapshot
+          </li>
+        </ul>
 
         <div
           v-if="announcedProviders.length"
@@ -504,6 +552,7 @@ async function scrollToWorkflow(): Promise<void> {
           class="compact-step text-left"
           :class="currentStage === 'comparison' ? 'compact-step-active' : ''"
           :aria-current="currentStage === 'comparison' ? 'step' : undefined"
+          :disabled="!selectedCollateralTokens.length || isComparing"
           @click="goToStage('comparison')"
         >
           <span class="progress-number">2</span>
@@ -581,15 +630,19 @@ async function scrollToWorkflow(): Promise<void> {
             >
               <div>
                 <h2 id="providers-title" class="text-lg font-semibold">
-                  Protocols
+                  Borrowing paths
                 </h2>
                 <p class="text-sm text-slate">
-                  Expand any row—including unavailable paths—to see support and
-                  capacity evidence.
+                  Sorted by recommended capacity. Expand any path to inspect its
+                  support and risk evidence.
                 </p>
               </div>
-              <p class="text-sm tabular-nums text-slate">
-                Comparing {{ formatUsdValue(borrowAmountUsd) }}
+              <p class="text-sm text-slate">
+                <strong class="font-semibold text-ink tabular-nums">
+                  {{ coveringProviderCount }}/{{ providerItems.length }}
+                </strong>
+                pooled providers cover
+                {{ formatUsdValue(borrowAmountUsd) }}
               </p>
             </div>
 

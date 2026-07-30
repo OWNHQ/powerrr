@@ -28,16 +28,19 @@ defineExpose({
   <section
     ref="root"
     tabindex="-1"
-    class="result-summary rounded-2xl border border-line bg-surface px-5 py-5 shadow-panel sm:px-6"
+    class="result-summary rounded-2xl border border-line bg-surface px-5 py-4 sm:px-6 sm:py-5"
     aria-labelledby="result-title"
   >
     <div
-      class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between"
+      class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"
     >
       <div class="min-w-0">
         <div class="flex flex-wrap items-center gap-2">
-          <h1 id="result-title" class="text-2xl font-semibold tracking-tight">
-            Borrowing estimate for
+          <h1
+            id="result-title"
+            class="text-xl font-semibold tracking-tight sm:text-2xl"
+          >
+            Wallet snapshot for
             {{ names.length ? names.join(" · ") : address }}
           </h1>
           <span
@@ -50,7 +53,7 @@ defineExpose({
       </div>
 
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center">
-        <dl class="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 sm:gap-x-7">
+        <dl class="grid grid-cols-3 gap-x-4 gap-y-3 sm:gap-x-7">
           <div class="min-w-0">
             <dt>Selected asset value</dt>
             <dd class="whitespace-nowrap">{{ matchedCollateral }}</dd>

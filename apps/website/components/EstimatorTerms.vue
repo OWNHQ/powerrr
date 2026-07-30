@@ -44,10 +44,7 @@ function onRangeInput(event: Event): void {
 <template>
   <section class="panel overflow-hidden" aria-labelledby="terms-title">
     <div class="border-b border-line px-5 py-5 sm:px-6">
-      <p class="text-xs font-bold uppercase tracking-[0.14em] text-river">
-        Step 2 of 2
-      </p>
-      <h2 id="terms-title" class="mt-1 text-xl font-semibold">
+      <h2 id="terms-title" class="text-xl font-semibold">
         Compare borrowing paths
       </h2>
       <p class="mt-1 max-w-2xl text-sm leading-6 text-slate">
@@ -58,15 +55,18 @@ function onRangeInput(event: Event): void {
 
     <div class="p-5 sm:p-6">
       <div
-        class="grid gap-5 lg:grid-cols-[minmax(16rem,0.72fr)_minmax(0,1.28fr)] lg:items-end"
+        class="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[minmax(16rem,0.72fr)_minmax(0,1.28fr)] lg:items-end"
       >
         <label
-          class="block rounded-xl border border-line bg-surface px-4 py-4 focus-within:border-river focus-within:ring-1 focus-within:ring-river"
+          class="block min-w-0 rounded-xl border border-line bg-surface px-4 py-4 focus-within:border-river focus-within:ring-1 focus-within:ring-river"
         >
-          <span
-            class="text-xs font-semibold uppercase tracking-[0.1em] text-slate"
-            >Borrow amount</span
-          >
+          <span class="flex items-center justify-between gap-3">
+            <span
+              class="text-xs font-semibold uppercase tracking-[0.1em] text-slate"
+              >Borrow amount</span
+            >
+            <span class="text-xs font-semibold text-slate">USDC</span>
+          </span>
           <span class="mt-2 flex items-center gap-3">
             <img src="/tokens/usdc.png" alt="" class="h-9 w-9 rounded-full" />
             <span class="text-3xl font-semibold text-slate" aria-hidden="true"
@@ -86,14 +86,15 @@ function onRangeInput(event: Event): void {
                 amountText = formatAmount(amount);
               "
             />
-            <span class="text-sm font-semibold text-slate">USDC</span>
           </span>
         </label>
 
-        <div>
-          <div class="flex items-end justify-between gap-4 text-sm">
+        <div class="min-w-0">
+          <div
+            class="flex flex-col gap-1 text-sm sm:flex-row sm:items-end sm:justify-between sm:gap-4"
+          >
             <span class="text-slate">Comparison range</span>
-            <strong class="tabular-nums"
+            <strong class="shrink-0 whitespace-nowrap tabular-nums"
               >{{ formatUsdValue(amount) }} of
               {{ formatUsdValue(comparisonCeilingUsd) }}</strong
             >
@@ -104,7 +105,7 @@ function onRangeInput(event: Event): void {
             min="0"
             :max="Math.max(comparisonCeilingUsd, 1)"
             :step="amountInputStep(comparisonCeilingUsd)"
-            class="amount-range mt-4 w-full"
+            class="amount-range mt-4 block w-full max-w-full"
             :style="{ '--range-progress': `${progress}%` }"
             aria-label="Borrow amount comparison range"
             :aria-valuetext="`${formatUsdValue(amount)} requested; ${formatUsdValue(comparisonCeilingUsd)} comparison ceiling`"

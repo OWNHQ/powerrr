@@ -35,10 +35,8 @@ can observe these reads. Powerrr does not operate an intermediary and does not
 persist the account, balances, quotes, or the user's choice to visit OWN's
 external request form.
 
-The interface follows the operating system's color preference until the user
-chooses light or dark mode. That explicit preference is stored only in browser
-local storage under `powerrr-theme`; it contains no account, balance, quote, or
-request information and causes no network request.
+The interface uses one deliberate light color scheme and does not persist a
+theme or other local preference.
 
 At the pinned block, Powerrr also makes direct `eth_call` requests through the
 wallet to the canonical ENS Universal Resolver and the .gwei NameNFT contract.

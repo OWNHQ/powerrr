@@ -17,14 +17,8 @@ export default defineNuxtConfig({
             "default-src 'self'; connect-src 'none'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none'",
         },
         { name: "referrer", content: "no-referrer" },
-        { name: "color-scheme", content: "light dark" },
-        { name: "theme-color", content: "#f6f8f8" },
-      ],
-      script: [
-        {
-          innerHTML:
-            "(function(){try{var t=localStorage.getItem('powerrr-theme');if(t==='light'||t==='dark'){document.documentElement.dataset.theme=t;}var d=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);var m=document.querySelector('meta[name=theme-color]');if(m)m.content=d?'#0b1415':'#f6f8f8';}catch(e){}})();",
-        },
+        { name: "color-scheme", content: "light" },
+        { name: "theme-color", content: "#f3eee5" },
       ],
     },
   },
