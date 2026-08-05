@@ -16,7 +16,8 @@ import { formatUsdValue, providerRateLabel } from "../utils/estimator-ux";
 const props = defineProps<{
   id: string;
   label: string;
-  link: string;
+  link?: string;
+  destinationLabel?: string;
   quote?: ProtocolBorrowQuote;
   status?: ProtocolAvailability;
   amountUsd: number;
@@ -102,6 +103,9 @@ const healthFactorToneClass = computed(() => {
   }
 });
 const breakdown = computed(() => props.quote?.capacityBreakdown);
+const canOpenDestination = computed(() =>
+  Boolean(preview.value?.actionable && props.link),
+);
 
 function weightedFactor(field: "ltv" | "liquidationThreshold"): string {
   const collateral = props.quote?.collateralUsed ?? [];
@@ -216,18 +220,18 @@ function evaluationLabel(item: ProtocolAssetEvaluation): string {
       data-provider-action
     >
       <a
-        :href="preview?.actionable ? link : undefined"
+        :href="canOpenDestination ? link : undefined"
         target="_blank"
         rel="noopener noreferrer"
         class="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line bg-surface px-4 text-sm font-semibold text-river"
         :class="
-          preview?.actionable
+          canOpenDestination
             ? 'hover:border-river'
             : 'pointer-events-none opacity-45'
         "
-        :aria-disabled="!preview?.actionable"
+        :aria-disabled="!canOpenDestination"
       >
-        Review on {{ label }}
+        Review {{ destinationLabel ?? label }}
         <PhArrowSquareOut :size="17" aria-hidden="true" />
       </a>
     </div>

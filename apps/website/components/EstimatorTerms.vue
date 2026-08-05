@@ -1,18 +1,13 @@
 <script setup lang="ts">
 import { PhArrowLeft } from "@phosphor-icons/vue";
 import {
-  amountForTargetLtv,
+  amountForUtilization,
   amountInputStep,
   formatUsdValue,
 } from "../utils/estimator-ux";
 
 const props = defineProps<{
   comparisonCeilingUsd: number;
-  providerMaximumUsd: number;
-  selectedAssetValueUsd: number;
-  ltvReferenceProvider: string;
-  ltvReferenceCollateralUsd: number;
-  ltvReferenceExistingDebtUsd: number;
   error: string;
 }>();
 
@@ -27,12 +22,8 @@ const progress = computed(() =>
     : 0,
 );
 const projectedLtvPercent = computed(() => {
-  if (props.ltvReferenceCollateralUsd <= 0) return null;
-  return (
-    ((amount.value + props.ltvReferenceExistingDebtUsd) /
-      props.ltvReferenceCollateralUsd) *
-    100
-  );
+  if (props.comparisonCeilingUsd <= 0) return null;
+  return (amount.value / props.comparisonCeilingUsd) * 100;
 });
 
 watch(amount, (value) => {
@@ -42,7 +33,12 @@ watch(amount, (value) => {
 function formatAmount(value: number): string {
   if (value <= 0) return "0";
   return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: props.comparisonCeilingUsd < 100 ? 2 : 0,
+    maximumFractionDigits:
+      props.comparisonCeilingUsd < 1
+        ? 6
+        : props.comparisonCeilingUsd < 100
+          ? 2
+          : 0,
   }).format(value);
 }
 
@@ -58,9 +54,8 @@ function onRangeInput(event: Event): void {
 }
 
 function selectLtv(targetPercent: number): void {
-  amount.value = amountForTargetLtv(
-    props.ltvReferenceCollateralUsd,
-    props.ltvReferenceExistingDebtUsd,
+  amount.value = amountForUtilization(
+    props.comparisonCeilingUsd,
     targetPercent,
   );
 }
@@ -84,23 +79,14 @@ function isSelectedLtv(targetPercent: number): boolean {
 
     <div class="p-5 sm:p-6">
       <div>
-        <div class="flex items-start justify-between gap-4">
-          <div>
-            <h3 class="text-sm font-semibold">Projected LTV</h3>
-            <p class="mt-0.5 text-xs leading-5 text-slate">
-              {{ ltvReferenceProvider || "Highest-capacity pooled path" }}
-              reference
-            </p>
-          </div>
-          <p
+        <div class="flex items-center justify-between gap-4">
+          <h3 class="text-sm font-semibold">Projected LTV</h3>
+          <strong
             v-if="projectedLtvPercent !== null"
-            class="shrink-0 text-right text-xs text-slate"
+            class="type-data shrink-0 text-base text-ink"
           >
-            <strong class="type-data block text-base text-ink">
-              {{ projectedLtvPercent.toFixed(1) }}%
-            </strong>
-            current
-          </p>
+            {{ projectedLtvPercent.toFixed(1) }}%
+          </strong>
         </div>
         <div
           class="mt-3 grid grid-cols-3 gap-1 rounded-lg border border-line bg-mist/55 p-1"
@@ -118,8 +104,8 @@ function isSelectedLtv(targetPercent: number): boolean {
                 : 'text-slate hover:bg-surface hover:text-river'
             "
             :aria-pressed="isSelectedLtv(target)"
-            :disabled="ltvReferenceCollateralUsd <= 0"
-            :aria-label="`${target}% projected LTV using ${ltvReferenceProvider || 'the highest-capacity pooled path'}`"
+            :disabled="comparisonCeilingUsd <= 0"
+            :aria-label="`${target}% projected LTV`"
             @click="selectLtv(target)"
           >
             {{ target }}%
@@ -172,8 +158,9 @@ function isSelectedLtv(targetPercent: number): boolean {
             :value="Math.min(amount, comparisonCeilingUsd)"
             type="range"
             min="0"
-            :max="Math.max(comparisonCeilingUsd, 1)"
+            :max="comparisonCeilingUsd > 0 ? comparisonCeilingUsd : 1"
             :step="amountInputStep(comparisonCeilingUsd)"
+            :disabled="comparisonCeilingUsd <= 0"
             class="amount-range mt-3 block w-full max-w-full"
             :style="{ '--range-progress': `${progress}%` }"
             aria-label="Borrow amount comparison range"
@@ -191,15 +178,9 @@ function isSelectedLtv(targetPercent: number): boolean {
         class="mt-5 border-t border-line pt-4 text-xs leading-5 text-slate"
       >
         <p>
-          Ceiling uses the higher of selected assets ({{
-            formatUsdValue(selectedAssetValueUsd)
-          }}) and the highest pooled estimate ({{
-            formatUsdValue(providerMaximumUsd)
+          Ceiling and projected LTV use the highest pooled estimate ({{
+            formatUsdValue(comparisonCeilingUsd)
           }}).
-        </p>
-        <p class="mt-1">
-          For comparison only—not approved credit or a preferred borrowing
-          level. The initial 50% LTV is a starting scenario.
         </p>
       </div>
       <p

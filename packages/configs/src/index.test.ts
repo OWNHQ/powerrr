@@ -101,6 +101,26 @@ describe("Ethereum blue-chip registry", () => {
           [`${token.symbol} discovery price asset`, token.priceRoute.asset],
           [`${token.symbol} discovery oracle`, token.priceRoute.oracle],
         );
+      } else if (token.priceRoute.kind === "chainlink-feed") {
+        addresses.push([
+          `${token.symbol} direct Chainlink feed`,
+          token.priceRoute.feed,
+        ]);
+      } else if (
+        token.priceRoute.kind === "erc4626-rate" ||
+        token.priceRoute.kind === "contract-rate" ||
+        token.priceRoute.kind === "conversion-rate"
+      ) {
+        addresses.push([
+          `${token.symbol} price underlying`,
+          token.priceRoute.underlying,
+        ]);
+        if (token.priceRoute.kind === "conversion-rate") {
+          addresses.push([
+            `${token.symbol} conversion contract`,
+            token.priceRoute.conversionContract,
+          ]);
+        }
       }
     }
 
@@ -155,12 +175,42 @@ describe("static token registry", () => {
       expect(token.address).toMatch(/^0x[a-fA-F0-9]{40}$/);
       expect(token.decimals).toBeGreaterThan(0);
       expect(token.decimals).toBeLessThanOrEqual(36);
-      expect(["aave-oracle", "automatic-onchain"]).toContain(
-        token.priceRoute.kind,
-      );
+      expect([
+        "aave-oracle",
+        "chainlink-feed",
+        "erc4626-rate",
+        "contract-rate",
+        "conversion-rate",
+        "automatic-onchain",
+      ]).toContain(token.priceRoute.kind);
       expect(token.snapshotDate).toBe("2026-07-29");
       expect(token.rankingSource).toContain("CoinGecko");
     }
+  });
+
+  it("pins reviewed direct-feed and deterministic wrapper routes by contract", () => {
+    expect(
+      ethereumTokenRegistryV1.find((token) => token.symbol === "ARB")
+        ?.priceRoute,
+    ).toMatchObject({
+      kind: "chainlink-feed",
+      feed: "0x31697852a68433DbCc2Ff612c516d69E3D9bd08F",
+    });
+    expect(
+      ethereumTokenRegistryV1.find((token) => token.symbol === "SUSDC")
+        ?.priceRoute,
+    ).toMatchObject({
+      kind: "erc4626-rate",
+      underlying: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    });
+    expect(
+      ethereumTokenRegistryV1.find((token) => token.symbol === "CDAI")
+        ?.priceRoute,
+    ).toMatchObject({
+      kind: "contract-rate",
+      method: "exchangeRateStored",
+      underlying: "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+    });
   });
 
   it("pins the current deployed GHO contract", () => {

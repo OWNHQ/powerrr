@@ -8,10 +8,7 @@ const coverageCopy = computed(() => {
   if (props.sourceStatus === "unavailable") {
     return "Pooled collateral coverage could not be checked. Refresh before relying on this comparison.";
   }
-  if ((props.gapValueUsd ?? 0) > 0) {
-    return `${formatUsdValue(props.gapValueUsd)} of selected collateral is not included in any currently available pooled estimate. Direct assessments may consider assets outside these protocol models.`;
-  }
-  return "All selected collateral is included by at least one currently available pooled estimate.";
+  return null;
 });
 </script>
 
@@ -49,12 +46,14 @@ const coverageCopy = computed(() => {
       </dl>
     </div>
     <div
+      v-if="coverageCopy || sourceStatus === 'partial'"
       class="border-t border-line bg-mist/30 px-4 py-3 text-xs leading-5 text-slate sm:px-5"
     >
-      <p>{{ coverageCopy }}</p>
+      <p v-if="coverageCopy">{{ coverageCopy }}</p>
       <p
         v-if="sourceStatus === 'partial'"
-        class="mt-1 font-medium text-warning"
+        class="font-medium text-warning"
+        :class="coverageCopy ? 'mt-1' : ''"
       >
         Some provider sources were unavailable, so pooled coverage may be
         understated.

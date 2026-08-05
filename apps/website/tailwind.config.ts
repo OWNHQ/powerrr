@@ -19,6 +19,21 @@ export default {
           "system-ui",
           "sans-serif",
         ],
+        mono: [
+          "Space Mono",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "monospace",
+        ],
+        display: [
+          "VCR_OSD_MONO",
+          "Screener",
+          "Supreme",
+          "Space Mono",
+          "ui-monospace",
+          "monospace",
+        ],
       },
       colors: {
         ink: token("ink"),

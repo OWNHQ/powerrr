@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import {
-  PhCaretDown,
   PhCheck,
-  PhInfo,
   PhUser,
   PhWallet,
   PhWarningCircle,
@@ -10,7 +8,7 @@ import {
 import { ETHEREUM_TOKEN_REGISTRY_TOTAL_COUNT } from "@powerrr/configs";
 import { decimalStringToRaw, USDC_DECIMALS } from "@powerrr/math";
 import {
-  amountForTargetLtv,
+  amountForUtilization,
   formatUsdValue,
   summarizeCollateralCoverage,
   summarizeEstimatorCapacity,
@@ -24,18 +22,26 @@ import {
   groupWebsiteQuoteRows,
   type WebsiteQuoteGroup,
 } from "./utils/quote-row";
+import {
+  providerDestination,
+  type ProviderDestination,
+} from "./utils/provider-destination";
+import WalletConnectDialog from "./components/WalletConnectDialog.vue";
 
 type EstimatorStage = "assets" | "comparison";
 type ProviderItem = {
   id: "aave" | "sparklend" | "compound-iii" | "morpho-blue";
   statusId: "aave-v3" | "sparklend" | "compound-iii" | "morpho-blue";
   label: string;
-  link: string;
+  destination?: ProviderDestination;
   group?: WebsiteQuoteGroup;
 };
 
 const {
   announcedProviders,
+  orderedProviders,
+  selectedWallet,
+  rememberedWalletRdns,
   account,
   compactAccount,
   resolvedWalletNames,
@@ -48,11 +54,16 @@ const {
   quotes,
   providerStatuses,
   error,
+  walletNotice,
   isScanning,
+  isConnecting,
+  connectionSlow,
+  connectionTimedOut,
   isRefreshing,
   isComparing,
   walletDiscoveryComplete,
   connect,
+  cancelConnection,
   refresh,
   switchToMainnet,
   disconnect,
@@ -64,11 +75,11 @@ const currentStage = ref<EstimatorStage>("assets");
 const expandedProviderId = ref("");
 const borrowAmountUsd = ref(0);
 const stageError = ref("");
-const showWalletMenu = ref(false);
 const showWalletReadInfo = ref(false);
+const walletDialog = ref<InstanceType<typeof WalletConnectDialog> | null>(null);
 const walletIdentityLabel = computed(() =>
   resolvedWalletNames.value.length
-    ? resolvedWalletNames.value.join(" · ")
+    ? resolvedWalletNames.value[0]
     : compactAccount.value,
 );
 const walletIdentityTitle = computed(() =>
@@ -85,37 +96,40 @@ const providerDefinitions: Array<Omit<ProviderItem, "group">> = [
     id: "aave",
     statusId: "aave-v3",
     label: "Aave",
-    link: "https://app.aave.com/?marketName=proto_mainnet_v3",
   },
   {
     id: "sparklend",
     statusId: "sparklend",
     label: "Spark",
-    link: "https://app.spark.fi/markets/?marketName=proto_spark_v3",
   },
   {
     id: "morpho-blue",
     statusId: "morpho-blue",
     label: "Morpho",
-    link: "https://app.morpho.org/ethereum/variable/0x94b823e6bd8ea533b4e33fbc307faea0b307301bc48763acc4d4aa4def7636cd/weth-usdc",
   },
   {
     id: "compound-iii",
     statusId: "compound-iii",
     label: "Compound",
-    link: "https://app.compound.finance/markets/usdc-mainnet",
   },
 ];
 
 const quoteGroups = computed(() => groupWebsiteQuoteRows(quotes.value));
 const providerItems = computed<ProviderItem[]>(() =>
   providerDefinitions
-    .map((definition) => ({
-      ...definition,
-      group: quoteGroups.value.find(
+    .map((definition) => {
+      const group = quoteGroups.value.find(
         (candidate) => candidate.groupId === definition.id,
-      ),
-    }))
+      );
+      return {
+        ...definition,
+        group,
+        destination: providerDestination(
+          definition.statusId,
+          group?.primaryQuote,
+        ),
+      };
+    })
     .sort((left, right) => {
       const leftRaw = providerCapacityRaw(left);
       const rightRaw = providerCapacityRaw(right);
@@ -134,31 +148,6 @@ const providerPathCount = computed(
   () =>
     providerItems.value.filter((provider) => providerCapacityRaw(provider) > 0n)
       .length,
-);
-const ltvReferenceProvider = computed(() =>
-  providerItems.value.find(
-    (provider) =>
-      providerCapacity(provider) > 0 &&
-      providerStatus(provider)?.status !== "unavailable" &&
-      provider.group?.primaryQuote.collateralUsed.some(
-        (collateral) => collateral.valueUsd > 0,
-      ),
-  ),
-);
-const ltvReferenceQuote = computed(
-  () => ltvReferenceProvider.value?.group?.primaryQuote,
-);
-const ltvReferenceCollateralUsd = computed(
-  () =>
-    ltvReferenceQuote.value?.collateralUsed.reduce(
-      (sum, collateral) => sum + collateral.valueUsd,
-      0,
-    ) ?? 0,
-);
-const ltvReferenceExistingDebtUsd = computed(() =>
-  ltvReferenceQuote.value?.mode === "existing-position"
-    ? Math.max(0, ltvReferenceQuote.value.existingDebtUsd ?? 0)
-    : 0,
 );
 const coveringProviderCount = computed(() => {
   const requestedRaw = decimalStringToRaw(
@@ -193,9 +182,7 @@ const matchedCollateralUsd = computed(() =>
     0,
   ),
 );
-const comparisonCeilingUsd = computed(() =>
-  Math.max(providerMaximumUsd.value, matchedCollateralUsd.value, 1),
-);
+const comparisonCeilingUsd = computed(() => providerMaximumUsd.value);
 const positiveAssets = computed(() =>
   assets.value.filter(
     (asset) =>
@@ -229,11 +216,7 @@ async function enterComparison(): Promise<void> {
   currentStage.value = "comparison";
   expandedProviderId.value = "";
   if (borrowAmountUsd.value <= 0) {
-    borrowAmountUsd.value = amountForTargetLtv(
-      ltvReferenceCollateralUsd.value,
-      ltvReferenceExistingDebtUsd.value,
-      50,
-    );
+    borrowAmountUsd.value = amountForUtilization(providerMaximumUsd.value, 50);
   }
 }
 
@@ -259,24 +242,13 @@ async function refreshEstimate(): Promise<void> {
   await refresh();
 }
 
-function connectFromHeader(): void {
-  if (announcedProviders.value.length === 1 && announcedProviders.value[0]) {
-    void connect(announcedProviders.value[0]);
-    return;
-  }
-  if (announcedProviders.value.length > 1) {
-    showWalletMenu.value = !showWalletMenu.value;
-    return;
-  }
-  document
-    .querySelector<HTMLElement>("#wallet-options")
-    ?.scrollIntoView({ behavior: "smooth", block: "center" });
+function openWalletDialog(trigger?: EventTarget | null): void {
+  walletDialog.value?.open(trigger instanceof HTMLElement ? trigger : null);
 }
 
 function connectFromMenu(
   wallet: (typeof announcedProviders.value)[number],
 ): void {
-  showWalletMenu.value = false;
   void connect(wallet);
 }
 
@@ -310,7 +282,7 @@ function providerStatus(provider: ProviderItem) {
       >
         <a href="/" class="type-wordmark focus-ring rounded-md"> Powerrr </a>
         <div class="flex min-w-0 items-center gap-2">
-          <div class="relative min-w-0">
+          <div class="min-w-0">
             <Transition name="wallet-control" mode="out-in">
               <button
                 v-if="receipt"
@@ -322,10 +294,18 @@ function providerStatus(provider: ProviderItem) {
               >
                 <PhUser :size="18" aria-hidden="true" />
                 <span
-                  class="max-w-20 truncate sm:max-w-48"
+                  class="flex max-w-24 min-w-0 flex-col text-left leading-tight sm:max-w-48"
                   :title="walletIdentityTitle"
-                  >{{ walletIdentityLabel }}</span
                 >
+                  <strong class="truncate font-semibold">{{
+                    walletIdentityLabel
+                  }}</strong>
+                  <span
+                    v-if="resolvedWalletNames.length"
+                    class="truncate text-xs font-normal text-slate"
+                    >{{ compactAccount }}</span
+                  >
+                </span>
                 <span
                   class="h-2 w-2 rounded-full bg-moss"
                   aria-hidden="true"
@@ -344,42 +324,17 @@ function providerStatus(provider: ProviderItem) {
                 <span>Checking name…</span>
               </button>
               <button
-                v-else-if="
-                  !walletDiscoveryComplete || announcedProviders.length > 0
-                "
+                v-else
                 key="connect"
                 type="button"
                 class="focus-ring flex h-11 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm font-semibold hover:border-river"
-                :aria-expanded="
-                  announcedProviders.length > 1 ? showWalletMenu : undefined
-                "
-                @click="connectFromHeader"
+                aria-haspopup="dialog"
+                @click="openWalletDialog($event.currentTarget)"
               >
                 <PhWallet :size="18" aria-hidden="true" />
                 Connect wallet
               </button>
             </Transition>
-            <div
-              v-if="!receipt && showWalletMenu && announcedProviders.length > 1"
-              class="absolute right-0 top-12 z-40 w-64 overflow-hidden rounded-xl border border-line bg-surface p-2 shadow-panel"
-            >
-              <button
-                v-for="wallet in announcedProviders"
-                :key="wallet.descriptor.uuid"
-                type="button"
-                class="focus-ring flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold hover:bg-mist"
-                @click="connectFromMenu(wallet)"
-              >
-                <img
-                  v-if="wallet.descriptor.icon"
-                  :src="wallet.descriptor.icon"
-                  alt=""
-                  class="h-6 w-6 rounded"
-                />
-                <PhWallet v-else :size="18" aria-hidden="true" />
-                <span class="truncate">{{ wallet.descriptor.name }}</span>
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -398,13 +353,29 @@ function providerStatus(provider: ProviderItem) {
             <span class="scan-dial-sweep"></span>
             <span class="scan-dial-core"><PhWallet :size="22" /></span>
           </div>
-          <h1 class="type-headline mt-6">Checking your wallet</h1>
+          <h1 class="type-headline mt-6">
+            {{
+              isConnecting && selectedWallet
+                ? `Connecting to ${selectedWallet.descriptor.name}`
+                : "Checking your wallet"
+            }}
+          </h1>
           <Transition name="scan-reading" mode="out-in">
             <p
-              :key="`${progress?.phase ?? 'waiting'}-${progress?.message ?? ''}`"
+              :key="`${progress?.phase ?? 'waiting'}-${progress?.message ?? ''}-${connectionSlow}-${connectionTimedOut}`"
               class="mt-2 text-sm leading-6 text-slate"
             >
-              {{ progress?.message ?? "Waiting for your wallet…" }}
+              <template v-if="isConnecting && connectionTimedOut">
+                Connection is taking too long. Cancel and choose the wallet to
+                try again.
+              </template>
+              <template v-else-if="isConnecting && connectionSlow">
+                Taking longer than expected. Make sure
+                {{ selectedWallet?.descriptor.name }} is unlocked.
+              </template>
+              <template v-else>
+                {{ progress?.message ?? "Waiting for your wallet…" }}
+              </template>
             </p>
           </Transition>
           <div
@@ -423,6 +394,14 @@ function providerStatus(provider: ProviderItem) {
           <p class="mt-3 text-xs tabular-nums text-slate">
             {{ scanProgressPercent }}% · Read-only. No signature or transaction.
           </p>
+          <button
+            v-if="isConnecting"
+            type="button"
+            class="focus-ring mt-5 min-h-11 rounded-lg border border-line bg-surface px-5 text-sm font-semibold text-river hover:border-river"
+            @click="cancelConnection"
+          >
+            Cancel
+          </button>
         </div>
       </section>
 
@@ -466,25 +445,13 @@ function providerStatus(provider: ProviderItem) {
             class="mx-auto mt-9 flex max-w-2xl flex-wrap justify-center gap-3"
           >
             <button
-              v-for="wallet in announcedProviders"
-              :key="wallet.descriptor.uuid"
               type="button"
               class="focus-ring inline-flex h-12 items-center justify-center gap-3 rounded-lg bg-river px-6 text-sm font-semibold text-accent-contrast hover:bg-river/90"
-              @click="connect(wallet)"
+              aria-haspopup="dialog"
+              @click="openWalletDialog($event.currentTarget)"
             >
-              <img
-                v-if="wallet.descriptor.icon"
-                :src="wallet.descriptor.icon"
-                alt=""
-                class="h-6 w-6 rounded"
-              />
-              <PhWallet v-else :size="20" aria-hidden="true" />
-              Connect
-              {{
-                announcedProviders.length > 1
-                  ? wallet.descriptor.name
-                  : "wallet"
-              }}
+              <PhWallet :size="20" aria-hidden="true" />
+              Choose wallet
             </button>
           </div>
           <p
@@ -499,10 +466,18 @@ function providerStatus(provider: ProviderItem) {
           >
             <p class="font-semibold">No browser wallet found</p>
             <p class="mt-1 text-sm text-slate">
-              Install an injected wallet or open Powerrr inside your wallet
-              browser.
+              Open Powerrr inside your wallet browser, or use the Connect wallet
+              button to check again after installing a browser wallet.
             </p>
           </div>
+
+          <p
+            v-if="walletNotice"
+            class="mx-auto mt-4 max-w-xl text-sm font-medium text-moss"
+            role="status"
+          >
+            {{ walletNotice }}
+          </p>
 
           <div
             class="relative mx-auto mt-3 max-w-lg text-xs text-slate"
@@ -634,7 +609,21 @@ function providerStatus(provider: ProviderItem) {
                 @change-address="disconnect"
                 @toggle="setAssetSelected"
                 @continue="continueFromAssets"
-              />
+              >
+                <template #after-main>
+                  <EstimatorReceiptDetails
+                    :wallet-name="receipt.walletName"
+                    :wallet-identity-title="walletIdentityTitle"
+                    :block-number="receipt.blockNumber"
+                    :block-timestamp="receipt.blockTimestamp"
+                    :block-loaded-at-label="blockLoadedAtLabel"
+                    :calls-succeeded="receipt.callsSucceeded"
+                    :calls-attempted="receipt.callsAttempted"
+                    :registry-version="receipt.registryVersion"
+                    :registry-source="registrySource"
+                  />
+                </template>
+              </EstimatorAssets>
             </div>
 
             <div
@@ -646,11 +635,6 @@ function providerStatus(provider: ProviderItem) {
                 <EstimatorTerms
                   v-model:amount="borrowAmountUsd"
                   :comparison-ceiling-usd="comparisonCeilingUsd"
-                  :provider-maximum-usd="providerMaximumUsd"
-                  :selected-asset-value-usd="matchedCollateralUsd"
-                  :ltv-reference-provider="ltvReferenceProvider?.label ?? ''"
-                  :ltv-reference-collateral-usd="ltvReferenceCollateralUsd"
-                  :ltv-reference-existing-debt-usd="ltvReferenceExistingDebtUsd"
                   :error="stageError"
                   @back="goToStage('assets')"
                 />
@@ -689,7 +673,8 @@ function providerStatus(provider: ProviderItem) {
                     :id="provider.id"
                     :key="provider.id"
                     :label="provider.label"
-                    :link="provider.link"
+                    :link="provider.destination?.href"
+                    :destination-label="provider.destination?.label"
                     :quote="provider.group?.primaryQuote"
                     :status="providerStatus(provider)"
                     :amount-usd="borrowAmountUsd"
@@ -703,81 +688,45 @@ function providerStatus(provider: ProviderItem) {
           </Transition>
         </div>
 
-        <details
-          class="panel mt-5 overflow-hidden"
-          :class="
-            currentStage === 'assets'
-              ? 'lg:w-[calc(100%-19rem)] xl:w-[calc(100%-21rem)]'
-              : ''
-          "
-        >
-          <summary
-            class="focus-ring flex min-h-14 cursor-pointer items-center gap-2 px-5 py-4 text-sm font-semibold sm:px-6"
-          >
-            <PhInfo :size="18" aria-hidden="true" />
-            About this estimate
-            <PhCaretDown :size="14" class="ml-auto" aria-hidden="true" />
-          </summary>
-          <div
-            class="grid gap-5 border-t border-line px-5 py-5 text-sm sm:grid-cols-2 sm:px-6 lg:grid-cols-5"
-          >
-            <div class="min-w-0">
-              <p class="text-slate">Wallet</p>
-              <p
-                class="mt-1 truncate whitespace-nowrap font-semibold"
-                :title="`${receipt.walletName} · ${walletIdentityTitle}`"
-              >
-                {{ receipt.walletName }} · {{ walletIdentityTitle }}
-              </p>
-            </div>
-            <div>
-              <p class="text-slate">Ethereum block</p>
-              <p class="mt-1 font-semibold">
-                {{ receipt.blockNumber }} ·
-                <time :datetime="receipt.blockTimestamp">
-                  Loaded {{ blockLoadedAtLabel }}
-                </time>
-              </p>
-            </div>
-            <div>
-              <p class="text-slate">Balance calls</p>
-              <p class="mt-1 font-semibold">
-                {{ receipt.callsSucceeded }}/{{ receipt.callsAttempted }}
-                succeeded
-              </p>
-            </div>
-            <div>
-              <p class="text-slate">Asset registry</p>
-              <p class="mt-1 font-semibold" :title="registrySource">
-                {{ receipt.registryVersion }}
-              </p>
-            </div>
-            <div>
-              <p class="text-slate">Privacy</p>
-              <p class="mt-1 font-semibold text-moss">
-                No account, balance, or request was posted to Powerrr.
-              </p>
-            </div>
-          </div>
-        </details>
+        <EstimatorReceiptDetails
+          v-if="currentStage === 'comparison'"
+          class="mt-5"
+          :wallet-name="receipt.walletName"
+          :wallet-identity-title="walletIdentityTitle"
+          :block-number="receipt.blockNumber"
+          :block-timestamp="receipt.blockTimestamp"
+          :block-loaded-at-label="blockLoadedAtLabel"
+          :calls-succeeded="receipt.callsSucceeded"
+          :calls-attempted="receipt.callsAttempted"
+          :registry-version="receipt.registryVersion"
+          :registry-source="registrySource"
+        />
       </div>
     </Transition>
 
+    <WalletConnectDialog
+      ref="walletDialog"
+      :wallets="orderedProviders"
+      :discovery-complete="walletDiscoveryComplete"
+      :remembered-wallet-rdns="rememberedWalletRdns || undefined"
+      @select="connectFromMenu"
+    />
+
     <p
-      class="mt-auto flex items-center gap-2 self-end px-4 pb-4 pt-8 text-xs text-slate sm:px-6 lg:px-8"
+      class="mt-auto flex items-center gap-1 self-end px-4 pb-4 pt-8 text-xs text-slate sm:px-6 lg:px-8"
     >
       <span>built by</span>
       <a
         href="https://own.casa"
         target="_blank"
         rel="noopener noreferrer"
-        class="focus-ring inline-flex min-h-8 items-center rounded-md px-1 opacity-80 transition-opacity hover:opacity-100"
+        class="focus-ring inline-flex min-h-8 items-center rounded-md px-0.5 opacity-80 transition-opacity hover:opacity-100"
         aria-label="OWN"
       >
         <img
           src="/brands/own.svg"
           alt=""
-          class="h-3.5 w-auto"
+          class="relative -top-px h-3.5 w-auto"
           aria-hidden="true"
         />
       </a>

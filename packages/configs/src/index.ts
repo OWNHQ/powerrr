@@ -291,6 +291,28 @@ export type OnchainPriceRoute =
       asset: `0x${string}`;
     }
   | {
+      kind: "chainlink-feed";
+      feed: `0x${string}`;
+      heartbeatSeconds: number;
+      quote: "USD" | "ETH" | "BTC" | "USDC" | "USDT";
+    }
+  | {
+      kind: "erc4626-rate";
+      underlying: `0x${string}`;
+    }
+  | {
+      kind: "contract-rate";
+      underlying: `0x${string}`;
+      method: "exchangeRate" | "getExchangeRate" | "exchangeRateStored";
+      rateScale: string;
+    }
+  | {
+      kind: "conversion-rate";
+      underlying: `0x${string}`;
+      conversionContract: `0x${string}`;
+      method: "getWeETHByeETH";
+    }
+  | {
       kind: "automatic-onchain";
     };
 
@@ -490,6 +512,167 @@ const allReviewedTokens = [
     ) === index,
 );
 
+// Direct proxies published in Chainlink's Ethereum mainnet feed inventory.
+// These feeds are not exposed through the legacy Feed Registry, so each route
+// is bound to one reviewed token contract instead of inferred from its symbol.
+const reviewedDirectChainlinkFeeds: Readonly<
+  Record<
+    string,
+    {
+      feed: `0x${string}`;
+      heartbeatSeconds: number;
+      quote: "USD" | "ETH" | "BTC" | "USDC" | "USDT";
+    }
+  >
+> = {
+  // United Stables U / USD
+  "0xce24439f2d9c6a2289f741120fe202248b666666": {
+    feed: "0xF6351B2dCF0110E76c71C1d319Af2f410454B6f3",
+    heartbeatSeconds: 86_400,
+    quote: "USD",
+  },
+  // POL (published by Chainlink under the legacy MATIC pair name) / USD
+  "0x455e53cbb86018ac2b8092fdcd39d8444affc3f6": {
+    feed: "0x7bAC85A8a13A4BcD8abb3eB7d6b4d632c5a57676",
+    heartbeatSeconds: 86_400,
+    quote: "USD",
+  },
+  // Arbitrum ARB / USD
+  "0xb50721bcf8d664c30412cfbc6cf7a15145234ad1": {
+    feed: "0x31697852a68433DbCc2Ff612c516d69E3D9bd08F",
+    heartbeatSeconds: 86_400,
+    quote: "USD",
+  },
+  // USDD / USDC exchange rate
+  "0x4f8e5de400de08b164e7421b3ee387f461becd1a": {
+    feed: "0xBfC7d98Eea35380ceEC0a1DC1702Ea186723602C",
+    heartbeatSeconds: 86_400,
+    quote: "USDC",
+  },
+  // USYC USD NAV (Aave LlamaGuard)
+  "0x136471a34f6ef19fe571effc1ca711fdb8e49f2b": {
+    feed: "0xE8E65Fb9116875012F5990Ecaab290B3531DbeB9",
+    heartbeatSeconds: 97_200,
+    quote: "USD",
+  },
+  // APXUSD / USD exchange rate
+  "0x98a878b1cd98131b271883b390f68d2c90674665": {
+    feed: "0x651b101f72F82630cf59c68E6EE4305aFBd3B1F5",
+    heartbeatSeconds: 86_400,
+    quote: "USD",
+  },
+  // solvBTC / BTC reference price
+  "0x7a56e1c57c7475ccf742a1832b028f0456652f97": {
+    feed: "0x936B31C428C29713343E05D631e69304f5cF5f49",
+    heartbeatSeconds: 86_400,
+    quote: "BTC",
+  },
+  // MANA / ETH reference price
+  "0x0f5d2fb29fb7d3cfee444a200298f468908cc942": {
+    feed: "0x82A44D92D6c329826dc557c5E1Be6ebeC5D5FeB9",
+    heartbeatSeconds: 86_400,
+    quote: "ETH",
+  },
+  // OETH / ETH reference price
+  "0x856c4efb76c1d1ae02e20ceb03a2a6a08b0b8dc3": {
+    feed: "0x703118C4CbccCBF2AB31913e0f8075fbbb15f563",
+    heartbeatSeconds: 86_400,
+    quote: "ETH",
+  },
+  // Saturn sUSDat USD NAV
+  "0xd166337499e176bbc38a1fbd113ab144e5bd2df7": {
+    feed: "0x73B8E902638a21B4d0319CF99Fa333b2727AD318",
+    heartbeatSeconds: 86_400,
+    quote: "USD",
+  },
+  // uniBTC / BTC exchange rate
+  "0x004e9c3ef86bc1ca1f0bb5c7662861ee93350568": {
+    feed: "0x861d15F8a4059cb918bD6F3670adAEB1220B298f",
+    heartbeatSeconds: 86_400,
+    quote: "BTC",
+  },
+};
+
+// ERC-4626 share contracts whose `asset()` identity and redemption method were
+// reviewed on Ethereum. The wrapper remains a distinct wallet asset; this
+// route only derives its USD value from the exact block-pinned share rate and
+// a separately appraised underlying token.
+const reviewedErc4626PriceRoutes: Readonly<Record<string, `0x${string}`>> = {
+  "0x80ac24aa929eaf5013f6436cda2a7ba190f5cc0b":
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", // syrupUSDC -> USDC
+  "0xc5d6a7b61d18afa11435a889557b068bb9f29930":
+    "0x4f8e5DE400DE08B164E7421B3EE387f461beCD1A", // sUSDD -> USDD
+  "0xbc65ad17c5c0a2a4d159fa5a503f4992c7b545fe":
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", // Spark sUSDC -> USDC
+  "0x38eeb52f0771140d10c4e9a9a72349a329fe8a6a":
+    "0x98A878b1Cd98131B271883B390f68D2c90674665", // apyUSD -> apxUSD
+  "0x5fa487bca6158c64046b2813623e20755091da0b":
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", // thBILL -> USDC
+  "0x7bc3485026ac48b6cf9baf0a377477fff5703af8":
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7", // wrapped Aave USDT -> USDT
+  "0x87b65c4aaffa76881f9e96f3e7ed945ddfc3cd7a":
+    "0xe343167631d89B6Ffc58B88d6b7fB0228795491D", // syrupUSDG -> USDG
+  "0xac3e018457b222d93114458476f3e3416abbe38f":
+    "0x5E8422345238F34275888049021821E8E08CAa1f", // sfrxETH -> frxETH
+  "0x8be3460a480c80728a8c4d7a5d5303c85ba7b3b9":
+    "0x57e114B691Db790C35207b2e685D4A43181e6061", // sENA -> ENA
+  "0xd166337499e176bbc38a1fbd113ab144e5bd2df7":
+    "0x23238f20b894f29041f48D88eE91131C395Aaa71", // sUSDat -> USDat
+  "0xd4fa2d31b7968e448877f69a96de69f5de8cd23e":
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", // wrapped Aave USDC -> USDC
+  "0x8c9532a60e0e7c6bbd2b2c1303f63ace1c3e9811":
+    "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0", // pzETH -> wstETH
+};
+
+const reviewedContractRatePriceRoutes: Readonly<
+  Record<
+    string,
+    {
+      underlying: `0x${string}`;
+      method: "exchangeRate" | "getExchangeRate" | "exchangeRateStored";
+      rateScale: string;
+    }
+  >
+> = {
+  "0xa2e3356610840701bdf5611a53974510ae27e2e1": {
+    underlying: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    method: "exchangeRate",
+    rateScale: "1000000000000000000",
+  }, // WBETH -> ETH
+  "0x4da27a545c0c5b758a6ba100e3a049001de870f5": {
+    underlying: "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9",
+    method: "getExchangeRate",
+    rateScale: "1000000000000000000",
+  }, // stkAAVE -> AAVE
+  "0xfe18ae03741a5b84e39c295ac9c856ed7991c38e": {
+    underlying: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    method: "exchangeRate",
+    rateScale: "1000000000000000000",
+  }, // CDCETH -> ETH
+  "0x5d3a536e4d6dbd6114cc1ead35777bab948e3643": {
+    underlying: "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+    method: "exchangeRateStored",
+    rateScale: "10000000000000000000000000000",
+  }, // cDAI -> DAI; Compound scale = 1e(18 + 18 - 8)
+};
+
+const reviewedConversionRatePriceRoutes: Readonly<
+  Record<
+    string,
+    {
+      underlying: `0x${string}`;
+      conversionContract: `0x${string}`;
+      method: "getWeETHByeETH";
+    }
+  >
+> = {
+  "0x35fa164735182de50811e8e2e824cfb9b6118ac2": {
+    underlying: "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
+    conversionContract: "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
+    method: "getWeETHByeETH",
+  }, // eETH -> weETH; valuation only, not protocol-equivalence
+};
+
 export const ethereumTokenRegistryV1: readonly EthereumTokenRegistryEntry[] =
   allReviewedTokens.map(([address, symbol, name, decimals]) => {
     const existing = ethereumAssetRegistryV1.find(
@@ -498,6 +681,12 @@ export const ethereumTokenRegistryV1: readonly EthereumTokenRegistryEntry[] =
     const ranked = ethereumTop250Snapshot.find(
       (token) => token.address.toLowerCase() === address.toLowerCase(),
     );
+    const directChainlinkFeed =
+      reviewedDirectChainlinkFeeds[address.toLowerCase()];
+    const erc4626Underlying = reviewedErc4626PriceRoutes[address.toLowerCase()];
+    const contractRate = reviewedContractRatePriceRoutes[address.toLowerCase()];
+    const conversionRate =
+      reviewedConversionRatePriceRoutes[address.toLowerCase()];
     return {
       chainId: 1,
       address,
@@ -517,9 +706,29 @@ export const ethereumTokenRegistryV1: readonly EthereumTokenRegistryEntry[] =
               oracle: existing.priceSource.oracle,
               asset: existing.priceSource.asset,
             }
-          : {
-              kind: "automatic-onchain" as const,
-            },
+          : directChainlinkFeed
+            ? {
+                kind: "chainlink-feed" as const,
+                ...directChainlinkFeed,
+              }
+            : erc4626Underlying
+              ? {
+                  kind: "erc4626-rate" as const,
+                  underlying: erc4626Underlying,
+                }
+              : contractRate
+                ? {
+                    kind: "contract-rate" as const,
+                    ...contractRate,
+                  }
+                : conversionRate
+                  ? {
+                      kind: "conversion-rate" as const,
+                      ...conversionRate,
+                    }
+                  : {
+                      kind: "automatic-onchain" as const,
+                    },
     };
   });
 

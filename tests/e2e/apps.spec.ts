@@ -179,6 +179,66 @@ const priceResponse = encodeFunctionResult({
     },
   ],
 });
+const balanceRequestData = encodeFunctionData({
+  abi: multicall3Abi,
+  functionName: "aggregate3",
+  args: [
+    ethereumTokenRegistryV1.map((token) => ({
+      target: token.address,
+      allowFailure: true,
+      callData: encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [account],
+      }),
+    })),
+  ],
+}).toLowerCase();
+const decimalsRequestData = encodeFunctionData({
+  abi: multicall3Abi,
+  functionName: "aggregate3",
+  args: [
+    [wethIndex, unpricedIndex]
+      .sort((left, right) => left - right)
+      .map((index) => ({
+        target: ethereumTokenRegistryV1[index]!.address,
+        allowFailure: true,
+        callData: encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "decimals",
+        }),
+      })),
+  ],
+}).toLowerCase();
+const wethPriceRoute = ethereumTokenRegistryV1[wethIndex]!.priceRoute;
+if (wethPriceRoute.kind !== "aave-oracle") {
+  throw new Error("The E2E WETH fixture requires its reviewed oracle route.");
+}
+const priceRequestData = encodeFunctionData({
+  abi: multicall3Abi,
+  functionName: "aggregate3",
+  args: [
+    [
+      {
+        target: wethPriceRoute.oracle,
+        allowFailure: true,
+        callData: encodeFunctionData({
+          abi: oracleAbi,
+          functionName: "BASE_CURRENCY_UNIT",
+        }),
+      },
+      {
+        target: wethPriceRoute.oracle,
+        allowFailure: true,
+        callData: encodeFunctionData({
+          abi: oracleAbi,
+          functionName: "getAssetPrice",
+          args: [wethPriceRoute.asset],
+        }),
+      },
+    ],
+  ],
+}).toLowerCase();
 const ensNameResponse = encodeFunctionResult({
   abi: ensReverseAbi,
   functionName: "reverse",
@@ -299,11 +359,13 @@ function buildDirectRpcResponses(): Record<string, string> {
 async function installWallet(
   page: Page,
   options: {
+    connectDelayMs?: number;
     nameDelayMs?: number;
     namesAvailable?: boolean;
     nativeBalanceHex?: string;
   } = {},
 ): Promise<void> {
+  const connectDelayMs = options.connectDelayMs ?? 0;
   const nameDelayMs = options.nameDelayMs ?? 0;
   const namesAvailable = options.namesAvailable ?? true;
   const nativeBalanceHex = options.nativeBalanceHex ?? "0x0";
@@ -317,14 +379,17 @@ async function installWallet(
       gweiNameResponse,
       ensResolver,
       gnsNameNft,
+      connectDelayMs,
       nameDelayMs,
       namesAvailable,
       nativeBalanceHex,
       directRpcResponses,
       multicall3,
+      balanceRequestData,
+      decimalsRequestData,
+      priceRequestData,
     }) => {
       const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
-      let multicallNumber = 0;
       const provider = {
         async request({
           method,
@@ -339,7 +404,15 @@ async function installWallet(
           };
           state.__rpcMethods ??= [];
           state.__rpcMethods.push(method);
-          if (method === "eth_requestAccounts" || method === "eth_accounts") {
+          if (method === "eth_requestAccounts") {
+            if (connectDelayMs > 0) {
+              await new Promise((resolve) =>
+                window.setTimeout(resolve, connectDelayMs),
+              );
+            }
+            return [account];
+          }
+          if (method === "eth_accounts") {
             return [account];
           }
           if (method === "eth_chainId") return "0x1";
@@ -379,10 +452,10 @@ async function installWallet(
               return directRpcResponses[data];
             }
             if (to === multicall3.toLowerCase()) {
-              multicallNumber = (multicallNumber % 3) + 1;
-              if (multicallNumber === 1) return balanceResponse;
-              if (multicallNumber === 2) return decimalsResponse;
-              if (multicallNumber === 3) return priceResponse;
+              if (data === balanceRequestData) return balanceResponse;
+              if (data === decimalsRequestData) return decimalsResponse;
+              if (data === priceRequestData) return priceResponse;
+              return "0x";
             }
             return "0x";
           }
@@ -397,6 +470,13 @@ async function installWallet(
         removeListener(event: string, listener: (...args: unknown[]) => void) {
           listeners.get(event)?.delete(listener);
         },
+      };
+      (
+        window as typeof window & {
+          __emitWalletEvent?: (event: string, value?: unknown) => void;
+        }
+      ).__emitWalletEvent = (event, value) => {
+        for (const listener of listeners.get(event) ?? []) listener(value);
       };
       const announce = () =>
         window.dispatchEvent(
@@ -424,11 +504,15 @@ async function installWallet(
       gweiNameResponse,
       ensResolver: ENS_UNIVERSAL_RESOLVER,
       gnsNameNft: GNS_NAME_NFT,
+      connectDelayMs,
       nameDelayMs,
       namesAvailable,
       nativeBalanceHex,
       directRpcResponses,
       multicall3,
+      balanceRequestData,
+      decimalsRequestData,
+      priceRequestData,
     },
   );
 }
@@ -439,7 +523,7 @@ async function connectAndScan(page: Page): Promise<void> {
   await expect(
     page.getByRole("button", { name: "Connect wallet" }).first(),
   ).toBeVisible({ timeout: 15_000 });
-  await page.getByRole("button", { name: "Connect wallet" }).first().click();
+  await chooseTestWallet(page);
   await expect(
     page.getByRole("heading", {
       name: "Wallet snapshot for powerrr.eth · powerrr.gwei",
@@ -454,14 +538,144 @@ async function connectAndScan(page: Page): Promise<void> {
   );
 }
 
+async function chooseTestWallet(page: Page): Promise<void> {
+  const trigger = page.getByRole("button", { name: "Connect wallet" }).first();
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Choose a wallet" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: /Test Wallet/ }).click();
+}
+
+test("wallet choice is explicit, private, and keyboard accessible", async ({
+  page,
+}) => {
+  await installWallet(page);
+  await page.goto("/");
+  const trigger = page.getByRole("button", { name: "Connect wallet" }).first();
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Choose a wallet" });
+  await expect(dialog).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      (
+        window as typeof window & { __rpcMethods?: string[] }
+      ).__rpcMethods?.includes("eth_requestAccounts"),
+    ),
+  ).not.toBe(true);
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
+  await dialog.getByRole("button", { name: /Test Wallet/ }).click();
+  await expect(
+    page.getByRole("heading", { name: /Wallet snapshot for/ }),
+  ).toBeVisible();
+  await expect(page.getByText("powerrr.eth", { exact: true })).toBeVisible();
+  await expect(page.getByText("0x0000…00A1", { exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(() => localStorage.getItem("powerrr:last-wallet-rdns")),
+  ).toBe("test.wallet");
+  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(
+    account,
+  );
+
+  await page.getByRole("button", { name: /Disconnect wallet/ }).click();
+  await expect(
+    page.getByText("Wallet disconnected.", { exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => localStorage.getItem("powerrr:last-wallet-rdns")),
+  ).toBeNull();
+});
+
+test("wallet account, network, and disconnect events replace stale state", async ({
+  page,
+}) => {
+  await connectAndScan(page);
+  const changedAccount = "0x00000000000000000000000000000000000000B2";
+  const blockReadsBefore = await page.evaluate(
+    () =>
+      (
+        window as typeof window & { __rpcMethods?: string[] }
+      ).__rpcMethods?.filter((method) => method === "eth_blockNumber").length ??
+      0,
+  );
+
+  await page.evaluate((nextAccount) => {
+    (
+      window as typeof window & {
+        __emitWalletEvent?: (event: string, value?: unknown) => void;
+      }
+    ).__emitWalletEvent?.("accountsChanged", [nextAccount]);
+  }, changedAccount);
+  await expect(page.getByText("0x0000…00B2", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /Wallet snapshot for/ }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as typeof window & { __rpcMethods?: string[] }
+          ).__rpcMethods?.filter((method) => method === "eth_blockNumber")
+            .length ?? 0,
+      ),
+    )
+    .toBeGreaterThan(blockReadsBefore);
+
+  await page.evaluate(() => {
+    (
+      window as typeof window & {
+        __emitWalletEvent?: (event: string, value?: unknown) => void;
+      }
+    ).__emitWalletEvent?.("chainChanged", "0x89");
+  });
+  await expect(
+    page.getByText(/Powerrr supports Ethereum Mainnet/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /Wallet snapshot for/ }),
+  ).toHaveCount(0);
+
+  await page.evaluate(() => {
+    (
+      window as typeof window & {
+        __emitWalletEvent?: (event: string, value?: unknown) => void;
+      }
+    ).__emitWalletEvent?.("chainChanged", "0x1");
+  });
+  await expect(
+    page.getByRole("heading", { name: /Wallet snapshot for/ }),
+  ).toBeVisible();
+
+  await page.evaluate(() => {
+    (
+      window as typeof window & {
+        __emitWalletEvent?: (event: string, value?: unknown) => void;
+      }
+    ).__emitWalletEvent?.("disconnect");
+  });
+  await expect(
+    page.getByText("Wallet disconnected.", { exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => localStorage.getItem("powerrr:last-wallet-rdns")),
+  ).toBeNull();
+});
+
 test("wallet motion communicates active work and respects reduced motion", async ({
   page,
 }) => {
-  await installWallet(page, { nameDelayMs: 700 });
+  await installWallet(page, { connectDelayMs: 1_200, nameDelayMs: 3_000 });
   await page.goto("/");
-  await page.getByRole("button", { name: "Connect wallet" }).first().click();
+  await chooseTestWallet(page);
   await expect(
-    page.getByRole("heading", { name: "Checking your wallet" }),
+    page.getByRole("heading", {
+      name: /Connecting to Test Wallet|Checking your wallet/,
+    }),
   ).toBeVisible();
   await expect(page.locator(".scan-dial-sweep")).toHaveCSS(
     "animation-name",
@@ -473,10 +687,23 @@ test("wallet motion communicates active work and respects reduced motion", async
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload();
-  await page.getByRole("button", { name: "Connect wallet" }).first().click();
   await expect(
     page.getByRole("heading", { name: "Checking your wallet" }),
   ).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      (
+        window as typeof window & { __rpcMethods?: string[] }
+      ).__rpcMethods?.includes("eth_accounts"),
+    ),
+  ).toBe(true);
+  expect(
+    await page.evaluate(() =>
+      (
+        window as typeof window & { __rpcMethods?: string[] }
+      ).__rpcMethods?.includes("eth_requestAccounts"),
+    ),
+  ).toBe(false);
   const reducedDurationMs = await page
     .locator(".scan-dial-sweep")
     .evaluate(
@@ -503,9 +730,9 @@ test("wallet read disclosure opens without shifting the landing layout", async (
 test("wallet identity resolves before its final label is published", async ({
   page,
 }) => {
-  await installWallet(page, { nameDelayMs: 350 });
+  await installWallet(page, { nameDelayMs: 1_500 });
   await page.goto("/");
-  await page.getByRole("button", { name: "Connect wallet" }).first().click();
+  await chooseTestWallet(page);
 
   await expect(
     page.getByRole("button", { name: "Resolving wallet name" }),
@@ -521,9 +748,9 @@ test("wallet identity resolves before its final label is published", async ({
 test("wallet identity falls back to the address after name lookup completes", async ({
   page,
 }) => {
-  await installWallet(page, { nameDelayMs: 800, namesAvailable: false });
+  await installWallet(page, { nameDelayMs: 1_500, namesAvailable: false });
   await page.goto("/");
-  await page.getByRole("button", { name: "Connect wallet" }).first().click();
+  await chooseTestWallet(page);
 
   await expect(
     page.getByRole("button", { name: "Resolving wallet name" }),
@@ -540,10 +767,23 @@ test("the interface stays light regardless of system preference", async ({
   await page.goto("/");
   await expect(page.getByTestId("theme-toggle")).toHaveCount(0);
   await expect(page.locator("html")).not.toHaveAttribute("data-theme");
-  await expect(page.getByText("No browser wallet found")).toBeVisible();
+  await expect(
+    page.getByText("No browser wallet found", { exact: true }),
+  ).toBeVisible({ timeout: 15_000 });
   await expect(
     page.getByRole("button", { name: "Connect wallet" }),
-  ).toHaveCount(0);
+  ).toHaveCount(1);
+  await page.getByRole("button", { name: "Connect wallet" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Choose a wallet" }),
+  ).toContainText("No browser wallet detected");
+  await expect(
+    page.getByRole("link", { name: "What is a wallet?" }),
+  ).toHaveAttribute("href", "https://ethereum.org/wallets/");
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("dialog", { name: "Choose a wallet" }),
+  ).not.toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   expect(
     await page.evaluate(() => document.fonts.check('16px "Inter Variable"')),
@@ -570,11 +810,105 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
 
   await expect(page.getByText("WETH", { exact: true })).toBeVisible();
   await expect(page.getByText(/\$6,000/).first()).toBeVisible();
+  const priceSourceButton = page.getByRole("button", {
+    name: "Show price source for WETH",
+  });
+  const priceSourcePanelId =
+    await priceSourceButton.getAttribute("aria-controls");
+  const priceSourceTriggerId = await priceSourceButton.getAttribute("id");
+  expect(priceSourcePanelId).not.toBeNull();
+  expect(priceSourceTriggerId).not.toBeNull();
+  const priceSourcePanel = page.locator(`#${priceSourcePanelId}`);
+  const priceSourceTrigger = page.locator(`#${priceSourceTriggerId}`);
+  await expect(priceSourceButton).toHaveAttribute("aria-expanded", "false");
+  await expect(priceSourcePanel).not.toBeVisible();
+  await priceSourceButton.hover();
+  await expect(priceSourcePanel).not.toBeVisible();
+  await priceSourceButton.focus();
+  await expect(priceSourcePanel).not.toBeVisible();
+  await priceSourceButton.click();
+  const closePriceSourceButton = page.getByRole("button", {
+    name: "Close price source for WETH",
+  });
+  await expect(priceSourceTrigger).toHaveAttribute("aria-expanded", "true");
+  await expect(priceSourceTrigger).not.toBeVisible();
+  await expect(closePriceSourceButton).toBeFocused();
+  await expect(priceSourcePanel).toBeVisible();
+  await page.mouse.move(0, 0);
+  await expect(priceSourcePanel).toBeVisible();
+  await expect(priceSourcePanel.locator("p")).toHaveCSS("user-select", "text");
+  await expect(
+    priceSourcePanel.getByText("Oracle:", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    priceSourcePanel.getByText("0x54586bE62E3c3580375aE3723C145253060Ca0C2", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", {
+      name: "View oracle contract for WETH on Etherscan",
+    }),
+  ).toHaveAttribute(
+    "href",
+    "https://etherscan.io/address/0x54586bE62E3c3580375aE3723C145253060Ca0C2",
+  );
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          (
+            window as typeof window & { __copiedPriceSource?: string }
+          ).__copiedPriceSource = value;
+        },
+      },
+    });
+  });
+  await page
+    .getByRole("button", { name: "Copy oracle address for WETH" })
+    .click();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as typeof window & { __copiedPriceSource?: string })
+          .__copiedPriceSource,
+    ),
+  ).toBe("0x54586bE62E3c3580375aE3723C145253060Ca0C2");
+  await expect(
+    page.getByRole("button", { name: "Price source copied" }),
+  ).toBeVisible();
+  await closePriceSourceButton.click();
+  await expect(priceSourcePanel).not.toBeVisible();
+  await expect(priceSourceButton).toBeFocused();
+  await priceSourceButton.click();
+  await page.keyboard.press("Escape");
+  await expect(priceSourcePanel).not.toBeVisible();
+  await expect(priceSourceButton).toBeFocused();
+  const wethTile = page.locator('[data-collateral-asset="WETH"]');
+  const wethTileBounds = await wethTile.boundingBox();
+  expect(wethTileBounds).not.toBeNull();
+  expect(wethTileBounds?.height ?? 0).toBeLessThanOrEqual(88);
+  await priceSourceButton.click();
+  await page.locator("[data-asset-workspace-main] > div").first().click();
+  await expect(priceSourceButton).toHaveAttribute("aria-expanded", "false");
+  await expect(priceSourcePanel).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Compare 1 selected asset" }),
+  ).toBeVisible();
   const unavailablePrices = page.getByText("Price unavailable (1)", {
     exact: true,
   });
   await expect(unavailablePrices).toBeVisible();
   await expect(unavailablePrices.locator("..")).not.toHaveAttribute("open");
+  const estimateDetails = page.locator("[data-estimate-details]");
+  await expect(page.locator("#workflow").locator("..")).toHaveCSS(
+    "transform",
+    "none",
+  );
+  const estimateTopBeforeOpen = await estimateDetails.evaluate(
+    (element) => element.getBoundingClientRect().top + window.scrollY,
+  );
   await page.getByText("About this estimate").click();
   await expect(
     page.getByText(
@@ -586,16 +920,28 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
   await expect(
     page.getByText(/No account, balance, or request was posted/),
   ).toBeVisible();
+  const estimateTopAfterOpen = await estimateDetails.evaluate(
+    (element) => element.getBoundingClientRect().top + window.scrollY,
+  );
+  expect(
+    Math.abs(estimateTopAfterOpen - estimateTopBeforeOpen),
+  ).toBeLessThanOrEqual(1);
   const assetWorkspace = page.locator("[data-asset-workspace-main]");
   const selectionSummary = page.locator("[data-selection-summary]");
   const assetWorkspaceBounds = await assetWorkspace.boundingBox();
   const selectionSummaryBounds = await selectionSummary.boundingBox();
+  const estimateDetailsBounds = await estimateDetails.boundingBox();
   expect(assetWorkspaceBounds).not.toBeNull();
   expect(selectionSummaryBounds).not.toBeNull();
+  expect(estimateDetailsBounds).not.toBeNull();
   expect(selectionSummaryBounds?.x ?? 0).toBeGreaterThan(
     (assetWorkspaceBounds?.x ?? 0) + (assetWorkspaceBounds?.width ?? 0),
   );
   await expect(selectionSummary).toHaveCSS("position", "sticky");
+  expect(
+    (estimateDetailsBounds?.y ?? 0) -
+      ((assetWorkspaceBounds?.y ?? 0) + (assetWorkspaceBounds?.height ?? 0)),
+  ).toBeLessThanOrEqual(24);
   await expect(
     selectionSummary.getByRole("button", {
       name: "Compare 1 selected asset",
@@ -656,21 +1002,33 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
     collateralCoverage.getByText(
       "All selected collateral is included by at least one currently available pooled estimate.",
     ),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     collateralCoverage.getByText(
       "Some provider sources were unavailable, so pooled coverage may be understated.",
     ),
   ).toBeVisible();
-  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("3,000");
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("2,400");
+  await expect(page.getByText("$4,800 ceiling", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(
+      "Ceiling and projected LTV use the highest pooled estimate ($4,800).",
+      { exact: true },
+    ),
+  ).toBeVisible();
   const fiftyPercentLtv = page.getByRole("button", {
     name: /50% projected LTV/,
   });
+  await expect(fiftyPercentLtv).toHaveAccessibleName("50% projected LTV");
+  await expect(page.getByText("Morpho reference", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(page.getByText("current", { exact: true })).toHaveCount(0);
   await expect(fiftyPercentLtv).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: /25% projected LTV/ }).click();
-  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("1,500");
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("1,200");
   await fiftyPercentLtv.click();
-  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("3,000");
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("2,400");
   await expect(page.locator('input[type="range"]')).toHaveCount(1);
   await page.getByLabel("Borrow amount in USDC").fill("1000");
   await expect(page.getByText(/pooled providers cover \$1,000/)).toBeVisible();
@@ -707,11 +1065,6 @@ test("pooled risk responds to the selected amount without an always-green state"
 }) => {
   await connectAndScan(page);
   await page.getByRole("button", { name: "Compare 1 selected asset" }).click();
-  await expect(
-    page.getByText(
-      /for comparison only—not approved credit or a preferred borrowing level/i,
-    ),
-  ).toBeVisible();
   await expect(page.getByText("Amount shortcuts")).toHaveCount(0);
   await page.getByLabel("Borrow amount in USDC").fill("1000");
   const aave = page.locator('[data-protocol-id="aave"]');
@@ -748,12 +1101,17 @@ test("pooled risk responds to the selected amount without an always-green state"
   await expect(amountSlider).toBeVisible();
   await amountSlider.fill("0");
   await expect(
-    aave.locator("a", { hasText: "Review on Aave" }),
+    aave.locator("a", { hasText: "Review Aave Ethereum Core V3" }),
   ).toHaveAttribute("aria-disabled", "true");
   await amountSlider.fill("1000");
-  await expect(
-    aave.getByRole("link", { name: "Review on Aave" }),
-  ).toHaveAttribute("aria-disabled", "false");
+  const aaveMarketLink = aave.getByRole("link", {
+    name: "Review Aave Ethereum Core V3",
+  });
+  await expect(aaveMarketLink).toHaveAttribute("aria-disabled", "false");
+  await expect(aaveMarketLink).toHaveAttribute(
+    "href",
+    "https://app.aave.com/?marketName=proto_mainnet_v3",
+  );
 });
 
 test("native ETH and WETH both contribute to a WETH collateral path", async ({
@@ -763,10 +1121,13 @@ test("native ETH and WETH both contribute to a WETH collateral path", async ({
     nativeBalanceHex: "0xde0b6b3a7640000",
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Connect wallet" }).first().click();
+  await chooseTestWallet(page);
   await expect(
     page.getByRole("heading", { name: /Wallet snapshot for/ }),
   ).toBeVisible();
+  await expect(
+    page.getByText("Conversion required", { exact: true }),
+  ).toHaveCount(0);
   await page.getByRole("button", { name: "Compare 2 selected assets" }).click();
 
   const collateralCoverage = page.locator("[data-collateral-coverage]");
@@ -833,7 +1194,7 @@ test("page-end credit links to OWN without listing it as a borrowing provider", 
   await expect(ownCredit).toHaveAttribute("href", "https://own.casa");
   await expect(ownCredit).toHaveAttribute("rel", "noopener noreferrer");
 
-  await page.getByRole("button", { name: "Connect wallet" }).first().click();
+  await chooseTestWallet(page);
   await expect(
     page.getByRole("heading", { name: /Wallet snapshot for/ }),
   ).toBeVisible();
@@ -856,15 +1217,42 @@ test("the static result remains usable on a phone viewport", async ({
     .locator("[data-asset-workspace-main]")
     .boundingBox();
   const mobileSelectionSummary = page.locator("[data-selection-summary]");
+  const mobileEstimateDetails = page.locator("[data-estimate-details]");
   const mobileSelectionSummaryBounds =
     await mobileSelectionSummary.boundingBox();
+  const mobileEstimateDetailsBounds = await mobileEstimateDetails.boundingBox();
+  await expect(page.locator("#workflow").locator("..")).toHaveCSS(
+    "transform",
+    "none",
+  );
+  const mobileEstimateTopBeforeOpen = await mobileEstimateDetails.evaluate(
+    (element) => element.getBoundingClientRect().top + window.scrollY,
+  );
+  await mobileEstimateDetails.locator("summary").click();
+  const mobileEstimateTopAfterOpen = await mobileEstimateDetails.evaluate(
+    (element) => element.getBoundingClientRect().top + window.scrollY,
+  );
+  expect(
+    Math.abs(mobileEstimateTopAfterOpen - mobileEstimateTopBeforeOpen),
+  ).toBeLessThanOrEqual(1);
+  await mobileEstimateDetails.locator("summary").click();
   expect(mobileAssetWorkspaceBounds).not.toBeNull();
   expect(mobileSelectionSummaryBounds).not.toBeNull();
+  expect(mobileEstimateDetailsBounds).not.toBeNull();
   expect(mobileSelectionSummaryBounds?.y ?? 0).toBeGreaterThan(
     (mobileAssetWorkspaceBounds?.y ?? 0) +
       (mobileAssetWorkspaceBounds?.height ?? 0),
   );
   await expect(mobileSelectionSummary).toHaveCSS("position", "static");
+  expect(mobileEstimateDetailsBounds?.y ?? 0).toBeGreaterThan(
+    (mobileSelectionSummaryBounds?.y ?? 0) +
+      (mobileSelectionSummaryBounds?.height ?? 0),
+  );
+  expect(
+    (mobileEstimateDetailsBounds?.y ?? 0) -
+      ((mobileSelectionSummaryBounds?.y ?? 0) +
+        (mobileSelectionSummaryBounds?.height ?? 0)),
+  ).toBeLessThanOrEqual(24);
   await page.getByRole("button", { name: "Compare 1 selected asset" }).click();
   await page.getByLabel("Borrow amount in USDC").fill("1000");
   const mobileComparisonControl = page.locator("[data-comparison-control]");
@@ -904,7 +1292,7 @@ test("the static result remains usable on a phone viewport", async ({
   const aave = page.locator('[data-protocol-id="aave"]');
   await aave.getByRole("button").first().click();
   await expect(
-    aave.getByRole("link", { name: "Review on Aave" }),
+    aave.getByRole("link", { name: "Review Aave Ethereum Core V3" }),
   ).toBeVisible();
   expect(
     await page.evaluate(

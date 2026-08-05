@@ -43,6 +43,8 @@ type EstimatorSnapshot = {
   providerStatuses: ProviderStatus[];
 };
 
+const LAST_WALLET_RDNS_KEY = "powerrr:last-wallet-rdns";
+
 export function useStaticEstimator() {
   const announcedProviders = shallowRef<AnnouncedProvider[]>([]);
   const selectedWallet = shallowRef<AnnouncedProvider | null>(null);
@@ -66,14 +68,33 @@ export function useStaticEstimator() {
   );
   const error = ref("");
   const isScanning = ref(false);
+  const isConnecting = ref(false);
+  const connectionSlow = ref(false);
+  const connectionTimedOut = ref(false);
   const isRefreshing = ref(false);
   const isComparing = ref(false);
   const walletDiscoveryComplete = ref(false);
   const selectedCollateralTokens = ref<string[]>([]);
+  const walletNotice = ref("");
+  const rememberedWalletRdns = ref("");
   let connectedProvider: Eip1193Provider | null = null;
   let removeConnectedListeners: (() => void) | null = null;
   let providerAnnouncementHandler: ((event: Event) => void) | null = null;
   let fallbackTimer: number | null = null;
+  let connectionSlowTimer: number | null = null;
+  let connectionTimeoutTimer: number | null = null;
+  let connectionAttempt = 0;
+  let scanAttempt = 0;
+  let reconnecting = false;
+
+  const orderedProviders = computed(() =>
+    [...announcedProviders.value].sort((left, right) => {
+      const leftRecent = left.descriptor.rdns === rememberedWalletRdns.value;
+      const rightRecent = right.descriptor.rdns === rememberedWalletRdns.value;
+      if (leftRecent !== rightRecent) return leftRecent ? -1 : 1;
+      return left.descriptor.name.localeCompare(right.descriptor.name);
+    }),
+  );
 
   const valuedAssets = computed(() =>
     filterSmallBalances(
@@ -143,11 +164,14 @@ export function useStaticEstimator() {
       return;
     }
     announcedProviders.value = [...announcedProviders.value, candidate];
+    void reconnectRememberedWallet(candidate);
   }
 
   async function connect(wallet: AnnouncedProvider): Promise<void> {
-    if (isScanning.value) return;
+    if (isScanning.value || isConnecting.value) return;
+    const attempt = ++connectionAttempt;
     clearResult();
+    walletNotice.value = "";
     selectedWallet.value = wallet;
     connectedProvider = createReadOnlyProvider(wallet.provider);
     progress.value = {
@@ -156,41 +180,71 @@ export function useStaticEstimator() {
       total: 1,
       message: `Waiting for ${wallet.descriptor.name} account permission.`,
     };
+    isConnecting.value = true;
     isScanning.value = true;
+    startConnectionTimers();
     try {
       const accounts = await connectedProvider.request<string[]>({
         method: "eth_requestAccounts",
       });
+      if (attempt !== connectionAttempt) return;
       if (!accounts[0])
         throw new Error("The wallet did not expose an account.");
       account.value = accounts[0];
       attachConnectedListeners(connectedProvider);
+      rememberWallet(wallet);
+      stopConnectionTimers();
+      isConnecting.value = false;
       await scan();
     } catch (cause) {
+      if (attempt !== connectionAttempt) return;
       error.value = friendlyError(cause);
       progress.value = null;
     } finally {
-      isScanning.value = false;
+      if (attempt === connectionAttempt) {
+        stopConnectionTimers();
+        isConnecting.value = false;
+        isScanning.value = false;
+      }
     }
+  }
+
+  function cancelConnection(): void {
+    if (!isConnecting.value) return;
+    connectionAttempt += 1;
+    stopConnectionTimers();
+    isConnecting.value = false;
+    isScanning.value = false;
+    connectedProvider = null;
+    selectedWallet.value = null;
+    account.value = "";
+    progress.value = null;
+    error.value = "";
+    walletNotice.value = "Connection cancelled.";
   }
 
   async function scan(
     options: { preserveSelection?: boolean } = {},
   ): Promise<void> {
     if (!connectedProvider || !selectedWallet.value || !account.value) return;
+    const attempt = ++scanAttempt;
+    const provider = connectedProvider;
+    const wallet = selectedWallet.value;
+    const scanAccount = account.value;
     const refreshing = Boolean(receipt.value);
     error.value = "";
     if (refreshing) isRefreshing.value = true;
     else isScanning.value = true;
     try {
       const result = await scanConnectedWallet({
-        provider: connectedProvider,
-        account: account.value,
-        walletName: selectedWallet.value.descriptor.name,
+        provider,
+        account: scanAccount,
+        walletName: wallet.descriptor.name,
         onProgress: (next) => {
-          progress.value = next;
+          if (attempt === scanAttempt) progress.value = next;
         },
       });
+      if (attempt !== scanAttempt) return;
       const defaultCollateralTokens = filterSmallBalances(
         result.assets.filter(
           (asset) =>
@@ -225,16 +279,19 @@ export function useStaticEstimator() {
       };
       const [names, providerSnapshot] = await Promise.all([
         resolveWalletNames({
-          provider: connectedProvider,
+          provider,
           account: result.receipt.account,
           blockNumber: result.receipt.blockNumber,
         }),
-        loadProviderSnapshots(
-          connectedProvider,
-          positiveAssets,
-          result.receipt,
-        ),
+        loadProviderSnapshots(provider, positiveAssets, result.receipt),
       ]);
+      if (
+        attempt !== scanAttempt ||
+        connectedProvider !== provider ||
+        account.value.toLowerCase() !== scanAccount.toLowerCase()
+      ) {
+        return;
+      }
       // Publish the complete wallet and protocol snapshot atomically. Nothing
       // after this point needs the wallet provider until an explicit refresh.
       selectedCollateralTokens.value = nextSelectedTokens;
@@ -254,11 +311,14 @@ export function useStaticEstimator() {
         message: "Scan and local calculations complete.",
       };
     } catch (cause) {
+      if (attempt !== scanAttempt) return;
       error.value = friendlyError(cause);
       progress.value = null;
     } finally {
-      if (refreshing) isRefreshing.value = false;
-      else isScanning.value = false;
+      if (attempt === scanAttempt) {
+        if (refreshing) isRefreshing.value = false;
+        else isScanning.value = false;
+      }
     }
   }
 
@@ -281,12 +341,18 @@ export function useStaticEstimator() {
   }
 
   function disconnect(): void {
+    connectionAttempt += 1;
+    scanAttempt += 1;
+    stopConnectionTimers();
     removeConnectedListeners?.();
     removeConnectedListeners = null;
     connectedProvider = null;
     selectedWallet.value = null;
     account.value = "";
     clearResult();
+    rememberedWalletRdns.value = "";
+    window.localStorage.removeItem(LAST_WALLET_RDNS_KEY);
+    walletNotice.value = "Wallet disconnected.";
   }
 
   function clearResult(): void {
@@ -314,28 +380,119 @@ export function useStaticEstimator() {
 
   function attachConnectedListeners(provider: Eip1193Provider): void {
     removeConnectedListeners?.();
-    const invalidate = () => {
+    const accountsChanged = (value: unknown) => {
+      const next =
+        Array.isArray(value) && typeof value[0] === "string" ? value[0] : "";
+      if (!next) {
+        disconnect();
+        return;
+      }
+      if (next.toLowerCase() === account.value.toLowerCase()) return;
+      account.value = next;
       clearResult();
-      error.value =
-        "The wallet account or network changed. Run a new scan so every read uses one consistent account and block.";
-      void provider
-        .request<string[]>({ method: "eth_accounts" })
-        .then((next) => {
-          account.value = next[0] ?? "";
-        });
+      walletNotice.value = `Account changed to ${compactAddress(next)}. Reading a new one-block snapshot.`;
+      void scan();
+    };
+    const chainChanged = (value: unknown) => {
+      scanAttempt += 1;
+      clearResult();
+      const chainId =
+        typeof value === "string" ? Number.parseInt(value, 16) : 0;
+      if (chainId !== 1) {
+        error.value =
+          "Powerrr supports Ethereum Mainnet. Switch networks to run a new scan.";
+        return;
+      }
+      walletNotice.value =
+        "Ethereum Mainnet selected. Reading a new one-block snapshot.";
+      void scan();
     };
     const disconnected = () => disconnect();
-    provider.on?.("accountsChanged", invalidate);
-    provider.on?.("chainChanged", invalidate);
+    provider.on?.("accountsChanged", accountsChanged);
+    provider.on?.("chainChanged", chainChanged);
     provider.on?.("disconnect", disconnected);
     removeConnectedListeners = () => {
-      provider.removeListener?.("accountsChanged", invalidate);
-      provider.removeListener?.("chainChanged", invalidate);
+      provider.removeListener?.("accountsChanged", accountsChanged);
+      provider.removeListener?.("chainChanged", chainChanged);
       provider.removeListener?.("disconnect", disconnected);
     };
   }
 
+  function rememberWallet(wallet: AnnouncedProvider): void {
+    rememberedWalletRdns.value = wallet.descriptor.rdns;
+    window.localStorage.setItem(LAST_WALLET_RDNS_KEY, wallet.descriptor.rdns);
+  }
+
+  async function reconnectRememberedWallet(
+    wallet: AnnouncedProvider,
+  ): Promise<void> {
+    if (
+      reconnecting ||
+      isScanning.value ||
+      account.value ||
+      !rememberedWalletRdns.value ||
+      wallet.descriptor.rdns !== rememberedWalletRdns.value
+    ) {
+      return;
+    }
+    reconnecting = true;
+    const provider = createReadOnlyProvider(wallet.provider);
+    try {
+      const accounts = await provider.request<string[]>({
+        method: "eth_accounts",
+      });
+      if (!accounts[0]) {
+        rememberedWalletRdns.value = "";
+        window.localStorage.removeItem(LAST_WALLET_RDNS_KEY);
+        return;
+      }
+      selectedWallet.value = wallet;
+      connectedProvider = provider;
+      account.value = accounts[0];
+      attachConnectedListeners(provider);
+      progress.value = {
+        phase: "connecting",
+        completed: 1,
+        total: 1,
+        message: `Reconnecting to ${wallet.descriptor.name}.`,
+      };
+      isScanning.value = true;
+      await scan();
+    } catch {
+      removeConnectedListeners?.();
+      removeConnectedListeners = null;
+      connectedProvider = null;
+      selectedWallet.value = null;
+      account.value = "";
+      clearResult();
+    } finally {
+      isScanning.value = false;
+      reconnecting = false;
+    }
+  }
+
+  function startConnectionTimers(): void {
+    stopConnectionTimers();
+    connectionSlowTimer = window.setTimeout(() => {
+      connectionSlow.value = true;
+    }, 5_000);
+    connectionTimeoutTimer = window.setTimeout(() => {
+      connectionTimedOut.value = true;
+    }, 15_000);
+  }
+
+  function stopConnectionTimers(): void {
+    if (connectionSlowTimer) window.clearTimeout(connectionSlowTimer);
+    if (connectionTimeoutTimer) window.clearTimeout(connectionTimeoutTimer);
+    connectionSlowTimer = null;
+    connectionTimeoutTimer = null;
+    connectionSlow.value = false;
+    connectionTimedOut.value = false;
+  }
+
   onMounted(() => {
+    rememberedWalletRdns.value =
+      window.localStorage.getItem(LAST_WALLET_RDNS_KEY) ?? "";
     providerAnnouncementHandler = (event: Event) => {
       const detail = (event as CustomEvent).detail as
         | {
@@ -382,6 +539,7 @@ export function useStaticEstimator() {
   });
 
   onBeforeUnmount(() => {
+    stopConnectionTimers();
     removeConnectedListeners?.();
     if (providerAnnouncementHandler) {
       window.removeEventListener(
@@ -394,7 +552,9 @@ export function useStaticEstimator() {
 
   return {
     announcedProviders,
+    orderedProviders,
     selectedWallet,
+    rememberedWalletRdns,
     account,
     compactAccount,
     resolvedWalletNames,
@@ -411,11 +571,16 @@ export function useStaticEstimator() {
     quotes,
     providerStatuses,
     error,
+    walletNotice,
     isScanning,
+    isConnecting,
+    connectionSlow,
+    connectionTimedOut,
     isRefreshing,
     isComparing,
     walletDiscoveryComplete,
     connect,
+    cancelConnection,
     scan,
     refresh,
     switchToMainnet,
@@ -527,9 +692,13 @@ function safeWalletIcon(icon: string | undefined): boolean {
 function friendlyError(cause: unknown): string {
   if (cause instanceof Error) {
     if (/user rejected|denied|4001/i.test(cause.message)) {
-      return "The wallet permission request was declined. Nothing was read or stored.";
+      return "Connection cancelled. Choose the wallet to try again; nothing was read or stored.";
     }
     return cause.message;
   }
   return "The wallet returned an unexpected response.";
+}
+
+function compactAddress(address: string): string {
+  return address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "";
 }

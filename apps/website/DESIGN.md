@@ -64,7 +64,7 @@ typography:
     fontWeight: 400
     lineHeight: "1.5rem"
   label:
-    fontFamily: "Inter Variable, Inter, ui-sans-serif, system-ui, sans-serif"
+    fontFamily: "Space Mono, ui-monospace, SFMono-Regular, Menlo, monospace"
     fontSize: "0.75rem"
     fontWeight: 650
     lineHeight: "1rem"
@@ -181,11 +181,13 @@ The palette combines Mineral Red and Limestone Paper with warm near-black and um
 
 ## Typography
 
-**Display Font:** Self-hosted Inter Variable with the system sans-serif fallback stack.
+**Display Font:** Self-hosted Inter Variable. The custom `VCR_OSD_MONO`, `Screener`, and `Supreme` stack is reserved for compact wordmark treatment, with self-hosted Space Mono as its deterministic fallback.
 
 **Body Font:** Self-hosted Inter Variable with the system sans-serif fallback stack.
 
-**Character:** One pragmatic sans-serif family keeps the interface neutral and computational. The app ships one variable weight asset with `font-display: swap`; it does not request a separate italic or second family. Hierarchy comes from size, weight, spacing, and tabular lining figures rather than from decorative type pairing.
+**Mono Font:** Self-hosted Space Mono for short labels, numeric readouts, and tabular figures.
+
+**Character:** Inter keeps the product promise, explanatory copy, and operational copy calm and readable, matching OWN's headline typography. Space Mono gives labels and live values a more instrument-like voice, while the reviewed custom display stack is reserved for compact wordmark treatment. Font changes must not alter the established size, spacing, or interaction hierarchy.
 
 ### Hierarchy
 

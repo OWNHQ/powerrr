@@ -19,11 +19,19 @@ the exact reason LINK and MKR missed the original ranking join cannot be
 reconstructed. Future registry generations must emit input hashes and rejected
 token reasons.
 
+The [2026-08-05 latest-block coverage audit](../audits/ethereum-token-price-coverage-2026-08-05.md)
+replayed the production hierarchy for all 252 contracts and investigated every
+failure against contract state, recent transfers, and broader direct V2
+liquidity. It found no high-confidence dead Ethereum contract, so the audit did
+not remove any registry entry.
+
 Live wallet discovery is deliberately finite and never enumerates arbitrary
-wallet tokens. The browser first uses reviewed protocol oracles, then a fresh
-Chainlink USD feed, then a liquid Uniswap V3 30-minute TWAP. A high-liquidity
-spot route is displayed only with low confidence. Failed routes remain visible
-with an asset-specific reason.
+wallet tokens. The browser uses reviewed Aave and Spark oracles, fresh
+Chainlink direct and Feed Registry routes, exact reviewed wrapper/share rates,
+and finally a liquid Uniswap V3 30-minute TWAP. ETH-, BTC-, and stablecoin-
+quoted feeds use an independently appraised quote asset from the same block.
+No current-block DEX spot price is accepted. Failed routes remain visible with
+an asset-specific reason.
 
 | Category       | Symbol | Canonical Ethereum address                   |
 | -------------- | ------ | -------------------------------------------- |
@@ -64,9 +72,9 @@ explicit protocol token, converted raw balance, rate, and `requiredAction:
 "wrap"` metadata. They are shown as wrapping-required.
 
 Balances are read in deterministic JSON-RPC chunks at the resolved block.
-Oracle and DEX reads happen only for positive balances. Unsupported and
-unpriced positive balances remain visible; there is no token indexer or
-portfolio API fallback.
+Oracle, conversion, and DEX reads happen only for positive balances and their
+explicit pricing dependencies. Unsupported and unpriced positive balances
+remain visible; there is no token indexer or portfolio API fallback.
 
 No other family is merged: WBTC/cbBTC/tBTC, stablecoins, savings wrappers, and
 arbitrary market-swappable assets remain independent.

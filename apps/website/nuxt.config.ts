@@ -26,7 +26,12 @@ export default defineNuxtConfig({
     },
   },
   modules: ["@nuxtjs/tailwindcss", "@nuxt/eslint"],
-  css: ["@fontsource-variable/inter/wght.css", "~/assets/css/tailwind.css"],
+  css: [
+    "@fontsource-variable/inter/wght.css",
+    "@fontsource/space-mono/400.css",
+    "@fontsource/space-mono/700.css",
+    "~/assets/css/tailwind.css",
+  ],
   typescript: {
     strict: true,
     typeCheck: true,
