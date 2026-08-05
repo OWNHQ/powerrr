@@ -61,14 +61,17 @@ const statusTone = computed(() => {
   if (props.status?.status === "unavailable") return "warning";
   if (capacity.value <= 0) return "muted";
   if (props.amountUsd <= 0) return "muted";
-  if (props.amountUsd <= capacity.value) return "available";
+  if (preview.value?.actionable) return "available";
   return "warning";
 });
 const statusLabel = computed(() => {
   if (props.status?.status === "unavailable") return "Data unavailable";
   if (capacity.value <= 0) return "No eligible collateral";
   if (props.amountUsd <= 0) return "Enter an amount to compare";
-  if (props.amountUsd <= capacity.value) return "Covers request";
+  if (preview.value?.reasonCodes.includes("below-protocol-minimum")) {
+    return `Below ${formatUsdValue(preview.value.minimumBorrowUsd)} minimum`;
+  }
+  if (preview.value?.actionable) return "Covers request";
   return `Below request by ${formatUsdValue(props.amountUsd - capacity.value)}`;
 });
 const weightedLtv = computed(() => weightedFactor("ltv"));

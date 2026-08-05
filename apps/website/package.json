@@ -15,6 +15,7 @@
     "@fontsource-variable/inter": "^5.3.0",
     "@phosphor-icons/vue": "^2.2.1",
     "@powerrr/configs": "workspace:*",
+    "@powerrr/math": "workspace:*",
     "@powerrr/protocol-adapters": "workspace:*",
     "@powerrr/shared-types": "workspace:*",
     "viem": "^2.55.4",

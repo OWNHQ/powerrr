@@ -2,6 +2,7 @@ import type {
   ProtocolBorrowQuote,
   WebsiteQuoteRow,
 } from "@powerrr/shared-types";
+import { compareRawAmounts } from "@powerrr/math";
 
 export type WebsiteQuoteGroupRow = WebsiteQuoteRow & {
   groupId: string;
@@ -100,7 +101,13 @@ export function groupWebsiteQuoteRows(
         row,
       };
     })
-    .sort((a, b) => sortRowsForDisplay(a.row, b.row));
+    .sort((a, b) => {
+      const exact = compareRawAmounts(
+        b.primaryQuote.exactMaximum,
+        a.primaryQuote.exactMaximum,
+      );
+      return exact || sortRowsForDisplay(a.row, b.row);
+    });
 }
 
 export function termLabel(
@@ -176,6 +183,8 @@ function sortQuotesForDisplay(
   a: ProtocolBorrowQuote,
   b: ProtocolBorrowQuote,
 ): number {
+  const exact = compareRawAmounts(b.exactMaximum, a.exactMaximum);
+  if (exact) return exact;
   return (
     numericSortValue(b.safeBorrowUsd) - numericSortValue(a.safeBorrowUsd) ||
     numericSortValue(b.theoreticalBorrowUsd) -

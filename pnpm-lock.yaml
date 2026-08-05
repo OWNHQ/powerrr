@@ -49,6 +49,9 @@ importers:
       "@powerrr/configs":
         specifier: workspace:*
         version: link:../../packages/configs
+      "@powerrr/math":
+        specifier: workspace:*
+        version: link:../../packages/math
       "@powerrr/protocol-adapters":
         specifier: workspace:*
         version: link:../../packages/protocol-adapters

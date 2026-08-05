@@ -31,8 +31,13 @@ const quote: ProtocolBorrowQuote = {
       valueUsd: 100_000,
       ltv: 0.8,
       liquidationThreshold: 0.85,
+      valueExact: usd(100_000),
+      ltvExact: ratio(0.8),
+      liquidationThresholdExact: ratio(0.85),
     },
   ],
+  capacityBreakdown: exactBreakdown(100_000, 80_000, 60_000, 1_000_000),
+  exactMaximum: usd(60_000),
   riskLevel: "low",
   confidence: "high",
   confidenceScore: 95,
@@ -42,6 +47,40 @@ const quote: ProtocolBorrowQuote = {
   warnings: [],
   provenance: [{ source: "test", sourceType: "on-chain" }],
 };
+
+function usd(value: number) {
+  return { raw: BigInt(Math.round(value * 1_000_000)).toString(), decimals: 6 };
+}
+
+function ratio(value: number) {
+  return {
+    numerator: BigInt(Math.round(value * 1_000_000)).toString(),
+    denominator: "1000000",
+  };
+}
+
+function exactBreakdown(
+  collateral: number,
+  protocolLimit: number,
+  recommended: number,
+  liquidity: number,
+) {
+  return {
+    collateralValueUsd: collateral,
+    protocolBorrowLimitUsd: protocolLimit,
+    safetyAdjustedLimitUsd: recommended,
+    liquidityLimitUsd: liquidity,
+    recommendedMaxUsd: recommended,
+    bindingConstraint: "safety-buffer" as const,
+    exact: {
+      collateralValue: usd(collateral),
+      protocolBorrowLimit: usd(protocolLimit),
+      safetyAdjustedLimit: usd(recommended),
+      liquidityLimit: usd(liquidity),
+      recommendedMaximum: usd(recommended),
+    },
+  };
+}
 
 describe("pooled borrowing risk preview", () => {
   it("uses projected debt and threshold-only liquidation math", () => {
@@ -100,6 +139,9 @@ describe("pooled borrowing risk preview", () => {
             valueUsd: 100_000,
             ltv: 0.8,
             liquidationThreshold: 0.85,
+            valueExact: usd(100_000),
+            ltvExact: ratio(0.8),
+            liquidationThresholdExact: ratio(0.85),
           },
           {
             token: "0x0000000000000000000000000000000000000002",
@@ -107,6 +149,9 @@ describe("pooled borrowing risk preview", () => {
             valueUsd: 50_000,
             ltv: 0.7,
             liquidationThreshold: 0.75,
+            valueExact: usd(50_000),
+            ltvExact: ratio(0.7),
+            liquidationThresholdExact: ratio(0.75),
           },
         ],
       },
@@ -228,6 +273,21 @@ describe("pooled borrowing risk preview", () => {
     expect(result.reasonCodes).toContain("above-modeled-limit");
   });
 
+  it("accepts the exact USDC boundary and rejects one base unit above it", () => {
+    const atBoundary = calculatePooledBorrowPreview(
+      { ...quote, mode: "wallet-estimate", existingDebtUsd: 0 },
+      60_000,
+    );
+    const oneUnitOver = calculatePooledBorrowPreview(
+      { ...quote, mode: "wallet-estimate", existingDebtUsd: 0 },
+      60_000.000001,
+    );
+
+    expect(atBoundary.actionable).toBe(true);
+    expect(oneUnitOver.actionable).toBe(false);
+    expect(oneUnitOver.reasonCodes).toContain("above-modeled-limit");
+  });
+
   it("uses the protocol and liquidity limits instead of a hidden safety recommendation", () => {
     const morphoQuote: ProtocolBorrowQuote = {
       ...quote,
@@ -243,7 +303,9 @@ describe("pooled borrowing risk preview", () => {
         liquidityLimitUsd: 419_618,
         recommendedMaxUsd: 11_344,
         bindingConstraint: "safety-buffer",
+        exact: exactBreakdown(15_519, 13_346, 11_344, 419_618).exact,
       },
+      exactMaximum: usd(13_346),
       collateralUsed: [
         {
           ...quote.collateralUsed[0]!,
@@ -268,6 +330,14 @@ describe("pooled borrowing risk preview", () => {
         mode: "wallet-estimate",
         existingDebtUsd: 0,
         minimumBorrowUsd: 100,
+        capacityBreakdown: {
+          ...quote.capacityBreakdown!,
+          minimumBorrowUsd: 100,
+          exact: {
+            ...quote.capacityBreakdown!.exact,
+            minimumBorrow: usd(100),
+          },
+        },
       },
       99.99,
     );

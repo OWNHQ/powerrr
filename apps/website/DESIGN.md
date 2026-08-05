@@ -147,7 +147,7 @@ The palette combines Mineral Red and Limestone Paper with warm near-black and um
 
 ### Primary
 
-- **Mineral Red** (`river`): primary actions, selected states, progress, links, focus indicators, and trusted orientation. It is deeper and earthier than the bright coral in the reference source. OWN shares this hue so its path remains a peer rather than a visually privileged destination.
+- **Mineral Red** (`river`): primary actions, selected states, progress, links, focus indicators, and trusted orientation. It is deeper and earthier than the bright coral in the reference source.
 - **High-contrast accent ink** (`accent-contrast`): content placed on solid Mineral Red.
 
 ### Secondary
@@ -303,7 +303,7 @@ At wide widths, asset choices sit in the primary workspace beside a sticky selec
 
 ### Protocol Comparison Rows
 
-Protocol and OWN paths share the same expandable 12px-radius bordered-row structure. The collapsed view leads with provider identity and availability, followed by a consistent evidence grid and a restrained persistent action rail. The action remains in that rail when details open, ahead of constraints and the asset list, so it never moves below a long disclosure. Expansion reveals constraints, asset eligibility, and source detail. OWN may state its distinct fixed-term mechanism, but it must not gain stronger elevation, scale, saturation, or placement than peer paths.
+Protocol paths share the same expandable 12px-radius bordered-row structure. The collapsed view leads with provider identity and availability, followed by a consistent evidence grid and a restrained persistent action rail. The action remains in that rail when details open, ahead of constraints and the asset list, so it never moves below a long disclosure. Expansion reveals constraints, asset eligibility, and source detail.
 
 **The Equal Evidence Rule.** Comparison paths share one structural grammar even when their mechanisms differ.
 
@@ -318,13 +318,13 @@ Protocol and OWN paths share the same expandable 12px-radius bordered-row struct
 - **Do** keep operational copy direct, measured, and visibly attached to the value or state it explains.
 - **Do** preserve tabular figures, readable labels, and the same evidence order across responsive layouts.
 - **Do** keep the single light palette stable even when the operating system requests dark mode.
-- **Do** give OWN the same comparison structure and visual weight as pooled protocols.
+- **Do** keep the OWN builder credit compact, subordinate, and outside the provider comparison.
 
 ### Don't:
 
 - **Don't** introduce neon crypto palettes, protocol-brand rainbows, speculative gradients, or trading-terminal glow.
 - **Don't** use glassmorphism, hard shadows, floating card stacks, or decorative elevation for repeated evidence.
-- **Don't** turn OWN into a banner, hero, special offer, or visually dominant sales path.
+- **Don't** turn the bottom-right OWN builder credit into a footer strip, banner, hero, provider card, special offer, or visually dominant sales path.
 - **Don't** hide unsupported assets, unavailable providers, risk evidence, or explanatory labels to make the interface feel cleaner.
 - **Don't** shrink essential operational text below 0.75rem or interactive targets below 44px.
 - **Don't** use color alone to communicate availability, selection, risk, or error.

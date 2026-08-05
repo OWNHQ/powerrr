@@ -27,6 +27,13 @@ const erc20Abi = [
     inputs: [{ name: "account", type: "address" }],
     outputs: [{ name: "balance", type: "uint256" }],
   },
+  {
+    type: "function",
+    name: "decimals",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "value", type: "uint8" }],
+  },
 ] as const;
 
 const oracleAbi = [
@@ -269,6 +276,18 @@ function mockInnerResult(
         positiveWeth && target.toLowerCase() === weth.toLowerCase()
           ? 2_000_000_000_000_000_000n
           : 0n,
+    });
+  }
+  if (
+    data === encodeFunctionData({ abi: erc20Abi, functionName: "decimals" })
+  ) {
+    const token = ethereumTokenRegistryV1.find(
+      (item) => item.address.toLowerCase() === target.toLowerCase(),
+    );
+    return encodeFunctionResult({
+      abi: erc20Abi,
+      functionName: "decimals",
+      result: token?.decimals ?? 18,
     });
   }
   if (

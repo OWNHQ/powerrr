@@ -9,6 +9,7 @@ import {
 import { describe, expect, it } from "vitest";
 import type { Eip1193Provider, Eip1193Request } from "./static-discovery";
 import { loadStaticMorphoSnapshot } from "./static-morpho";
+import { projectLiveSnapshots } from "@powerrr/protocol-adapters";
 
 const manifest = ethereumMorphoUsdcMarketsV1[0]!;
 
@@ -190,7 +191,11 @@ describe("static Morpho market reader", () => {
       lltv: 0.86,
       availableLiquidityUsd: 600_000,
     });
-    expect(snapshot.assetEvaluations).toEqual(
+    const projected = projectLiveSnapshots(
+      [snapshot],
+      portfolio.map((asset) => asset.token),
+    )[0]!;
+    expect(projected.assetEvaluations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           symbol: "ETH",

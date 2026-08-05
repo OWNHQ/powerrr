@@ -3,11 +3,38 @@ import {
   calculateAaveLikeBorrow,
   calculateCompoundBorrow,
   calculateMorphoMarket,
+  compareRawAmounts,
+  decimalStringToRaw,
+  mulDivDown,
   riskLevelFromHealthFactor,
   roundUsd,
 } from "./index.js";
 
 describe("borrow-capacity math", () => {
+  it("keeps 256-bit monetary arithmetic exact and rounds only downward", () => {
+    const maximumUint256 = (1n << 256n) - 1n;
+    expect(mulDivDown(maximumUint256, 999_999n, 1_000_000n)).toBe(
+      (maximumUint256 * 999_999n) / 1_000_000n,
+    );
+    expect(mulDivDown(1n, 1n, 3n)).toBe(0n);
+    expect(decimalStringToRaw("0.0000019", 6)).toBe(1n);
+  });
+
+  it("compares exact amounts across decimal scales", () => {
+    expect(
+      compareRawAmounts(
+        { raw: "1000000", decimals: 6 },
+        { raw: "1000000000000000000", decimals: 18 },
+      ),
+    ).toBe(0);
+    expect(
+      compareRawAmounts(
+        { raw: "1000001", decimals: 6 },
+        { raw: "1000000000000000000", decimals: 18 },
+      ),
+    ).toBe(1);
+  });
+
   it("never rounds a positive sub-dollar value down to zero", () => {
     expect(roundUsd(0.000422)).toBe(0.000422);
     expect(roundUsd(0.00499999)).toBe(0.00499999);

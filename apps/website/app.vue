@@ -7,12 +7,18 @@ import {
   PhWallet,
   PhWarningCircle,
 } from "@phosphor-icons/vue";
+import { ETHEREUM_TOKEN_REGISTRY_TOTAL_COUNT } from "@powerrr/configs";
+import { decimalStringToRaw, USDC_DECIMALS } from "@powerrr/math";
 import {
   amountForTargetLtv,
   formatUsdValue,
+  summarizeCollateralCoverage,
   summarizeEstimatorCapacity,
 } from "./utils/estimator-ux";
-import { pooledBorrowAvailableUsd } from "./utils/borrow-preview";
+import {
+  pooledBorrowAvailableRaw,
+  pooledBorrowAvailableUsd,
+} from "./utils/borrow-preview";
 import { formatLocalDateTime } from "./utils/date-time";
 import {
   groupWebsiteQuoteRows,
@@ -28,8 +34,6 @@ type ProviderItem = {
   group?: WebsiteQuoteGroup;
 };
 
-const OWN_MIN_REQUEST_USD = 1_000;
-
 const {
   announcedProviders,
   account,
@@ -37,8 +41,6 @@ const {
   resolvedWalletNames,
   progress,
   assets,
-  manualReviewAssets,
-  failedAssets,
   selectedAssets,
   selectedCollateralTokens,
   receipt,
@@ -47,10 +49,11 @@ const {
   providerStatuses,
   error,
   isScanning,
+  isRefreshing,
   isComparing,
   walletDiscoveryComplete,
   connect,
-  scan,
+  refresh,
   switchToMainnet,
   disconnect,
   setAssetSelected,
@@ -82,25 +85,25 @@ const providerDefinitions: Array<Omit<ProviderItem, "group">> = [
     id: "aave",
     statusId: "aave-v3",
     label: "Aave",
-    link: "https://app.aave.com/",
+    link: "https://app.aave.com/?marketName=proto_mainnet_v3",
   },
   {
     id: "sparklend",
     statusId: "sparklend",
     label: "Spark",
-    link: "https://app.spark.fi/",
+    link: "https://app.spark.fi/markets/?marketName=proto_spark_v3",
   },
   {
     id: "morpho-blue",
     statusId: "morpho-blue",
     label: "Morpho",
-    link: "https://app.morpho.org/",
+    link: "https://app.morpho.org/ethereum/variable/0x94b823e6bd8ea533b4e33fbc307faea0b307301bc48763acc4d4aa4def7636cd/weth-usdc",
   },
   {
     id: "compound-iii",
     statusId: "compound-iii",
     label: "Compound",
-    link: "https://app.compound.finance/",
+    link: "https://app.compound.finance/markets/usdc-mainnet",
   },
 ];
 
@@ -113,9 +116,12 @@ const providerItems = computed<ProviderItem[]>(() =>
         (candidate) => candidate.groupId === definition.id,
       ),
     }))
-    .sort((left, right) => providerCapacity(right) - providerCapacity(left)),
+    .sort((left, right) => {
+      const leftRaw = providerCapacityRaw(left);
+      const rightRaw = providerCapacityRaw(right);
+      return rightRaw < leftRaw ? -1 : rightRaw > leftRaw ? 1 : 0;
+    }),
 );
-const ownVisible = computed(() => borrowAmountUsd.value > OWN_MIN_REQUEST_USD);
 const capacitySummary = computed(() =>
   summarizeEstimatorCapacity(
     providerItems.value.map((provider) => providerCapacity(provider)),
@@ -125,7 +131,9 @@ const providerMaximumUsd = computed(
   () => capacitySummary.value.providerMaximumUsd,
 );
 const providerPathCount = computed(
-  () => capacitySummary.value.providerPathCount,
+  () =>
+    providerItems.value.filter((provider) => providerCapacityRaw(provider) > 0n)
+      .length,
 );
 const ltvReferenceProvider = computed(() =>
   providerItems.value.find(
@@ -152,14 +160,17 @@ const ltvReferenceExistingDebtUsd = computed(() =>
     ? Math.max(0, ltvReferenceQuote.value.existingDebtUsd ?? 0)
     : 0,
 );
-const coveringProviderCount = computed(
-  () =>
-    providerItems.value.filter(
-      (provider) =>
-        providerCapacity(provider) > 0 &&
-        borrowAmountUsd.value <= providerCapacity(provider),
-    ).length,
-);
+const coveringProviderCount = computed(() => {
+  const requestedRaw = decimalStringToRaw(
+    Math.max(0, borrowAmountUsd.value).toFixed(USDC_DECIMALS),
+    USDC_DECIMALS,
+  );
+  return providerItems.value.filter(
+    (provider) =>
+      providerCapacityRaw(provider) > 0n &&
+      requestedRaw <= providerCapacityRaw(provider),
+  ).length;
+});
 const scanProgressPercent = computed(() => {
   if (!progress.value) return 8;
   const ratio =
@@ -191,19 +202,20 @@ const positiveAssets = computed(() =>
       asset.balanceReadStatus === "success" && Number(asset.balance) > 0,
   ),
 );
+const collateralCoverage = computed(() =>
+  summarizeCollateralCoverage(
+    selectedAssets.value,
+    quotes.value,
+    providerStatuses.value,
+  ),
+);
 
-watch(receipt, (next) => {
-  if (!next) return;
+watch(receipt, (next, previous) => {
+  if (!next || previous) return;
   currentStage.value = "assets";
   expandedProviderId.value = "";
   borrowAmountUsd.value = 0;
   stageError.value = "";
-});
-
-watch(ownVisible, (visible) => {
-  if (!visible && expandedProviderId.value === "own") {
-    expandedProviderId.value = "";
-  }
 });
 
 async function enterComparison(): Promise<void> {
@@ -244,10 +256,7 @@ function toggleProvider(id: string): void {
 }
 
 async function refreshEstimate(): Promise<void> {
-  await scan();
-  currentStage.value = "assets";
-  expandedProviderId.value = "";
-  borrowAmountUsd.value = 0;
+  await refresh();
 }
 
 function connectFromHeader(): void {
@@ -277,17 +286,22 @@ function providerCapacity(provider: ProviderItem): number {
     : 0;
 }
 
+function providerCapacityRaw(provider: ProviderItem): bigint {
+  return provider.group
+    ? pooledBorrowAvailableRaw(provider.group.primaryQuote)
+    : 0n;
+}
+
 function providerStatus(provider: ProviderItem) {
   return providerStatuses.value.find(
     (status) => status.protocolId === provider.statusId,
   );
 }
-
 </script>
 
 <template>
   <a href="#main-content" class="skip-link">Skip to estimator</a>
-  <main id="main-content" class="min-h-screen bg-paper text-ink">
+  <main id="main-content" class="flex min-h-screen flex-col bg-paper text-ink">
     <header
       class="sticky top-0 z-30 border-b border-line/80 bg-surface/95 backdrop-blur"
     >
@@ -375,7 +389,7 @@ function providerStatus(provider: ProviderItem) {
       <section
         v-if="isScanning"
         key="scanning"
-        class="mx-auto grid min-h-[calc(100vh-4rem)] max-w-5xl place-items-center px-4 py-16"
+        class="mx-auto grid w-full flex-1 place-items-center px-4 py-16"
         aria-live="polite"
       >
         <div class="mx-auto max-w-xl text-center">
@@ -415,7 +429,7 @@ function providerStatus(provider: ProviderItem) {
       <section
         v-else-if="!receipt"
         key="landing"
-        class="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl place-items-center px-4 py-16"
+        class="mx-auto grid w-full max-w-6xl flex-1 place-items-center px-4 py-16"
       >
         <div id="wallet-options" class="w-full max-w-3xl text-center">
           <h1 class="type-display landing-display-balanced mx-auto max-w-none">
@@ -509,10 +523,11 @@ function providerStatus(provider: ProviderItem) {
               class="absolute left-1/2 top-full z-20 mt-3 w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-line bg-surface p-4 text-left leading-5 shadow-panel"
             >
               After you connect, a chunked Multicall3 read checks the reviewed
-              250-token Ethereum registry at one block. Onchain names, prices,
-              and provider rules are then read through the same wallet. Name
-              lookup never uses an HTTP gateway. No signature, transaction,
-              analytics request, or Powerrr API is used.
+              {{ ETHEREUM_TOKEN_REGISTRY_TOTAL_COUNT }}-token Ethereum registry
+              at one block. Onchain names, prices, and provider rules are then
+              read through the same wallet. Name lookup never uses an HTTP
+              gateway. No signature, transaction, analytics request, or Powerrr
+              API is used.
             </p>
           </div>
 
@@ -542,7 +557,7 @@ function providerStatus(provider: ProviderItem) {
       <div
         v-else
         key="workspace"
-        class="mx-auto w-full max-w-[1360px] px-4 py-7 sm:px-6 lg:px-8 lg:py-10"
+        class="mx-auto w-full max-w-[1360px] flex-1 px-4 py-7 sm:px-6 lg:px-8 lg:py-10"
       >
         <EstimatorResultSummary
           :demo="false"
@@ -553,7 +568,7 @@ function providerStatus(provider: ProviderItem) {
           :selected-asset-count="selectedCollateralTokens.length"
           :provider-count="providerPathCount"
           stale-label=""
-          :refreshing="isScanning"
+          :refreshing="isRefreshing"
           :refresh-complete="false"
           @refresh="refreshEstimate"
         />
@@ -620,40 +635,6 @@ function providerStatus(provider: ProviderItem) {
                 @toggle="setAssetSelected"
                 @continue="continueFromAssets"
               />
-
-              <details
-                v-if="manualReviewAssets.length || failedAssets.length"
-                class="panel mt-4 overflow-hidden"
-              >
-                <summary
-                  class="focus-ring cursor-pointer px-5 py-4 text-sm font-semibold sm:px-6"
-                >
-                  Pricing and read details
-                  <template v-if="failedAssets.length">
-                    · {{ failedAssets.length }} reads failed</template
-                  >
-                </summary>
-                <div
-                  class="border-t border-line px-5 py-4 text-sm text-slate sm:px-6"
-                >
-                  <p
-                    v-for="asset in manualReviewAssets"
-                    :key="asset.token"
-                    class="py-1"
-                  >
-                    <strong class="text-ink">{{ asset.symbol }}</strong> ·
-                    {{ asset.balance }} — {{ asset.valuationReason }}
-                  </p>
-                  <p
-                    v-for="asset in failedAssets"
-                    :key="asset.token"
-                    class="py-1"
-                  >
-                    <strong class="text-ink">{{ asset.symbol }}</strong> —
-                    {{ asset.balanceReadReason }}
-                  </p>
-                </div>
-              </details>
             </div>
 
             <div
@@ -697,6 +678,11 @@ function providerStatus(provider: ProviderItem) {
                   </p>
                 </div>
 
+                <CollateralCoverageSummary
+                  class="mb-3"
+                  v-bind="collateralCoverage"
+                />
+
                 <div class="grid gap-3">
                   <ProtocolComparisonCard
                     v-for="provider in providerItems"
@@ -711,21 +697,20 @@ function providerStatus(provider: ProviderItem) {
                     :expanded="expandedProviderId === provider.id"
                     @toggle="toggleProvider"
                   />
-                  <OwnComparisonCard
-                    v-if="ownVisible"
-                    :amount-usd="borrowAmountUsd"
-                    :assets="positiveAssets"
-                    :selected-tokens="selectedCollateralTokens"
-                    :expanded="expandedProviderId === 'own'"
-                    @toggle="toggleProvider('own')"
-                  />
                 </div>
               </section>
             </div>
           </Transition>
         </div>
 
-        <details class="panel mt-5 overflow-hidden">
+        <details
+          class="panel mt-5 overflow-hidden"
+          :class="
+            currentStage === 'assets'
+              ? 'lg:w-[calc(100%-19rem)] xl:w-[calc(100%-21rem)]'
+              : ''
+          "
+        >
           <summary
             class="focus-ring flex min-h-14 cursor-pointer items-center gap-2 px-5 py-4 text-sm font-semibold sm:px-6"
           >
@@ -777,5 +762,25 @@ function providerStatus(provider: ProviderItem) {
         </details>
       </div>
     </Transition>
+
+    <p
+      class="mt-auto flex items-center gap-2 self-end px-4 pb-4 pt-8 text-xs text-slate sm:px-6 lg:px-8"
+    >
+      <span>built by</span>
+      <a
+        href="https://own.casa"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="focus-ring inline-flex min-h-8 items-center rounded-md px-1 opacity-80 transition-opacity hover:opacity-100"
+        aria-label="OWN"
+      >
+        <img
+          src="/brands/own.svg"
+          alt=""
+          class="h-3.5 w-auto"
+          aria-hidden="true"
+        />
+      </a>
+    </p>
   </main>
 </template>

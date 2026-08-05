@@ -472,7 +472,7 @@ const top250Tokens: readonly ReviewedToken[] = ethereumTop250Snapshot.map(
   ({ address, symbol, name, decimals }) => [address, symbol, name, decimals],
 );
 
-const protocolRequiredTokens = reviewedTokens.filter(([address]) =>
+const reviewedRegistryAdditions = reviewedTokens.filter(([address]) =>
   ethereumAssetRegistryV1.some(
     (asset) =>
       asset.assetKind !== "native" &&
@@ -480,7 +480,10 @@ const protocolRequiredTokens = reviewedTokens.filter(([address]) =>
   ),
 );
 
-const allReviewedTokens = [...top250Tokens, ...protocolRequiredTokens].filter(
+const allReviewedTokens = [
+  ...top250Tokens,
+  ...reviewedRegistryAdditions,
+].filter(
   (token, index, all) =>
     all.findIndex(
       (candidate) => candidate[0].toLowerCase() === token[0].toLowerCase(),
@@ -519,6 +522,26 @@ export const ethereumTokenRegistryV1: readonly EthereumTokenRegistryEntry[] =
             },
     };
   });
+
+export const ETHEREUM_TOKEN_REGISTRY_RANKED_COUNT = top250Tokens.length;
+export const ethereumTokenRegistryAdditionsV1 = ethereumTokenRegistryV1.filter(
+  (token) => token.snapshotRank === undefined,
+);
+export const ETHEREUM_TOKEN_REGISTRY_ADDITION_COUNT =
+  ethereumTokenRegistryAdditionsV1.length;
+export const ETHEREUM_TOKEN_REGISTRY_TOTAL_COUNT =
+  ethereumTokenRegistryV1.length;
+
+for (const asset of ethereumAssetRegistryV1) {
+  if (
+    asset.protocolAssetToken &&
+    (!asset.conversion || !asset.requiredAction)
+  ) {
+    throw new Error(
+      `${asset.symbol} maps to a protocol token without a reviewed conversion`,
+    );
+  }
+}
 
 export function ethereumTokenByAddress(
   address: string,

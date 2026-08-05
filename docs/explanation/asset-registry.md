@@ -1,14 +1,23 @@
 # Curated Ethereum asset registry
 
 The static application uses the checked-in registry
-`ethereum-top250-2026-07-29-v1`. It contains a dated market-cap snapshot of 250
-verified Ethereum ERC-20 contracts plus any required protocol collateral that
-falls outside the ranking. Balances are read through the connected wallet's
+`ethereum-top250-2026-07-29-v1`. It contains a dated CoinGecko market-cap
+snapshot joined to a chain-1 token metadata list: 250 ranked Ethereum ERC-20
+contracts plus two reviewed registry additions, LINK and MKR, for 252 runtime
+contracts. Balances are read through the connected wallet's
 EIP-1193 provider using chunked Multicall3 calls.
 
 The static registry is bundled into the application. It is never fetched from
 a token-list server at runtime, and symbols, decimals, icons, or prices are not
 trusted from arbitrary wallet tokens.
+
+Ranking membership does not guarantee that a token has a live Chainlink feed
+or a sufficiently liquid Uniswap pool at the selected block. Every contract is
+on Ethereum mainnet; projects with origins elsewhere do not cause another chain
+to be queried. The original generator input JSON files were not retained, so
+the exact reason LINK and MKR missed the original ranking join cannot be
+reconstructed. Future registry generations must emit input hashes and rejected
+token reasons.
 
 Live wallet discovery is deliberately finite and never enumerates arbitrary
 wallet tokens. The browser first uses reviewed protocol oracles, then a fresh
@@ -48,8 +57,9 @@ metadata is only a discovery hint: live adapters still verify active/frozen
 state, collateral enablement, nonzero LTV and oracle price, caps, and liquidity
 before including collateral.
 
-Native ETH is modeled as WETH-equivalent at 1:1, and stETH uses the live
-`getWstETHByStETH` conversion. Both retain their original wallet balance plus
+Native ETH is modeled as WETH-equivalent at 1:1. stETH and wstETH remain
+different assets and raw quantities; only protocol projection combines them,
+using live block-pinned `getWstETHByStETH` output. Both retain their original wallet balance plus
 explicit protocol token, converted raw balance, rate, and `requiredAction:
 "wrap"` metadata. They are shown as wrapping-required.
 
@@ -57,3 +67,6 @@ Balances are read in deterministic JSON-RPC chunks at the resolved block.
 Oracle and DEX reads happen only for positive balances. Unsupported and
 unpriced positive balances remain visible; there is no token indexer or
 portfolio API fallback.
+
+No other family is merged: WBTC/cbBTC/tBTC, stablecoins, savings wrappers, and
+arbitrary market-swappable assets remain independent.

@@ -8,6 +8,7 @@ import {
   type EthereumTokenRegistryEntry,
 } from "@powerrr/configs";
 import type {
+  BlockContext,
   DiscoveryProgress,
   HexAddress,
   PortfolioAsset,
@@ -33,7 +34,6 @@ const UNISWAP_V3_FACTORY =
 const UNISWAP_V3_FEES = [100, 500, 3_000, 10_000] as const;
 const UNISWAP_TWAP_SECONDS = 1_800;
 const MIN_TWAP_LIQUIDITY_USD = 25_000;
-const MIN_SPOT_LIQUIDITY_USD = 100_000;
 // A direct USD valuation outside this range is not credible collateral data.
 // This is deliberately generous (sub-picodollar through $1m per token) and
 // prevents manipulated or abandoned pools near Uniswap's tick limits from
@@ -57,6 +57,7 @@ export type Eip1193Provider = {
 };
 
 export type StaticDiscoveryResult = {
+  block: BlockContext;
   assets: PortfolioAsset[];
   receipt: ReadReceipt;
   registrySource: string;
@@ -72,6 +73,13 @@ const erc20Abi = [
     stateMutability: "view",
     inputs: [{ name: "account", type: "address" }],
     outputs: [{ name: "balance", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "decimals",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "value", type: "uint8" }],
   },
 ] as const;
 
@@ -170,6 +178,16 @@ const uniswapPoolAbi = [
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "value", type: "uint128" }],
+  },
+] as const;
+
+const wstethAbi = [
+  {
+    type: "function",
+    name: "getWstETHByStETH",
+    stateMutability: "view",
+    inputs: [{ name: "stETHAmount", type: "uint256" }],
+    outputs: [{ name: "wstETHAmount", type: "uint256" }],
   },
 ] as const;
 
@@ -330,6 +348,38 @@ export async function scanConnectedWallet(input: {
   const positive = decodedBalances.filter(
     (item) => item.status === "success" && item.balanceRaw > 0n,
   );
+  const decimalsResults = positive.length
+    ? await multicallWithDeterministicRetry(
+        provider,
+        positive.map((item) => ({
+          target: item.token.address as Address,
+          allowFailure: true,
+          callData: encodeFunctionData({
+            abi: erc20Abi,
+            functionName: "decimals",
+          }),
+        })),
+        blockNumberHex,
+        chunkSizes,
+      )
+    : [];
+  const runtimeTokens = new Map<string, EthereumTokenRegistryEntry>();
+  positive.forEach((item, index) => {
+    const rawDecimals = decodeUint(decimalsResults[index], "decimals");
+    if (rawDecimals === null || rawDecimals < 0n || rawDecimals > 255n) return;
+    const decimals = Number(rawDecimals);
+    if (decimals !== item.token.decimals) return;
+    runtimeTokens.set(item.token.address.toLowerCase(), {
+      ...item.token,
+      decimals,
+    });
+  });
+  const protocolConversions = await loadProtocolConversions(
+    provider,
+    positive,
+    runtimeTokens,
+    blockNumberHex,
+  );
   input.onProgress?.({
     phase: "balances",
     completed: ethereumTokenRegistryV1.length,
@@ -345,7 +395,10 @@ export async function scanConnectedWallet(input: {
   });
   const prices = await loadPrices(
     provider,
-    positive.map((item) => item.token),
+    positive.flatMap((item) => {
+      const token = runtimeTokens.get(item.token.address.toLowerCase());
+      return token ? [token] : [];
+    }),
     blockNumberHex,
     Number(BigInt(block.timestamp)),
     chunkSizes,
@@ -355,16 +408,21 @@ export async function scanConnectedWallet(input: {
       return [failedAsset(item.token, blockNumber)];
     }
     if (item.balanceRaw === 0n) return [];
-    const price = prices.get(item.token.address.toLowerCase());
+    const runtimeToken = runtimeTokens.get(item.token.address.toLowerCase());
+    if (!runtimeToken) {
+      return [failedMetadataAsset(item.token, item.balanceRaw, blockNumber)];
+    }
+    const price = prices.get(runtimeToken.address.toLowerCase());
     return [
       portfolioAsset(
-        item.token,
+        runtimeToken,
         item.balanceRaw,
         blockNumber,
         price?.priceUsd,
         price?.source,
         price?.reason,
         price,
+        protocolConversions.get(runtimeToken.address.toLowerCase()),
       ),
     ];
   });
@@ -381,6 +439,14 @@ export async function scanConnectedWallet(input: {
       balanceRaw: nativeBalance.toString(),
       protocolAssetToken: WETH_ADDRESS,
       protocolBalanceRaw: nativeBalance.toString(),
+      conversionSnapshot: {
+        sourceToken: ETHEREUM_NATIVE_TOKEN,
+        targetToken: WETH_ADDRESS,
+        sourceAmount: { raw: nativeBalance.toString(), decimals: 18 },
+        targetAmount: { raw: nativeBalance.toString(), decimals: 18 },
+        kind: "one-to-one",
+        observedBlockNumber: blockNumber,
+      },
       ...(wethPrice?.priceUsd ? { marketPriceUsd: wethPrice.priceUsd } : {}),
       priceStatus: wethPrice?.priceUsd ? "available" : "unavailable",
       protocolEligible: protocolEligibility(ETHEREUM_NATIVE_TOKEN),
@@ -423,6 +489,13 @@ export async function scanConnectedWallet(input: {
     message: "Wallet scan complete. Calculations remain in this browser tab.",
   });
   return {
+    block: {
+      chainId: 1,
+      blockTag: blockNumberHex,
+      blockNumber,
+      blockTimestamp: blockTimestamp.toISOString(),
+      blockAgeSeconds,
+    },
     assets,
     registrySource: ETHEREUM_TOKEN_REGISTRY_SOURCE,
     receipt: {
@@ -558,6 +631,53 @@ async function loadPrices(
   return result;
 }
 
+async function loadProtocolConversions(
+  provider: Eip1193Provider,
+  positive: Array<{
+    token: EthereumTokenRegistryEntry;
+    status: "success" | "failed";
+    balanceRaw: bigint;
+  }>,
+  runtimeTokens: Map<string, EthereumTokenRegistryEntry>,
+  blockTag: Hex,
+): Promise<Map<string, bigint>> {
+  const converted = new Map<string, bigint>();
+  await Promise.all(
+    positive.map(async (item) => {
+      const key = item.token.address.toLowerCase();
+      if (!runtimeTokens.has(key)) return;
+      const metadata = ethereumAssetMetadataByAddress(item.token.address);
+      if (
+        metadata?.conversion?.kind !== "wsteth" ||
+        !metadata.conversion.contract
+      ) {
+        return;
+      }
+      try {
+        const data = encodeFunctionData({
+          abi: wstethAbi,
+          functionName: "getWstETHByStETH",
+          args: [item.balanceRaw],
+        });
+        const response = await provider.request<Hex>({
+          method: "eth_call",
+          params: [{ to: metadata.conversion.contract, data }, blockTag],
+        });
+        const amount = decodeFunctionResult({
+          abi: wstethAbi,
+          functionName: "getWstETHByStETH",
+          data: response,
+        });
+        converted.set(key, amount);
+      } catch {
+        // Conversion-dependent collateral fails closed while the wallet asset
+        // remains visible with its independently sourced valuation.
+      }
+    }),
+  );
+  return converted;
+}
+
 async function loadChainlinkPrices(
   provider: Eip1193Provider,
   tokens: EthereumTokenRegistryEntry[],
@@ -607,11 +727,16 @@ async function loadChainlinkPrices(
         functionName: "latestRoundData",
         data: roundResult.returnData,
       });
+      const roundId = round[0];
       const answer = round[1];
       const updatedAt = Number(round[3]);
+      const answeredInRound = round[4];
       const ageSeconds = blockTimestampSeconds - updatedAt;
       if (
+        roundId <= 0n ||
         answer <= 0n ||
+        updatedAt <= 0 ||
+        answeredInRound < roundId ||
         !Number.isFinite(ageSeconds) ||
         ageSeconds < 0 ||
         ageSeconds > 36 * 60 * 60
@@ -723,7 +848,12 @@ async function loadUniswapPrices(
     const observeResult = stateResults[index * 3];
     const slotResult = stateResults[index * 3 + 1];
     const liquidityResult = stateResults[index * 3 + 2];
-    if (!slotResult?.success || !liquidityResult?.success) return [];
+    if (
+      !observeResult?.success ||
+      !slotResult?.success ||
+      !liquidityResult?.success
+    )
+      return [];
     try {
       const slot = decodeFunctionResult({
         abi: uniswapPoolAbi,
@@ -737,24 +867,20 @@ async function loadUniswapPrices(
       });
       let tick = Number(slot[1]);
       let routeLiquidity = currentLiquidity;
-      let confidence: "medium" | "low" = "low";
-      let observationSeconds: number | undefined;
-      if (observeResult?.success) {
-        const observed = decodeFunctionResult({
-          abi: uniswapPoolAbi,
-          functionName: "observe",
-          data: observeResult.returnData,
-        });
-        const tickDelta = observed[0][1]! - observed[0][0]!;
-        tick = floorDiv(tickDelta, BigInt(UNISWAP_TWAP_SECONDS));
-        const liquidityDelta = observed[1][1]! - observed[1][0]!;
-        if (liquidityDelta > 0n) {
-          routeLiquidity =
-            (BigInt(UNISWAP_TWAP_SECONDS) << 128n) / liquidityDelta;
-        }
-        confidence = "medium";
-        observationSeconds = UNISWAP_TWAP_SECONDS;
+      const observed = decodeFunctionResult({
+        abi: uniswapPoolAbi,
+        functionName: "observe",
+        data: observeResult.returnData,
+      });
+      const tickDelta = observed[0][1]! - observed[0][0]!;
+      tick = floorDiv(tickDelta, BigInt(UNISWAP_TWAP_SECONDS));
+      const liquidityDelta = observed[1][1]! - observed[1][0]!;
+      if (liquidityDelta > 0n) {
+        routeLiquidity =
+          (BigInt(UNISWAP_TWAP_SECONDS) << 128n) / liquidityDelta;
       }
+      const confidence = "medium" as const;
+      const observationSeconds = UNISWAP_TWAP_SECONDS;
       const quoteUsd = output.get(route.quote.address.toLowerCase())?.priceUsd;
       if (!quoteUsd) return [];
       const quotePerToken = quotePerBaseFromTick(
@@ -770,14 +896,10 @@ async function loadUniswapPrices(
         route.quote,
         quoteUsd,
       );
-      const threshold =
-        confidence === "medium"
-          ? MIN_TWAP_LIQUIDITY_USD
-          : MIN_SPOT_LIQUIDITY_USD;
       if (
         !isCredibleTokenPriceUsd(priceUsd) ||
         !Number.isFinite(liquidityUsd) ||
-        liquidityUsd < threshold
+        liquidityUsd < MIN_TWAP_LIQUIDITY_USD
       ) {
         return [];
       }
@@ -808,10 +930,9 @@ async function loadUniswapPrices(
         return right.liquidityUsd - left.liquidityUsd;
       })[0];
     if (!best) continue;
-    const kind = best.confidence === "medium" ? "30-minute TWAP" : "spot";
     output.set(token.address.toLowerCase(), {
       priceUsd: best.priceUsd,
-      source: `Uniswap V3 ${kind}`,
+      source: "Uniswap V3 30-minute TWAP",
       confidence: best.confidence,
       route: `${token.symbol}/${best.quote.symbol} ${best.fee / 10_000}% pool`,
       ...(best.observationSeconds
@@ -933,20 +1054,41 @@ function decodeBalance(
 
 function decodeUint(
   result: CallResult | undefined,
-  functionName: "balanceOf" | "BASE_CURRENCY_UNIT" | "getAssetPrice",
+  functionName:
+    "balanceOf" | "decimals" | "BASE_CURRENCY_UNIT" | "getAssetPrice",
 ): bigint | null {
   if (!result?.success || !/^0x[0-9a-fA-F]{64}$/.test(result.returnData)) {
     return null;
   }
   try {
     return decodeFunctionResult({
-      abi: functionName === "balanceOf" ? erc20Abi : oracleAbi,
+      abi:
+        functionName === "balanceOf" || functionName === "decimals"
+          ? erc20Abi
+          : oracleAbi,
       functionName,
       data: result.returnData,
     }) as bigint;
   } catch {
     return null;
   }
+}
+
+function failedMetadataAsset(
+  token: EthereumTokenRegistryEntry,
+  balanceRaw: bigint,
+  blockNumber: string,
+): PortfolioAsset {
+  return {
+    ...portfolioAsset(token, balanceRaw, blockNumber),
+    priceStatus: "unavailable",
+    balanceReadStatus: "failed",
+    balanceReadReason:
+      "Token decimals were unavailable or did not match the reviewed contract metadata at the selected block.",
+    valuationStatus: "failed",
+    valuationReason:
+      "The token scale could not be verified at the selected block, so Powerrr did not value it.",
+  };
 }
 
 function portfolioAsset(
@@ -957,8 +1099,15 @@ function portfolioAsset(
   priceSource?: string,
   valuationReason?: string,
   price?: OnchainPriceResult,
+  convertedProtocolBalanceRaw?: bigint,
 ): PortfolioAsset {
   const balance = formatUnits(balanceRaw, token.decimals);
+  const metadata = ethereumAssetMetadataByAddress(token.address);
+  const conversionRate =
+    convertedProtocolBalanceRaw !== undefined && balanceRaw > 0n
+      ? Number((convertedProtocolBalanceRaw * 1_000_000_000n) / balanceRaw) /
+        1_000_000_000
+      : undefined;
   return {
     chainId: 1,
     token: getAddress(token.address) as HexAddress,
@@ -981,7 +1130,49 @@ function portfolioAsset(
       : {}),
     ...(price?.liquidityUsd ? { priceLiquidityUsd: price.liquidityUsd } : {}),
     observedBlockNumber: blockNumber,
-    assetKind: "erc20",
+    assetKind: metadata?.assetKind ?? "erc20",
+    ...(metadata?.protocolAssetToken
+      ? {
+          protocolAssetToken: metadata.protocolAssetToken,
+          protocolBalanceRaw: (convertedProtocolBalanceRaw ?? 0n).toString(),
+          ...(convertedProtocolBalanceRaw !== undefined
+            ? {
+                conversionSnapshot: {
+                  sourceToken: getAddress(token.address) as HexAddress,
+                  targetToken: metadata.protocolAssetToken,
+                  sourceAmount: {
+                    raw: balanceRaw.toString(),
+                    decimals: token.decimals,
+                  },
+                  targetAmount: {
+                    raw: convertedProtocolBalanceRaw.toString(),
+                    decimals:
+                      ethereumAssetMetadataByAddress(
+                        metadata.protocolAssetToken,
+                      )?.decimals ?? token.decimals,
+                  },
+                  kind: metadata.conversion?.kind ?? "identity",
+                  observedBlockNumber: blockNumber,
+                },
+              }
+            : {}),
+        }
+      : {}),
+    ...(metadata?.requiredAction
+      ? { requiredAction: metadata.requiredAction }
+      : {}),
+    ...(metadata?.conversion && conversionRate !== undefined
+      ? {
+          conversion: {
+            kind: metadata.conversion.kind,
+            fromSymbol: metadata.symbol,
+            toSymbol:
+              ethereumAssetMetadataByAddress(metadata.protocolAssetToken ?? "")
+                ?.symbol ?? "wrapped asset",
+            rate: String(conversionRate),
+          },
+        }
+      : {}),
   };
 }
 

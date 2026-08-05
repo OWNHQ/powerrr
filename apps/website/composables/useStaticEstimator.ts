@@ -3,10 +3,13 @@ import {
   SPARKLEND_ETHEREUM,
   loadAaveLikeSnapshot,
   loadCompoundUsdcCometSnapshot,
+  projectLiveSnapshots,
   quoteLiveSnapshots,
   type LiveQuoteSnapshot,
 } from "@powerrr/protocol-adapters";
+import { ethereumAssetMetadataByAddress } from "@powerrr/configs";
 import type {
+  BlockContext,
   DiscoveryProgress,
   PortfolioAsset,
   ProtocolAvailability,
@@ -30,26 +33,43 @@ type AnnouncedProvider = {
 
 type ProviderStatus = ProtocolAvailability & { label: string };
 
+type EstimatorSnapshot = {
+  block: BlockContext;
+  assets: PortfolioAsset[];
+  receipt: ReadReceipt;
+  registrySource: string;
+  walletNames: WalletNames;
+  protocolSnapshots: LiveQuoteSnapshot[];
+  providerStatuses: ProviderStatus[];
+};
+
 export function useStaticEstimator() {
   const announcedProviders = shallowRef<AnnouncedProvider[]>([]);
   const selectedWallet = shallowRef<AnnouncedProvider | null>(null);
   const account = ref("");
   const progress = ref<DiscoveryProgress | null>(null);
-  const assets = shallowRef<PortfolioAsset[]>([]);
-  const receipt = shallowRef<ReadReceipt | null>(null);
-  const registrySource = ref("");
-  const walletNames = shallowRef<WalletNames>({
-    ensName: null,
-    gweiName: null,
-  });
-  const quotes = shallowRef<ProtocolBorrowQuote[]>([]);
-  const providerStatuses = shallowRef<ProviderStatus[]>([]);
+  const estimatorSnapshot = shallowRef<EstimatorSnapshot | null>(null);
+  const assets = computed(() => estimatorSnapshot.value?.assets ?? []);
+  const receipt = computed(() => estimatorSnapshot.value?.receipt ?? null);
+  const registrySource = computed(
+    () => estimatorSnapshot.value?.registrySource ?? "",
+  );
+  const walletNames = computed<WalletNames>(
+    () =>
+      estimatorSnapshot.value?.walletNames ?? {
+        ensName: null,
+        gweiName: null,
+      },
+  );
+  const providerStatuses = computed(
+    () => estimatorSnapshot.value?.providerStatuses ?? [],
+  );
   const error = ref("");
   const isScanning = ref(false);
+  const isRefreshing = ref(false);
   const isComparing = ref(false);
   const walletDiscoveryComplete = ref(false);
   const selectedCollateralTokens = ref<string[]>([]);
-  const comparedCollateralKey = ref("");
   let connectedProvider: Eip1193Provider | null = null;
   let removeConnectedListeners: (() => void) | null = null;
   let providerAnnouncementHandler: ((event: Event) => void) | null = null;
@@ -87,9 +107,16 @@ export function useStaticEstimator() {
         selected.has(asset.token.toLowerCase()),
     );
   });
-  const selectedCollateralKey = computed(() =>
-    collateralSelectionKey(selectedCollateralTokens.value),
-  );
+  const quotes = computed<ProtocolBorrowQuote[]>(() => {
+    const source = estimatorSnapshot.value;
+    if (!source || !selectedCollateralTokens.value.length) return [];
+    return quoteLiveSnapshots({
+      snapshots: projectLiveSnapshots(
+        source.protocolSnapshots,
+        selectedCollateralTokens.value,
+      ),
+    });
+  });
   const totalValuedUsd = computed(() =>
     valuedAssets.value.reduce(
       (sum, asset) => sum + Number(asset.balance) * (asset.marketPriceUsd ?? 0),
@@ -147,10 +174,14 @@ export function useStaticEstimator() {
     }
   }
 
-  async function scan(): Promise<void> {
+  async function scan(
+    options: { preserveSelection?: boolean } = {},
+  ): Promise<void> {
     if (!connectedProvider || !selectedWallet.value || !account.value) return;
+    const refreshing = Boolean(receipt.value);
     error.value = "";
-    isScanning.value = true;
+    if (refreshing) isRefreshing.value = true;
+    else isScanning.value = true;
     try {
       const result = await scanConnectedWallet({
         provider: connectedProvider,
@@ -165,47 +196,57 @@ export function useStaticEstimator() {
           (asset) =>
             asset.balanceReadStatus === "success" &&
             Number(asset.balance) > 0 &&
-            asset.valuationStatus === "available",
+            asset.valuationStatus === "available" &&
+            ethereumAssetMetadataByAddress(asset.token)?.category !==
+              "stablecoin",
         ),
       ).map((asset) => asset.token);
+      const positiveAssets = result.assets.filter(
+        (asset) =>
+          asset.balanceReadStatus === "success" && Number(asset.balance) > 0,
+      );
+      const availableTokens = new Set(
+        positiveAssets.map((asset) => asset.token.toLowerCase()),
+      );
+      const preservedTokens = options.preserveSelection
+        ? selectedCollateralTokens.value.filter((token) =>
+            availableTokens.has(token.toLowerCase()),
+          )
+        : [];
+      const nextSelectedTokens = options.preserveSelection
+        ? preservedTokens
+        : defaultCollateralTokens;
       progress.value = {
         phase: "providers",
         completed: 0,
-        total: 1,
-        message: "Checking your onchain name through your wallet provider.",
+        total: 5,
+        message:
+          "Reading names and complete protocol state at the selected block.",
       };
-      const names = await resolveWalletNames({
-        provider: connectedProvider,
-        account: result.receipt.account,
-        blockNumber: result.receipt.blockNumber,
-      });
-
-      // Publish the receipt only after name resolution, so the header reveals
-      // either the final onchain name or the address without swapping between them.
-      walletNames.value = names;
-      assets.value = result.assets;
-      receipt.value = result.receipt;
-      registrySource.value = result.registrySource;
-      selectedCollateralTokens.value = defaultCollateralTokens;
-      comparedCollateralKey.value = "";
-      progress.value = {
-        phase: "providers",
-        completed: 1,
-        total: 6,
-        message: "Checking borrowing options through your wallet provider.",
-      };
-      const comparisons = await loadProviderComparisons(
-        connectedProvider,
-        result.assets.filter(
-          (asset) =>
-            asset.balanceReadStatus === "success" && Number(asset.balance) > 0,
+      const [names, providerSnapshot] = await Promise.all([
+        resolveWalletNames({
+          provider: connectedProvider,
+          account: result.receipt.account,
+          blockNumber: result.receipt.blockNumber,
+        }),
+        loadProviderSnapshots(
+          connectedProvider,
+          positiveAssets,
+          result.receipt,
         ),
-        defaultCollateralTokens,
-        result.receipt,
-      );
-      quotes.value = comparisons.quotes;
-      providerStatuses.value = comparisons.statuses;
-      comparedCollateralKey.value = selectedCollateralKey.value;
+      ]);
+      // Publish the complete wallet and protocol snapshot atomically. Nothing
+      // after this point needs the wallet provider until an explicit refresh.
+      selectedCollateralTokens.value = nextSelectedTokens;
+      estimatorSnapshot.value = Object.freeze({
+        block: result.block,
+        assets: result.assets,
+        receipt: result.receipt,
+        registrySource: result.registrySource,
+        walletNames: names,
+        protocolSnapshots: providerSnapshot.snapshots,
+        providerStatuses: providerSnapshot.statuses,
+      });
       progress.value = {
         phase: "complete",
         completed: result.assets.length,
@@ -216,8 +257,13 @@ export function useStaticEstimator() {
       error.value = friendlyError(cause);
       progress.value = null;
     } finally {
-      isScanning.value = false;
+      if (refreshing) isRefreshing.value = false;
+      else isScanning.value = false;
     }
+  }
+
+  async function refresh(): Promise<void> {
+    await scan({ preserveSelection: true });
   }
 
   async function switchToMainnet(): Promise<void> {
@@ -244,14 +290,8 @@ export function useStaticEstimator() {
   }
 
   function clearResult(): void {
-    assets.value = [];
-    receipt.value = null;
-    registrySource.value = "";
-    walletNames.value = { ensName: null, gweiName: null };
-    quotes.value = [];
-    providerStatuses.value = [];
+    estimatorSnapshot.value = null;
     selectedCollateralTokens.value = [];
-    comparedCollateralKey.value = "";
     progress.value = null;
     error.value = "";
   }
@@ -263,35 +303,9 @@ export function useStaticEstimator() {
     selectedCollateralTokens.value = [...next];
   }
 
-  async function compareSelectedAssets(): Promise<void> {
-    if (!connectedProvider || !receipt.value) return;
-    if (selectedCollateralKey.value === comparedCollateralKey.value) return;
-    if (!selectedAssets.value.length) {
-      quotes.value = [];
-      providerStatuses.value = [];
-      comparedCollateralKey.value = selectedCollateralKey.value;
-      return;
-    }
+  function compareSelectedAssets(): void {
+    if (!receipt.value) return;
     error.value = "";
-    isComparing.value = true;
-    try {
-      const comparisons = await loadProviderComparisons(
-        connectedProvider,
-        assets.value.filter(
-          (asset) =>
-            asset.balanceReadStatus === "success" && Number(asset.balance) > 0,
-        ),
-        selectedCollateralTokens.value,
-        receipt.value,
-      );
-      quotes.value = comparisons.quotes;
-      providerStatuses.value = comparisons.statuses;
-      comparedCollateralKey.value = selectedCollateralKey.value;
-    } catch (cause) {
-      error.value = friendlyError(cause);
-    } finally {
-      isComparing.value = false;
-    }
   }
 
   function openExternal(href: string): void {
@@ -398,10 +412,12 @@ export function useStaticEstimator() {
     providerStatuses,
     error,
     isScanning,
+    isRefreshing,
     isComparing,
     walletDiscoveryComplete,
     connect,
     scan,
+    refresh,
     switchToMainnet,
     disconnect,
     setAssetSelected,
@@ -410,18 +426,11 @@ export function useStaticEstimator() {
   };
 }
 
-function collateralSelectionKey(tokens: string[]): string {
-  return [...new Set(tokens.map((token) => token.toLowerCase()))]
-    .sort()
-    .join(",");
-}
-
-async function loadProviderComparisons(
+async function loadProviderSnapshots(
   provider: Eip1193Provider,
   portfolio: PortfolioAsset[],
-  selectedCollateralTokens: string[],
   receipt: ReadReceipt,
-): Promise<{ quotes: ProtocolBorrowQuote[]; statuses: ProviderStatus[] }> {
+): Promise<{ snapshots: LiveQuoteSnapshot[]; statuses: ProviderStatus[] }> {
   const statuses: ProviderStatus[] = [];
   const snapshots: LiveQuoteSnapshot[] = [];
   const baseInput = {
@@ -429,7 +438,6 @@ async function loadProviderComparisons(
     chainId: 1 as const,
     mode: "wallet-estimate" as const,
     portfolio,
-    selectedCollateralTokens: selectedCollateralTokens as `0x${string}`[],
     targetBorrowAssets: ["USDC"],
     safetyProfile: "balanced" as const,
     asOfBlock: receipt.blockNumber,
@@ -461,30 +469,51 @@ async function loadProviderComparisons(
         loadStaticMorphoSnapshot({
           provider,
           portfolio,
-          selectedCollateralTokens,
           receipt,
         }),
     },
   ];
-  for (const loader of loaders) {
-    try {
-      snapshots.push(await loader.run());
+  const results = await Promise.all(
+    loaders.map(async (loader) => {
+      try {
+        return {
+          loader,
+          snapshot: (await loader.run()) as LiveQuoteSnapshot,
+        } as const;
+      } catch (cause) {
+        return { loader, cause } as const;
+      }
+    }),
+  );
+  for (const result of results) {
+    if ("snapshot" in result && result.snapshot) {
+      if (result.snapshot.blockNumber !== receipt.blockNumber) {
+        statuses.push({
+          protocolId: result.loader.id,
+          label: result.loader.label,
+          status: "unavailable",
+          code: "SOURCE_READ_FAILED",
+          reason: "Protocol state did not match the selected wallet block.",
+        });
+        continue;
+      }
+      snapshots.push(result.snapshot);
       statuses.push({
-        protocolId: loader.id,
-        label: loader.label,
+        protocolId: result.loader.id,
+        label: result.loader.label,
         status: "available",
       });
-    } catch (cause) {
+    } else {
       statuses.push({
-        protocolId: loader.id,
-        label: loader.label,
+        protocolId: result.loader.id,
+        label: result.loader.label,
         status: "unavailable",
         code: "SOURCE_READ_FAILED",
-        reason: friendlyError(cause),
+        reason: friendlyError(result.cause),
       });
     }
   }
-  return { quotes: quoteLiveSnapshots({ snapshots }), statuses };
+  return { snapshots, statuses };
 }
 
 function safeWalletIcon(icon: string | undefined): boolean {

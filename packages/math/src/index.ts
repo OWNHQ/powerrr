@@ -1,4 +1,79 @@
 import type { Confidence, RiskLevel } from "@powerrr/shared-types";
+import type { RawAmount, RawRatio } from "@powerrr/shared-types";
+
+export const USDC_DECIMALS = 6;
+
+export function pow10(decimals: number): bigint {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
+    throw new Error(`Invalid decimal scale ${decimals}`);
+  }
+  return 10n ** BigInt(decimals);
+}
+
+export function mulDivDown(
+  multiplicand: bigint,
+  multiplier: bigint,
+  denominator: bigint,
+): bigint {
+  if (multiplicand < 0n || multiplier < 0n || denominator <= 0n) {
+    throw new Error(
+      "mulDivDown expects non-negative values and a positive denominator",
+    );
+  }
+  return (multiplicand * multiplier) / denominator;
+}
+
+export function minBigInt(...values: bigint[]): bigint {
+  if (!values.length) return 0n;
+  return values.reduce((minimum, value) => (value < minimum ? value : minimum));
+}
+
+export function rawAmount(raw: bigint, decimals: number): RawAmount {
+  return { raw: (raw < 0n ? 0n : raw).toString(), decimals };
+}
+
+export function rawRatio(numerator: bigint, denominator: bigint): RawRatio {
+  if (denominator <= 0n)
+    throw new Error("Raw ratio denominator must be positive");
+  return {
+    numerator: numerator.toString(),
+    denominator: denominator.toString(),
+  };
+}
+
+export function scaleRawAmount(
+  value: bigint,
+  fromDecimals: number,
+  toDecimals: number,
+): bigint {
+  if (fromDecimals === toDecimals) return value;
+  return fromDecimals < toDecimals
+    ? value * pow10(toDecimals - fromDecimals)
+    : value / pow10(fromDecimals - toDecimals);
+}
+
+export function compareRawAmounts(left: RawAmount, right: RawAmount): number {
+  const decimals = Math.max(left.decimals, right.decimals);
+  const leftRaw = scaleRawAmount(BigInt(left.raw), left.decimals, decimals);
+  const rightRaw = scaleRawAmount(BigInt(right.raw), right.decimals, decimals);
+  return leftRaw < rightRaw ? -1 : leftRaw > rightRaw ? 1 : 0;
+}
+
+export function rawAmountToNumber(value: RawAmount): number {
+  const raw = BigInt(value.raw);
+  const scale = pow10(value.decimals);
+  const whole = raw / scale;
+  const fraction = raw % scale;
+  return Number(whole) + Number(fraction) / Number(scale);
+}
+
+export function decimalStringToRaw(value: string, decimals: number): bigint {
+  const normalized = value.trim().replaceAll(",", "").replace(/^\$/, "");
+  if (!/^\d*(?:\.\d*)?$/.test(normalized) || normalized === "") return 0n;
+  const [whole = "0", fraction = ""] = normalized.split(".");
+  const padded = `${fraction}${"0".repeat(decimals)}`.slice(0, decimals);
+  return BigInt(whole || "0") * pow10(decimals) + BigInt(padded || "0");
+}
 
 export type AaveLikeCollateralInput = {
   valueUsd: number;

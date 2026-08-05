@@ -4,7 +4,12 @@ import {
   quoteCompoundLiveSnapshot,
   quoteLiveSnapshots,
   quoteMorphoLiveSnapshot,
+  projectLiveSnapshots,
   type LiveConfidencePenalties,
+  type CompoundLiveCollateralSnapshot,
+  type LiveCollateralSnapshot,
+  type MorphoLiveMarketSnapshot,
+  type RawCollateralGroup,
   type LiveQuoteSnapshot,
   type LiveProtocolSnapshot,
 } from "./live-snapshots.js";
@@ -28,6 +33,8 @@ const baseSnapshot: LiveProtocolSnapshot = {
   indicativeApr: 0.052,
   existingDebtUsd: 25_000,
   availableLiquidityUsd: 1_000_000,
+  availableLiquidityExact: usd(1_000_000),
+  existingDebtExact: usd(25_000),
   source: "Aave official GraphQL test snapshot",
   sourceType: "official-api",
   freshnessSeconds: 12,
@@ -40,27 +47,272 @@ const baseSnapshot: LiveProtocolSnapshot = {
   confidencePenalties,
 };
 
+function usd(value: number) {
+  return { raw: BigInt(Math.round(value * 1_000_000)).toString(), decimals: 6 };
+}
+
+function ratio(value: number) {
+  return {
+    numerator: BigInt(Math.round(value * 1_000_000)).toString(),
+    denominator: "1000000",
+  };
+}
+
+function liveCollateral(
+  token: `0x${string}`,
+  symbol: string,
+  valueUsd: number,
+  ltv: number,
+  liquidationThreshold: number,
+): LiveCollateralSnapshot {
+  return {
+    token,
+    symbol,
+    valueUsd,
+    ltv,
+    liquidationThreshold,
+    valueExact: usd(valueUsd),
+    ltvExact: ratio(ltv),
+    liquidationThresholdExact: ratio(liquidationThreshold),
+  };
+}
+
+function compoundCollateral(
+  token: `0x${string}`,
+  symbol: string,
+  valueUsd: number,
+  borrowFactor: number,
+  liquidationFactor: number,
+): CompoundLiveCollateralSnapshot {
+  return {
+    token,
+    symbol,
+    valueUsd,
+    borrowCollateralFactor: borrowFactor,
+    liquidateCollateralFactor: liquidationFactor,
+    valueExact: usd(valueUsd),
+    borrowCollateralFactorExact: ratio(borrowFactor),
+    liquidateCollateralFactorExact: ratio(liquidationFactor),
+  };
+}
+
+function rawGroup(
+  token: `0x${string}`,
+  symbol: string,
+  valueUsd: number,
+  ltv: number,
+  liquidationThreshold: number,
+): RawCollateralGroup {
+  return {
+    protocolToken: token,
+    protocolSymbol: symbol,
+    protocolDecimals: 6,
+    sources: [{ token, symbol, convertedBalanceRaw: usd(valueUsd).raw }],
+    priceRaw: "1",
+    valueNumeratorScale: "1",
+    valueDenominator: "1",
+    ltv: ratio(ltv),
+    liquidationThreshold: ratio(liquidationThreshold),
+  };
+}
+
+function morphoMarket(
+  token: `0x${string}`,
+  symbol: string,
+  valueUsd: number,
+  lltv: number,
+  marketId: string,
+  availableLiquidityUsd: number,
+  borrowApy: number,
+): MorphoLiveMarketSnapshot {
+  const group = rawGroup(token, symbol, valueUsd, lltv, lltv);
+  group.marketId = marketId;
+  return {
+    token,
+    symbol,
+    valueUsd,
+    valueExact: usd(valueUsd),
+    lltv,
+    marketId,
+    availableLiquidityUsd,
+    availableLiquidityExact: usd(availableLiquidityUsd),
+    borrowApy,
+    loanToken: "0x0000000000000000000000000000000000000100",
+    collateralToken: token,
+    oracle: "0x0000000000000000000000000000000000000200",
+    irm: "0x0000000000000000000000000000000000000300",
+    totalSupplyAssets: usd(availableLiquidityUsd),
+    totalBorrowAssets: usd(0),
+    lastUpdate: "0",
+    fee: ratio(0),
+    borrowRatePerSecond: {
+      numerator: BigInt(
+        Math.round((Math.log1p(borrowApy) / 31_536_000) * 1e18),
+      ).toString(),
+      denominator: "1000000000000000000",
+    },
+    rawCollateral: group,
+  };
+}
+
 describe("live protocol snapshot quote builders", () => {
+  it("shares a binding WETH supply cap only across the selected ETH/WETH balance", () => {
+    const eth = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" as const;
+    const weth = "0x0000000000000000000000000000000000000001" as const;
+    const source: LiveQuoteSnapshot = {
+      ...baseSnapshot,
+      kind: "aave-like",
+      mode: "wallet-estimate",
+      existingDebtUsd: 0,
+      existingDebtExact: usd(0),
+      safetyProfile: "max",
+      targetHealthFactor: 1,
+      collateral: [],
+      rawCollateral: [
+        {
+          ...rawGroup(weth, "WETH", 0, 0.8, 0.83),
+          sources: [
+            { token: eth, symbol: "ETH", convertedBalanceRaw: usd(10).raw },
+            { token: weth, symbol: "WETH", convertedBalanceRaw: usd(10).raw },
+          ],
+          remainingSupplyRaw: usd(15).raw,
+        },
+      ],
+    };
+
+    const ethOnly = quoteLiveSnapshots({
+      snapshots: projectLiveSnapshots([source], [eth]),
+    })[0]!;
+    const both = quoteLiveSnapshots({
+      snapshots: projectLiveSnapshots([source], [eth, weth]),
+    })[0]!;
+
+    expect(ethOnly.capacityBreakdown?.exact.collateralValue.raw).toBe(
+      usd(10).raw,
+    );
+    expect(ethOnly.exactMaximum.raw).toBe(usd(8).raw);
+    expect(both.capacityBreakdown?.exact.collateralValue.raw).toBe(usd(15).raw);
+    expect(both.exactMaximum.raw).toBe(usd(12).raw);
+  });
+
+  it("combines stETH and wstETH only after a non-1:1 exact conversion", () => {
+    const steth = "0x0000000000000000000000000000000000000011" as const;
+    const wsteth = "0x0000000000000000000000000000000000000012" as const;
+    const wbtc = "0x0000000000000000000000000000000000000013" as const;
+    const group = rawGroup(wsteth, "wstETH", 0, 0.75, 0.8);
+    group.sources = [
+      { token: steth, symbol: "stETH", convertedBalanceRaw: usd(12).raw },
+      { token: wsteth, symbol: "wstETH", convertedBalanceRaw: usd(10).raw },
+    ];
+    const source: LiveQuoteSnapshot = {
+      ...baseSnapshot,
+      kind: "aave-like",
+      mode: "wallet-estimate",
+      existingDebtUsd: 0,
+      existingDebtExact: usd(0),
+      safetyProfile: "max",
+      targetHealthFactor: 1,
+      collateral: [],
+      rawCollateral: [group, rawGroup(wbtc, "WBTC", 5, 0.7, 0.75)],
+    };
+
+    const projected = projectLiveSnapshots([source], [steth, wsteth, wbtc])[0]!;
+    expect(projected.kind === "aave-like" && projected.collateral).toHaveLength(
+      2,
+    );
+    expect(
+      projected.kind === "aave-like"
+        ? projected.collateral.map((item) => item.valueExact.raw)
+        : [],
+    ).toEqual([usd(22).raw, usd(5).raw]);
+  });
+
+  it("projects a new collateral selection without changing the source snapshot", () => {
+    const weth = "0x0000000000000000000000000000000000000001" as const;
+    const wbtc = "0x0000000000000000000000000000000000000002" as const;
+    const source: LiveQuoteSnapshot = {
+      ...baseSnapshot,
+      kind: "aave-like",
+      mode: "wallet-estimate",
+      existingDebtUsd: 0,
+      existingDebtExact: usd(0),
+      safetyProfile: "balanced",
+      targetHealthFactor: 1.35,
+      collateral: [
+        liveCollateral(weth, "WETH", 6_000, 0.8, 0.83),
+        liveCollateral(wbtc, "WBTC", 12_000, 0.7, 0.77),
+      ],
+      rawCollateral: [
+        rawGroup(weth, "WETH", 6_000, 0.8, 0.83),
+        rawGroup(wbtc, "WBTC", 12_000, 0.7, 0.77),
+      ],
+      assetEvaluations: [
+        {
+          token: weth,
+          symbol: "WETH",
+          selectionStatus: "selected",
+          eligibilityStatus: "included",
+          reasonCodes: ["INCLUDED"],
+          reason: "Included in this protocol estimate.",
+          ltv: 0.8,
+          liquidationThreshold: 0.83,
+          contributionUsd: 6_000,
+        },
+        {
+          token: wbtc,
+          symbol: "WBTC",
+          selectionStatus: "selected",
+          eligibilityStatus: "included",
+          reasonCodes: ["INCLUDED"],
+          reason: "Included in this protocol estimate.",
+          ltv: 0.7,
+          liquidationThreshold: 0.77,
+          contributionUsd: 12_000,
+        },
+      ],
+    };
+
+    const [projected] = projectLiveSnapshots([source], [weth]);
+    const quote = quoteLiveSnapshots({ snapshots: [projected!] })[0]!;
+
+    expect(projected?.kind === "aave-like" && projected.collateral).toEqual([
+      expect.objectContaining({ token: weth, valueUsd: 6_000 }),
+    ]);
+    expect(quote.theoreticalBorrowUsd).toBe(4_800);
+    expect(quote.assetEvaluations).toContainEqual(
+      expect.objectContaining({
+        token: wbtc,
+        selectionStatus: "not-selected",
+        eligibilityStatus: "supported",
+        reasonCodes: ["SUPPORTED_NOT_SELECTED"],
+      }),
+    );
+    expect(source.kind === "aave-like" ? source.collateral : []).toHaveLength(
+      2,
+    );
+  });
+
   it("quotes Aave-like source snapshots using health-factor math", () => {
     const quote = quoteAaveLikeLiveSnapshot({
       ...baseSnapshot,
       safetyProfile: "balanced",
       targetHealthFactor: 1.35,
+      rawCollateral: [],
       collateral: [
-        {
-          token: "0x0000000000000000000000000000000000000001",
-          symbol: "WETH",
-          valueUsd: 100_000,
-          ltv: 0.8,
-          liquidationThreshold: 0.83,
-        },
-        {
-          token: "0x0000000000000000000000000000000000000002",
-          symbol: "wstETH",
-          valueUsd: 40_000,
-          ltv: 0.77,
-          liquidationThreshold: 0.81,
-        },
+        liveCollateral(
+          "0x0000000000000000000000000000000000000001",
+          "WETH",
+          100_000,
+          0.8,
+          0.83,
+        ),
+        liveCollateral(
+          "0x0000000000000000000000000000000000000002",
+          "wstETH",
+          40_000,
+          0.77,
+          0.81,
+        ),
       ],
     });
 
@@ -81,16 +333,18 @@ describe("live protocol snapshot quote builders", () => {
       ...baseSnapshot,
       mode: "wallet-estimate",
       existingDebtUsd: 0,
+      existingDebtExact: usd(0),
       safetyProfile: "balanced",
       targetHealthFactor: 1.35,
+      rawCollateral: [],
       collateral: [
-        {
-          token: "0x0000000000000000000000000000000000000001",
-          symbol: "WETH",
-          valueUsd: 0.08,
-          ltv: 0.8,
-          liquidationThreshold: 0.825,
-        },
+        liveCollateral(
+          "0x0000000000000000000000000000000000000001",
+          "WETH",
+          0.08,
+          0.8,
+          0.825,
+        ),
       ],
     });
 
@@ -112,36 +366,37 @@ describe("live protocol snapshot quote builders", () => {
       source: "Morpho official GraphQL test snapshot",
       safetyProfile: "balanced",
       existingDebtUsd: 10_000,
+      existingDebtExact: usd(10_000),
       markets: [
-        {
-          token: "0x0000000000000000000000000000000000000001",
-          symbol: "WETH",
-          valueUsd: 50_000,
-          lltv: 0.86,
-          marketId: "WETH-USDC-86",
-          availableLiquidityUsd: 20_000,
-          borrowApy: 0.041,
-        },
-        {
-          token: "0x0000000000000000000000000000000000000002",
-          symbol: "WBTC",
-          valueUsd: 70_000,
-          lltv: 0.77,
-          marketId: "WBTC-USDC-77",
-          availableLiquidityUsd: 500_000,
-          borrowApy: 0.052,
-        },
+        morphoMarket(
+          "0x0000000000000000000000000000000000000001",
+          "WETH",
+          50_000,
+          0.86,
+          "WETH-USDC-86",
+          20_000,
+          0.041,
+        ),
+        morphoMarket(
+          "0x0000000000000000000000000000000000000002",
+          "WBTC",
+          70_000,
+          0.77,
+          "WBTC-USDC-77",
+          500_000,
+          0.052,
+        ),
       ],
     });
 
     expect(quote.safeBorrowUsd).toBe(37_315);
     expect(quote.collateralUsed[0]?.marketId).toBe("WBTC-USDC-77");
-    expect(quote.annualRate).toEqual({
-      value: 0.052,
+    expect(quote.annualRate).toMatchObject({
       convention: "apy",
       rateType: "variable",
       sourceId: "morpho-blue:WBTC-USDC-77",
     });
+    expect(quote.annualRate?.value).toBeCloseTo(0.052, 10);
     expect(quote.indicativeApr).toBeNull();
     expect(quote.availableLiquidityUsd).toBe(500_000);
     expect(quote.assumptions).toContain(
@@ -161,14 +416,16 @@ describe("live protocol snapshot quote builders", () => {
       sourceType: "on-chain",
       safetyProfile: "conservative",
       existingDebtUsd: 15_000,
+      existingDebtExact: usd(15_000),
+      rawCollateral: [],
       collateral: [
-        {
-          token: "0x0000000000000000000000000000000000000001",
-          symbol: "WETH",
-          valueUsd: 80_000,
-          borrowCollateralFactor: 0.825,
-          liquidateCollateralFactor: 0.9,
-        },
+        compoundCollateral(
+          "0x0000000000000000000000000000000000000001",
+          "WETH",
+          80_000,
+          0.825,
+          0.9,
+        ),
       ],
     });
 
@@ -190,15 +447,18 @@ describe("live protocol snapshot quote builders", () => {
       familyLabel: "Compound III",
       safetyProfile: "balanced",
       existingDebtUsd: 0,
+      existingDebtExact: usd(0),
       minimumBorrowUsd: 1_000,
+      minimumBorrowExact: usd(1_000),
+      rawCollateral: [],
       collateral: [
-        {
-          token: "0x0000000000000000000000000000000000000001",
-          symbol: "WETH",
-          valueUsd: 500,
-          borrowCollateralFactor: 0.825,
-          liquidateCollateralFactor: 0.895,
-        },
+        compoundCollateral(
+          "0x0000000000000000000000000000000000000001",
+          "WETH",
+          500,
+          0.825,
+          0.895,
+        ),
       ],
     });
 
@@ -217,14 +477,15 @@ describe("live protocol snapshot quote builders", () => {
         familyLabel: "Aave",
         safetyProfile: "balanced",
         targetHealthFactor: 1.35,
+        rawCollateral: [],
         collateral: [
-          {
-            token: "0x0000000000000000000000000000000000000001",
-            symbol: "WETH",
-            valueUsd: 100_000,
-            ltv: 0.8,
-            liquidationThreshold: 0.83,
-          },
+          liveCollateral(
+            "0x0000000000000000000000000000000000000001",
+            "WETH",
+            100_000,
+            0.8,
+            0.83,
+          ),
         ],
       },
       {
@@ -236,14 +497,15 @@ describe("live protocol snapshot quote builders", () => {
         familyLabel: "Aave",
         safetyProfile: "balanced",
         targetHealthFactor: 1.38,
+        rawCollateral: [],
         collateral: [
-          {
-            token: "0x0000000000000000000000000000000000000001",
-            symbol: "WETH",
-            valueUsd: 120_000,
-            ltv: 0.79,
-            liquidationThreshold: 0.825,
-          },
+          liveCollateral(
+            "0x0000000000000000000000000000000000000001",
+            "WETH",
+            120_000,
+            0.79,
+            0.825,
+          ),
         ],
       },
       {
@@ -255,14 +517,16 @@ describe("live protocol snapshot quote builders", () => {
         familyLabel: "Compound III",
         safetyProfile: "balanced",
         existingDebtUsd: 0,
+        existingDebtExact: usd(0),
+        rawCollateral: [],
         collateral: [
-          {
-            token: "0x0000000000000000000000000000000000000002",
-            symbol: "WBTC",
-            valueUsd: 80_000,
-            borrowCollateralFactor: 0.75,
-            liquidateCollateralFactor: 0.85,
-          },
+          compoundCollateral(
+            "0x0000000000000000000000000000000000000002",
+            "WBTC",
+            80_000,
+            0.75,
+            0.85,
+          ),
         ],
       },
     ];
@@ -278,12 +542,12 @@ describe("live protocol snapshot quote builders", () => {
     });
 
     expect(allQuotes.map((quote) => quote.protocolId)).toEqual([
-      "compound-iii",
       "aave-v4",
+      "compound-iii",
       "aave-v3",
     ]);
     expect(allQuotes.map((quote) => quote.safeBorrowUsd)).toEqual([
-      51_000, 46_739.13, 36_481.48,
+      46_739.13, 51_000, 36_481.48,
     ]);
     expect(aaveOnly.map((quote) => quote.protocolId)).toEqual([
       "aave-v4",

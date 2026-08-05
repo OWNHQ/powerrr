@@ -1,4 +1,11 @@
 import type { ProtocolBorrowQuote } from "@powerrr/shared-types";
+import {
+  decimalStringToRaw,
+  mulDivDown,
+  rawAmountToNumber,
+  scaleRawAmount,
+  USDC_DECIMALS,
+} from "@powerrr/math";
 
 export type PooledBorrowPreview = {
   mode: ProtocolBorrowQuote["mode"];
@@ -102,14 +109,39 @@ export function calculatePooledBorrowPreview(
   const liquidationHeadroomUsd = liquidationCapacityUsd - projectedDebtUsd;
   const modeledLimitUsd = pooledBorrowAvailableUsd(quote);
   const minimumBorrowUsd = Math.max(0, quote.minimumBorrowUsd ?? 0);
+  const requestedRaw = decimalStringToRaw(
+    Math.max(0, borrowAmountUsd).toFixed(USDC_DECIMALS),
+    USDC_DECIMALS,
+  );
+  const startingDebtRaw = decimalStringToRaw(
+    quote.mode === "existing-position"
+      ? Math.max(0, quote.existingDebtUsd ?? 0).toFixed(USDC_DECIMALS)
+      : "0",
+    USDC_DECIMALS,
+  );
+  const projectedDebtRaw = startingDebtRaw + requestedRaw;
+  const modeledLimitRaw = pooledBorrowAvailableRaw(quote);
+  const minimumBorrowRaw = BigInt(
+    quote.capacityBreakdown?.exact.minimumBorrow?.raw ?? "0",
+  );
+  const liquidationLimitRaw = quote.collateralUsed.reduce(
+    (sum, item) =>
+      sum +
+      mulDivDown(
+        BigInt(item.valueExact.raw),
+        BigInt(item.liquidationThresholdExact.numerator),
+        BigInt(item.liquidationThresholdExact.denominator),
+      ),
+    0n,
+  );
   const modeledLimitUtilization = ratio(borrowAmountUsd, modeledLimitUsd);
   const riskBand = riskBandFromHealthFactor(healthFactor, projectedDebtUsd);
   const reasonCodes: PooledPreviewReasonCode[] = [];
   if (projectedDebtUsd <= 0) reasonCodes.push("no-debt-selected");
-  if (projectedDebtUsd > 0 && projectedDebtUsd < minimumBorrowUsd) {
+  if (projectedDebtRaw > 0n && projectedDebtRaw < minimumBorrowRaw) {
     reasonCodes.push("below-protocol-minimum");
   }
-  if (borrowAmountUsd > modeledLimitUsd) {
+  if (requestedRaw > modeledLimitRaw) {
     reasonCodes.push("above-modeled-limit");
   } else if (borrowAmountUsd > 0) {
     reasonCodes.push("within-modeled-limit");
@@ -120,12 +152,11 @@ export function calculatePooledBorrowPreview(
     reasonCodes.push("above-liquidation-threshold");
   }
   const actionable =
-    borrowAmountUsd > 0 &&
-    modeledLimitUsd > 0 &&
-    borrowAmountUsd <= modeledLimitUsd &&
-    projectedDebtUsd >= minimumBorrowUsd &&
-    riskBand !== "at-boundary" &&
-    riskBand !== "above-threshold";
+    requestedRaw > 0n &&
+    modeledLimitRaw > 0n &&
+    requestedRaw <= modeledLimitRaw &&
+    projectedDebtRaw >= minimumBorrowRaw &&
+    projectedDebtRaw < liquidationLimitRaw;
   const status =
     liquidationSafetyRatio > 1
       ? "below-liquidation-threshold"
@@ -152,22 +183,15 @@ export function calculatePooledBorrowPreview(
 }
 
 export function pooledBorrowAvailableUsd(quote: ProtocolBorrowQuote): number {
-  if (!quote.capacityBreakdown) {
-    return Math.max(0, quote.safeBorrowUsd ?? 0);
-  }
+  return rawAmountToNumber(quote.exactMaximum);
+}
 
-  const protocolLimitUsd = Math.max(
-    0,
-    quote.capacityBreakdown.protocolBorrowLimitUsd,
+export function pooledBorrowAvailableRaw(quote: ProtocolBorrowQuote): bigint {
+  return scaleRawAmount(
+    BigInt(quote.exactMaximum.raw),
+    quote.exactMaximum.decimals,
+    USDC_DECIMALS,
   );
-  const liquidityLimitUsd = Math.max(
-    0,
-    quote.capacityBreakdown.liquidityLimitUsd ??
-      quote.availableLiquidityUsd ??
-      0,
-  );
-
-  return Math.min(protocolLimitUsd, liquidityLimitUsd);
 }
 
 export function riskBandFromHealthFactor(

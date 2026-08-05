@@ -1,9 +1,30 @@
-import type { ProtocolBorrowQuote } from "@powerrr/shared-types";
+import type {
+  PortfolioAsset,
+  ProtocolAvailability,
+  ProtocolBorrowQuote,
+} from "@powerrr/shared-types";
 
 export type EstimatorCapacitySummary = {
   providerMaximumUsd: number;
   providerPathCount: number;
 };
+
+export type CollateralCoverageSummary = {
+  selectedValueUsd: number;
+  modeledValueUsd: number | null;
+  gapValueUsd: number | null;
+  sourceStatus: "complete" | "partial" | "unavailable";
+};
+
+type CoverageAsset = Pick<
+  PortfolioAsset,
+  "token" | "balance" | "marketPriceUsd"
+>;
+type CoverageQuote = Pick<
+  ProtocolBorrowQuote,
+  "assetEvaluations" | "collateralUsed"
+>;
+type CoverageStatus = Pick<ProtocolAvailability, "status">;
 
 export function summarizeEstimatorCapacity(
   providerCapacities: number[],
@@ -15,6 +36,71 @@ export function summarizeEstimatorCapacity(
   return {
     providerMaximumUsd,
     providerPathCount: usableProviderCapacities.length,
+  };
+}
+
+export function summarizeCollateralCoverage(
+  selectedAssets: CoverageAsset[],
+  quotes: CoverageQuote[],
+  providerStatuses: CoverageStatus[],
+): CollateralCoverageSummary {
+  const selectedValues = new Map<string, number>();
+  for (const asset of selectedAssets) {
+    const valueUsd = assetUsdValue(asset);
+    if (valueUsd <= 0) continue;
+    const token = asset.token.toLowerCase();
+    selectedValues.set(
+      token,
+      Math.max(selectedValues.get(token) ?? 0, valueUsd),
+    );
+  }
+  const selectedValueUsd = sumValues(selectedValues.values());
+  const availableSourceCount = providerStatuses.filter(
+    (status) => status.status === "available",
+  ).length;
+
+  if (availableSourceCount === 0 || quotes.length === 0) {
+    return {
+      selectedValueUsd,
+      modeledValueUsd: null,
+      gapValueUsd: null,
+      sourceStatus: "unavailable",
+    };
+  }
+
+  const modeledTokens = new Set<string>();
+  for (const quote of quotes) {
+    if (quote.assetEvaluations) {
+      for (const evaluation of quote.assetEvaluations) {
+        if (
+          evaluation.selectionStatus !== "not-selected" &&
+          Number.isFinite(evaluation.contributionUsd) &&
+          (evaluation.contributionUsd ?? 0) > 0
+        ) {
+          modeledTokens.add(evaluation.token.toLowerCase());
+        }
+      }
+      continue;
+    }
+    for (const collateral of quote.collateralUsed) {
+      if (Number.isFinite(collateral.valueUsd) && collateral.valueUsd > 0) {
+        modeledTokens.add(collateral.token.toLowerCase());
+      }
+    }
+  }
+
+  const modeledValueUsd = sumValues(
+    [...modeledTokens].map((token) => selectedValues.get(token) ?? 0),
+  );
+  return {
+    selectedValueUsd,
+    modeledValueUsd,
+    gapValueUsd: Math.max(0, selectedValueUsd - modeledValueUsd),
+    sourceStatus: providerStatuses.some(
+      (status) => status.status === "unavailable",
+    )
+      ? "partial"
+      : "complete",
   };
 }
 
@@ -218,6 +304,12 @@ function assetUsdValue(asset: {
   return Number.isFinite(balance) && asset.marketPriceUsd
     ? balance * asset.marketPriceUsd
     : 0;
+}
+
+function sumValues(values: Iterable<number>): number {
+  let total = 0;
+  for (const value of values) total += value;
+  return total;
 }
 
 function roundAmount(value: number, maximumUsd: number): number {

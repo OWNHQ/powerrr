@@ -11,6 +11,7 @@ import {
   loadAaveLikeSnapshot,
 } from "./aave-like-live-source.js";
 import type { CompoundLiveRpcClient } from "./compound-live-source.js";
+import { projectLiveSnapshots } from "./live-snapshots.js";
 
 const abi = parseAbi([
   "function getAllReservesTokens() view returns ((string symbol,address tokenAddress)[])",
@@ -108,7 +109,11 @@ describe("Aave-like live source", () => {
     expect(snapshot.collateral).toEqual([
       expect.objectContaining({ symbol: "WETH", valueUsd: 6_000 }),
     ]);
-    expect(snapshot.assetEvaluations).toContainEqual(
+    const projected = projectLiveSnapshots(
+      [snapshot],
+      ["0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"],
+    )[0]!;
+    expect(projected.assetEvaluations).toContainEqual(
       expect.objectContaining({
         symbol: "ETH",
         selectionStatus: "unselectable",
@@ -163,7 +168,8 @@ describe("Aave-like live source", () => {
     expect(snapshot.collateral).toEqual([
       expect.objectContaining({ symbol: "WETH", valueUsd: 15_000 }),
     ]);
-    expect(snapshot.assetEvaluations).toEqual(
+    const projected = projectLiveSnapshots([snapshot], [eth, weth])[0]!;
+    expect(projected.assetEvaluations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           symbol: "ETH",

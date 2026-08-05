@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { PhArrowClockwise, PhCheck } from "@phosphor-icons/vue";
+import { PhArrowClockwise, PhCheck, PhSpinnerGap } from "@phosphor-icons/vue";
 
 defineProps<{
   demo: boolean;
@@ -71,7 +71,7 @@ defineExpose({
         >
           <button
             type="button"
-            class="focus-ring inline-flex min-h-11 items-center gap-2 rounded-lg border border-line px-3 text-sm font-semibold text-river hover:border-river disabled:opacity-55"
+            class="focus-ring inline-flex min-h-11 min-w-[7.5rem] items-center justify-center gap-2 rounded-lg border border-line px-3 text-sm font-semibold text-river hover:border-river disabled:cursor-wait disabled:opacity-55"
             :disabled="refreshing"
             @click="emit('refresh')"
           >
@@ -82,9 +82,14 @@ defineExpose({
               aria-hidden="true"
             />
             <PhArrowClockwise
+              v-else-if="!refreshing"
+              :size="17"
+              aria-hidden="true"
+            />
+            <PhSpinnerGap
               v-else
               :size="17"
-              :class="{ 'animate-spin': refreshing }"
+              class="refresh-spinner shrink-0"
               aria-hidden="true"
             />
             {{
@@ -116,3 +121,24 @@ defineExpose({
     </p>
   </section>
 </template>
+
+<style scoped>
+.refresh-spinner {
+  animation: refresh-spinner-turn 800ms linear infinite;
+  transform-origin: center;
+  will-change: transform;
+}
+
+@keyframes refresh-spinner-turn {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .refresh-spinner {
+    animation: none;
+    will-change: auto;
+  }
+}
+</style>

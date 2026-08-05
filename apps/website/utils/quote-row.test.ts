@@ -30,18 +30,30 @@ const quote: ProtocolBorrowQuote = {
       symbol: "WETH",
       valueUsd: 30_000,
       ltv: 0.52,
+      liquidationThreshold: 0.6,
+      valueExact: usd(30_000),
+      ltvExact: ratio(0.52),
+      liquidationThresholdExact: ratio(0.6),
     },
     {
       token: "0x0000000000000000000000000000000000000002",
       symbol: "WBTC",
       valueUsd: 20_000,
       ltv: 0.48,
+      liquidationThreshold: 0.55,
+      valueExact: usd(20_000),
+      ltvExact: ratio(0.48),
+      liquidationThresholdExact: ratio(0.55),
     },
     {
       token: "0x0000000000000000000000000000000000000003",
       symbol: "USDC",
       valueUsd: 10_000,
       ltv: 0.72,
+      liquidationThreshold: 0.75,
+      valueExact: usd(10_000),
+      ltvExact: ratio(0.72),
+      liquidationThresholdExact: ratio(0.75),
     },
   ],
   healthFactor: null,
@@ -59,7 +71,19 @@ const quote: ProtocolBorrowQuote = {
       freshnessSeconds: 0,
     },
   ],
+  exactMaximum: usd(42_500),
 };
+
+function usd(value: number) {
+  return { raw: BigInt(Math.round(value * 1_000_000)).toString(), decimals: 6 };
+}
+
+function ratio(value: number) {
+  return {
+    numerator: BigInt(Math.round(value * 1_000_000)).toString(),
+    denominator: "1000000",
+  };
+}
 
 describe("website quote row mapping", () => {
   it("maps protocol quote output to the required website row fields", () => {
@@ -98,6 +122,7 @@ describe("website quote row mapping", () => {
       safeBorrowUsd: 80_000,
       theoreticalBorrowUsd: 90_000,
       confidenceScore: 93,
+      exactMaximum: usd(80_000),
     };
     const aaveV4: ProtocolBorrowQuote = {
       ...quote,
@@ -108,6 +133,7 @@ describe("website quote row mapping", () => {
       safeBorrowUsd: 75_000,
       theoreticalBorrowUsd: 92_000,
       confidenceScore: 88,
+      exactMaximum: usd(75_000),
     };
 
     const groups = groupWebsiteQuoteRows([quote, aaveV4, aaveV3]);

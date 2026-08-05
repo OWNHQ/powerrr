@@ -4,6 +4,14 @@ import type {
   ProtocolAssetEvaluation,
 } from "@powerrr/shared-types";
 import {
+  mulDivDown,
+  rawAmount,
+  rawAmountToNumber,
+  rawRatio,
+  scaleRawAmount,
+  USDC_DECIMALS,
+} from "@powerrr/math";
+import {
   decodeFunctionResult,
   encodeFunctionData,
   formatUnits,
@@ -13,10 +21,13 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import type { AaveLikeLiveSnapshot } from "./live-snapshots.js";
+import type {
+  AaveLikeLiveSnapshot,
+  RawCollateralGroup,
+} from "./live-snapshots.js";
 import type { CompoundLiveRpcClient } from "./compound-live-source.js";
 
-const RAY = 1e27;
+const RAY = 10n ** 27n;
 const BPS = 10_000;
 const ZERO = BigInt(0);
 
@@ -326,6 +337,15 @@ export async function loadAaveLikeSnapshot(
       const selected =
         input.mode === "existing-position" || selectedWalletAssets.length > 0;
       const balanceRaw = selected ? walletBalanceRaw : ZERO;
+      const supplyCapRaw = reserveCaps[1] * BigInt(10) ** configuration[0];
+      const remainingSupplyRaw =
+        input.mode === "existing-position" || reserveCaps[1] === ZERO
+          ? balanceRaw
+          : supplyCapRaw > reserveData[2]
+            ? supplyCapRaw - reserveData[2]
+            : ZERO;
+      const usableBalanceRaw =
+        balanceRaw < remainingSupplyRaw ? balanceRaw : remainingSupplyRaw;
       const debtRaw =
         input.mode === "existing-position"
           ? (userReserve?.[1] ?? ZERO) + (userReserve?.[2] ?? ZERO)
@@ -341,10 +361,17 @@ export async function loadAaveLikeSnapshot(
         walletBalanceRaw,
         selected,
         balanceRaw,
+        usableBalanceRaw,
         debtRaw,
         priceUsd,
-        valueUsd: Number(formatUnits(balanceRaw, decimals)) * priceUsd,
+        priceRaw,
+        valueUsd: Number(formatUnits(usableBalanceRaw, decimals)) * priceUsd,
         debtUsd: Number(formatUnits(debtRaw, decimals)) * priceUsd,
+        debtValueExactRaw: mulDivDown(
+          debtRaw * priceRaw,
+          10n ** BigInt(USDC_DECIMALS),
+          10n ** BigInt(decimals) * baseCurrencyUnit,
+        ),
         isCollateral,
         reserveData,
         reserveCaps,
@@ -355,22 +382,15 @@ export async function loadAaveLikeSnapshot(
   );
   const collateral = reserveRows
     .filter((row) => {
-      const supplyCapRaw =
-        row.reserveCaps[1] * BigInt(10) ** row.configuration[0];
-      const capAvailable =
-        input.mode === "existing-position" ||
-        row.reserveCaps[1] === ZERO ||
-        row.reserveData[2] + row.balanceRaw <= supplyCapRaw;
       return (
-        row.balanceRaw > ZERO &&
+        row.usableBalanceRaw > ZERO &&
         row.isCollateral &&
         row.configuration[8] &&
         !row.configuration[9] &&
         !row.paused &&
         row.debtCeiling === ZERO &&
         row.configuration[1] > ZERO &&
-        row.priceUsd > 0 &&
-        capAvailable
+        row.priceUsd > 0
       );
     })
     .map((row) => ({
@@ -379,6 +399,71 @@ export async function loadAaveLikeSnapshot(
       valueUsd: row.valueUsd,
       ltv: Number(row.configuration[1]) / BPS,
       liquidationThreshold: Number(row.configuration[2]) / BPS,
+      valueExact: rawAmount(
+        mulDivDown(
+          row.usableBalanceRaw * row.priceRaw,
+          10n ** BigInt(USDC_DECIMALS),
+          10n ** row.configuration[0] * baseCurrencyUnit,
+        ),
+        USDC_DECIMALS,
+      ),
+      ltvExact: rawRatio(row.configuration[1], BigInt(BPS)),
+      liquidationThresholdExact: rawRatio(row.configuration[2], BigInt(BPS)),
+    }));
+  const rawCollateral: RawCollateralGroup[] = reserveRows
+    .filter(
+      (row) =>
+        row.isCollateral &&
+        row.configuration[8] &&
+        !row.configuration[9] &&
+        !row.paused &&
+        row.debtCeiling === ZERO &&
+        row.configuration[1] > ZERO &&
+        row.priceRaw > ZERO,
+    )
+    .map((row) => ({
+      protocolToken: getAddress(row.reserve.tokenAddress) as `0x${string}`,
+      protocolSymbol: row.reserve.symbol,
+      protocolDecimals: Number(row.configuration[0]),
+      sources: (walletAssets.get(getAddress(row.reserve.tokenAddress)) ?? [])
+        .filter(
+          (asset) =>
+            BigInt(asset.protocolBalanceRaw ?? asset.balanceRaw ?? "0") > ZERO,
+        )
+        .map((asset) => ({
+          token: asset.token,
+          symbol: asset.symbol,
+          convertedBalanceRaw:
+            asset.protocolBalanceRaw ?? asset.balanceRaw ?? "0",
+        })),
+      ...(row.reserveCaps[1] > ZERO
+        ? {
+            remainingSupplyRaw: (row.reserveCaps[1] *
+              10n ** row.configuration[0] >
+            row.reserveData[2]
+              ? row.reserveCaps[1] * 10n ** row.configuration[0] -
+                row.reserveData[2]
+              : ZERO
+            ).toString(),
+            supplyCapRaw: (
+              row.reserveCaps[1] *
+              10n ** row.configuration[0]
+            ).toString(),
+            currentSupplyRaw: row.reserveData[2].toString(),
+          }
+        : {}),
+      priceRaw: row.priceRaw.toString(),
+      valueNumeratorScale: (10n ** BigInt(USDC_DECIMALS)).toString(),
+      valueDenominator: (
+        10n ** row.configuration[0] *
+        baseCurrencyUnit
+      ).toString(),
+      ltv: rawRatio(row.configuration[1], BigInt(BPS)),
+      liquidationThreshold: rawRatio(row.configuration[2], BigInt(BPS)),
+      active: row.configuration[8],
+      frozen: row.configuration[9],
+      paused: row.paused,
+      collateralEnabled: row.configuration[5],
     }));
   const assetEvaluations = input.portfolio.map((asset) => {
     const row = reserveRows.find((candidate) =>
@@ -416,20 +501,6 @@ export async function loadAaveLikeSnapshot(
     const eligible = reasons.length === 0;
     const contributesAfterConversion =
       conversionRequired && selected && protocolReasons.length === 0;
-    const walletEstimateContributionUsd =
-      Number(
-        formatUnits(
-          BigInt(asset.protocolBalanceRaw ?? asset.balanceRaw ?? "0"),
-          Number(row.configuration[0]),
-        ),
-      ) * row.priceUsd;
-    const contributionUsd =
-      input.mode === "existing-position"
-        ? !conversionRequired &&
-          isAddressEqual(asset.token as Address, row.reserve.tokenAddress)
-          ? row.valueUsd
-          : 0
-        : walletEstimateContributionUsd;
     return {
       token: asset.token,
       symbol: asset.symbol,
@@ -459,9 +530,6 @@ export async function loadAaveLikeSnapshot(
           : aaveReasonLabel(reasons[0]),
       ltv: Number(row.configuration[1]) / BPS,
       liquidationThreshold: Number(row.configuration[2]) / BPS,
-      ...(selected && (eligible || contributesAfterConversion)
-        ? { contributionUsd }
-        : {}),
       ...(asset.requiredAction
         ? {
             requiredAction: `Convert ${asset.symbol} before supplying collateral.`,
@@ -480,6 +548,14 @@ export async function loadAaveLikeSnapshot(
     availableLiquidityRaw < borrowCapRemainingRaw
       ? availableLiquidityRaw
       : borrowCapRemainingRaw;
+  const availableLiquidityExact = rawAmount(
+    scaleRawAmount(borrowableLiquidityRaw, targetDecimals, USDC_DECIMALS),
+    USDC_DECIMALS,
+  );
+  const existingDebtExact = rawAmount(
+    reserveRows.reduce((sum, row) => sum + row.debtValueExactRaw, ZERO),
+    USDC_DECIMALS,
+  );
 
   return {
     kind: "aave-like",
@@ -491,14 +567,16 @@ export async function loadAaveLikeSnapshot(
     mode: input.mode,
     targetBorrowAsset: target.symbol,
     rateType: "variable",
-    indicativeApr: Number(targetReserveData[6]) / RAY,
-    annualRateValue: Number(targetReserveData[6]) / RAY,
+    indicativeApr: Number(targetReserveData[6]) / Number(RAY),
+    annualRateValue: Number(targetReserveData[6]) / Number(RAY),
+    annualRateExact: rawRatio(targetReserveData[6], RAY),
+    annualRateTransform: "ratio",
     annualRateConvention: "apr",
     rateSourceId: `${input.deployment.protocolId}:variable-borrow-rate`,
-    existingDebtUsd: reserveRows.reduce((sum, row) => sum + row.debtUsd, 0),
-    availableLiquidityUsd:
-      Number(formatUnits(borrowableLiquidityRaw, targetDecimals)) *
-      (Number(targetPriceRaw) / Number(baseCurrencyUnit)),
+    existingDebtUsd: rawAmountToNumber(existingDebtExact),
+    availableLiquidityUsd: rawAmountToNumber(availableLiquidityExact),
+    existingDebtExact,
+    availableLiquidityExact,
     source: `${input.deployment.protocolLabel} data provider and oracle on-chain reads`,
     sourceType: "on-chain",
     ...(freshnessSeconds === undefined ? {} : { freshnessSeconds }),
@@ -542,6 +620,7 @@ export async function loadAaveLikeSnapshot(
     targetHealthFactor: input.deployment.targetHealthFactor,
     assetEvaluations,
     collateral,
+    rawCollateral,
   };
 }
 
@@ -563,10 +642,7 @@ function aaveExclusionReasons(row: {
   if (row.configuration[1] <= ZERO) reasons.push("ZERO_LTV");
   if (row.priceUsd <= 0) reasons.push("PRICE_UNAVAILABLE");
   const supplyCapRaw = row.reserveCaps[1] * BigInt(10) ** row.configuration[0];
-  if (
-    row.reserveCaps[1] > ZERO &&
-    row.reserveData[2] + row.walletBalanceRaw > supplyCapRaw
-  ) {
+  if (row.reserveCaps[1] > ZERO && row.reserveData[2] >= supplyCapRaw) {
     reasons.push("SUPPLY_CAP_REACHED");
   }
   return reasons;

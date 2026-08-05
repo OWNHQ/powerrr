@@ -16,7 +16,18 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import type { CompoundLiveSnapshot } from "./live-snapshots.js";
+import {
+  mulDivDown,
+  rawAmount,
+  rawAmountToNumber,
+  rawRatio,
+  scaleRawAmount,
+  USDC_DECIMALS,
+} from "@powerrr/math";
+import type {
+  CompoundLiveSnapshot,
+  RawCollateralGroup,
+} from "./live-snapshots.js";
 
 export const COMPOUND_USDC_COMET_MAINNET =
   "0xc3d688B66703497DAA19211EEdff47f25384cdc3" as const;
@@ -34,11 +45,13 @@ const compoundCometAbi = parseAbi([
   "function totalBorrow() view returns (uint256)",
   "function getUtilization() view returns (uint256)",
   "function getBorrowRate(uint256 utilization) view returns (uint64)",
+  "function baseToken() view returns (address)",
   "function baseScale() view returns (uint64)",
   "function priceScale() view returns (uint64)",
   "function baseBorrowMin() view returns (uint256)",
   "function isSupplyPaused() view returns (bool)",
   "function isWithdrawPaused() view returns (bool)",
+  "function totalsCollateral(address asset) view returns (uint128 totalSupplyAsset,uint128 _reserved)",
 ]);
 const erc20Abi = parseAbi([
   "function balanceOf(address account) view returns (uint256)",
@@ -80,6 +93,7 @@ export async function loadCompoundUsdcCometSnapshot(
   const blockTag = blockNumberHex;
   const [
     numAssets,
+    baseToken,
     baseScale,
     priceScale,
     totalSupplyRaw,
@@ -91,6 +105,7 @@ export async function loadCompoundUsdcCometSnapshot(
     withdrawPaused,
   ] = await Promise.all([
     callComet<number>(input.rpc, cometAddress, "numAssets", [], blockTag),
+    callComet<Address>(input.rpc, cometAddress, "baseToken", [], blockTag),
     callComet<bigint>(input.rpc, cometAddress, "baseScale", [], blockTag),
     callComet<bigint>(input.rpc, cometAddress, "priceScale", [], blockTag),
     callComet<bigint>(input.rpc, cometAddress, "totalSupply", [], blockTag),
@@ -125,6 +140,12 @@ export async function loadCompoundUsdcCometSnapshot(
     cometAddress,
     "getBorrowRate",
     [utilization],
+    blockTag,
+  );
+  const spendableBaseRaw = await callErc20Balance(
+    input.rpc,
+    baseToken,
+    cometAddress,
     blockTag,
   );
   const assets = await Promise.all(
@@ -162,7 +183,7 @@ export async function loadCompoundUsdcCometSnapshot(
           return null;
         }
 
-        const [priceRaw, currentSupplyRaw] = await Promise.all([
+        const [priceRaw, collateralTotals] = await Promise.all([
           callComet<bigint>(
             input.rpc,
             cometAddress,
@@ -171,22 +192,41 @@ export async function loadCompoundUsdcCometSnapshot(
             blockTag,
           ),
           asset.supplyCap > ZERO_BIGINT
-            ? callErc20Balance(input.rpc, asset.asset, cometAddress, blockTag)
-            : Promise.resolve(ZERO_BIGINT),
+            ? callComet<readonly [bigint, bigint]>(
+                input.rpc,
+                cometAddress,
+                "totalsCollateral",
+                [asset.asset],
+                blockTag,
+              )
+            : Promise.resolve([ZERO_BIGINT, ZERO_BIGINT] as const),
         ]);
+        const currentSupplyRaw = collateralTotals[0];
+        const remainingSupplyRaw =
+          input.mode === "existing-position" || asset.supplyCap === ZERO_BIGINT
+            ? balanceRaw
+            : asset.supplyCap > currentSupplyRaw
+              ? asset.supplyCap - currentSupplyRaw
+              : ZERO_BIGINT;
+        const usableBalanceRaw =
+          balanceRaw < remainingSupplyRaw ? balanceRaw : remainingSupplyRaw;
         if (
           priceRaw <= ZERO_BIGINT ||
           asset.borrowCollateralFactor <= ZERO_BIGINT ||
           asset.liquidateCollateralFactor <= ZERO_BIGINT ||
-          (asset.supplyCap > ZERO_BIGINT &&
-            (input.mode === "wallet-estimate"
-              ? currentSupplyRaw + balanceRaw
-              : currentSupplyRaw) > asset.supplyCap)
+          usableBalanceRaw <= ZERO_BIGINT
         ) {
           return null;
         }
         const metadata = tokenMetadataFor(asset.asset);
-        const amount = Number(formatUnits(balanceRaw, metadata.decimals));
+        const protocolDecimals = decimalsFromScale(asset.scale);
+        if (
+          BigInt(10) ** BigInt(protocolDecimals) !== asset.scale ||
+          protocolDecimals !== metadata.decimals
+        ) {
+          return null;
+        }
+        const amount = Number(formatUnits(usableBalanceRaw, protocolDecimals));
         const priceUsd = Number(
           formatUnits(priceRaw, decimalsFromScale(priceScale)),
         );
@@ -198,34 +238,55 @@ export async function loadCompoundUsdcCometSnapshot(
         return {
           token: getAddress(asset.asset) as `0x${string}`,
           symbol: metadata.symbol,
+          assetAddress: getAddress(asset.asset) as `0x${string}`,
+          scale: asset.scale,
+          priceRaw,
+          currentSupplyRaw,
+          remainingSupplyRaw,
+          supplyCapRaw: asset.supplyCap,
           valueUsd,
+          valueExact: rawAmount(
+            mulDivDown(
+              usableBalanceRaw * priceRaw,
+              10n ** BigInt(USDC_DECIMALS),
+              asset.scale * priceScale,
+            ),
+            USDC_DECIMALS,
+          ),
           borrowCollateralFactor: Number(
             formatUnits(asset.borrowCollateralFactor, 18),
           ),
           liquidateCollateralFactor: Number(
             formatUnits(asset.liquidateCollateralFactor, 18),
           ),
+          borrowCollateralFactorExact: rawRatio(
+            asset.borrowCollateralFactor,
+            10n ** 18n,
+          ),
+          liquidateCollateralFactorExact: rawRatio(
+            asset.liquidateCollateralFactor,
+            10n ** 18n,
+          ),
         };
       }),
     )
   ).filter((item): item is NonNullable<typeof item> => item !== null);
-  const availableLiquidityUsd = Math.max(
-    0,
-    Number(
-      formatUnits(
-        totalSupplyRaw > totalBorrowRaw
-          ? totalSupplyRaw - totalBorrowRaw
-          : ZERO_BIGINT,
-        decimalsFromScale(baseScale),
-      ),
-    ),
+  const baseDecimals = decimalsFromScale(baseScale);
+  const availableLiquidityExact = rawAmount(
+    scaleRawAmount(spendableBaseRaw, baseDecimals, USDC_DECIMALS),
+    USDC_DECIMALS,
   );
-  const existingDebtUsd = Number(
-    formatUnits(existingDebtRaw, decimalsFromScale(baseScale)),
+  const existingDebtExact = rawAmount(
+    scaleRawAmount(existingDebtRaw, baseDecimals, USDC_DECIMALS),
+    USDC_DECIMALS,
   );
-  const minimumBorrowUsd = Number(
-    formatUnits(baseBorrowMinRaw, decimalsFromScale(baseScale)),
+  const minimumBorrowExact = rawAmount(
+    scaleRawAmount(baseBorrowMinRaw, baseDecimals, USDC_DECIMALS),
+    USDC_DECIMALS,
   );
+  const availableLiquidityUsd = rawAmountToNumber(availableLiquidityExact);
+  const existingDebtUsd = rawAmountToNumber(existingDebtExact);
+  const minimumBorrowUsd = rawAmountToNumber(minimumBorrowExact);
   const indicativeApr = Number(formatUnits(borrowRate, 18)) * SECONDS_PER_YEAR;
   const assetEvaluations = input.portfolio.map((portfolioAsset) => {
     const listed = assets.find((asset) =>
@@ -263,15 +324,6 @@ export async function loadCompoundUsdcCometSnapshot(
     const conversionRequired = Boolean(portfolioAsset.requiredAction);
     const supported = factorsValid;
     const temporarilyUnavailable = selected && supported && !included;
-    const combinedBalanceRaw = walletBalanceFor(input, listed.asset);
-    const assetBalanceRaw = selected
-      ? BigInt(
-          portfolioAsset.protocolBalanceRaw ?? portfolioAsset.balanceRaw ?? "0",
-        )
-      : ZERO_BIGINT;
-    const contributionUsd = included
-      ? proportionalUsd(included.valueUsd, assetBalanceRaw, combinedBalanceRaw)
-      : 0;
     const protocolSymbol = tokenMetadataFor(listed.asset).symbol;
     return {
       token: portfolioAsset.token,
@@ -307,13 +359,70 @@ export async function loadCompoundUsdcCometSnapshot(
       liquidationThreshold: Number(
         formatUnits(listed.liquidateCollateralFactor, 18),
       ),
-      ...(selected && contributionUsd > 0 ? { contributionUsd } : {}),
       ...(portfolioAsset.requiredAction
         ? {
             requiredAction: `Convert ${portfolioAsset.symbol} before supplying collateral.`,
           }
         : {}),
     } satisfies ProtocolAssetEvaluation;
+  });
+  const rawCollateral: RawCollateralGroup[] = assets.flatMap((asset) => {
+    const matching = collateral.find((item) =>
+      isAddressEqual(item.token as Address, asset.asset),
+    );
+    if (!matching) return [];
+    const metadata = tokenMetadataFor(asset.asset);
+    const protocolDecimals = decimalsFromScale(asset.scale);
+    const sources = input.portfolio
+      .filter(
+        (item) =>
+          isAddressEqual(
+            (item.protocolAssetToken ?? item.token) as Address,
+            asset.asset,
+          ) &&
+          BigInt(item.protocolBalanceRaw ?? item.balanceRaw ?? "0") >
+            ZERO_BIGINT,
+      )
+      .map((item) => ({
+        token: item.token,
+        symbol: item.symbol,
+        convertedBalanceRaw: item.protocolBalanceRaw ?? item.balanceRaw,
+      }));
+    if (
+      !sources.length ||
+      protocolDecimals !== metadata.decimals ||
+      asset.borrowCollateralFactor <= ZERO_BIGINT ||
+      asset.liquidateCollateralFactor <= ZERO_BIGINT
+    ) {
+      return [];
+    }
+    return [
+      {
+        protocolToken: getAddress(asset.asset) as `0x${string}`,
+        protocolSymbol: metadata.symbol,
+        protocolDecimals,
+        sources,
+        ...(asset.supplyCap > ZERO_BIGINT
+          ? {
+              remainingSupplyRaw: matching.remainingSupplyRaw.toString(),
+              supplyCapRaw: asset.supplyCap.toString(),
+              currentSupplyRaw: matching.currentSupplyRaw.toString(),
+            }
+          : {}),
+        priceRaw: matching.priceRaw.toString(),
+        valueNumeratorScale: (10n ** BigInt(USDC_DECIMALS)).toString(),
+        valueDenominator: (asset.scale * priceScale).toString(),
+        ltv: rawRatio(asset.borrowCollateralFactor, 10n ** 18n),
+        liquidationThreshold: rawRatio(
+          asset.liquidateCollateralFactor,
+          10n ** 18n,
+        ),
+        active: true,
+        frozen: false,
+        paused: false,
+        collateralEnabled: true,
+      },
+    ];
   });
 
   return {
@@ -328,6 +437,11 @@ export async function loadCompoundUsdcCometSnapshot(
     rateType: "variable",
     indicativeApr,
     annualRateValue: indicativeApr,
+    annualRateExact: rawRatio(
+      borrowRate * BigInt(SECONDS_PER_YEAR),
+      10n ** 18n,
+    ),
+    annualRateTransform: "ratio",
     annualRateConvention: "apr",
     rateSourceId: "compound-iii:usdc-comet-borrow-rate",
     existingDebtUsd,
@@ -347,7 +461,7 @@ export async function loadCompoundUsdcCometSnapshot(
     assumptions: [
       `Read Compound III USDC Comet proxy ${cometAddress}.`,
       "Collateral values use Comet price feeds, collateral token scale, and Comet factor scale.",
-      "Available liquidity is total supplied base minus total borrowed base, interpreted in USDC units.",
+      "Available liquidity is the spendable base-token balance held by the Comet contract, interpreted in USDC units.",
     ],
     warnings:
       input.mode === "wallet-estimate"
@@ -364,8 +478,12 @@ export async function loadCompoundUsdcCometSnapshot(
     },
     safetyProfile: input.safetyProfile,
     minimumBorrowUsd,
+    minimumBorrowExact,
+    existingDebtExact,
+    availableLiquidityExact,
     assetEvaluations,
     collateral,
+    rawCollateral,
   };
 }
 
@@ -439,32 +557,10 @@ function walletBalanceFor(input: ProtocolAdapterInput, asset: Address): bigint {
   const matches = input.portfolio.filter((item) =>
     isAddressEqual((item.protocolAssetToken ?? item.token) as Address, asset),
   );
-  const selectedTokens = input.selectedCollateralTokens
-    ? new Set(
-        input.selectedCollateralTokens.map((token) => token.toLowerCase()),
-      )
-    : null;
-
   return matches.reduce(
-    (sum, match) =>
-      selectedTokens && !selectedTokens.has(match.token.toLowerCase())
-        ? sum
-        : sum + BigInt(match.protocolBalanceRaw ?? match.balanceRaw),
+    (sum, match) => sum + BigInt(match.protocolBalanceRaw ?? match.balanceRaw),
     ZERO_BIGINT,
   );
-}
-
-function proportionalUsd(
-  totalValueUsd: number,
-  numerator: bigint,
-  denominator: bigint,
-): number {
-  if (numerator <= ZERO_BIGINT || denominator <= ZERO_BIGINT) return 0;
-  const precision = 1_000_000_000n;
-  const value =
-    (totalValueUsd * Number((numerator * precision) / denominator)) /
-    Number(precision);
-  return Math.round(value * 100) / 100;
 }
 
 function tokenMetadataFor(asset: Address): {

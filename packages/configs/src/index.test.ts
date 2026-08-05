@@ -6,11 +6,15 @@ import {
   ETHEREUM_NATIVE_TOKEN,
   ETHEREUM_MORPHO_USDC_MARKET_MANIFEST_VERSION,
   ETHEREUM_TOKEN_REGISTRY_VERSION,
+  ETHEREUM_TOKEN_REGISTRY_RANKED_COUNT,
+  ETHEREUM_TOKEN_REGISTRY_ADDITION_COUNT,
+  ETHEREUM_TOKEN_REGISTRY_TOTAL_COUNT,
   MORPHO_BLUE,
   SPARK_ORACLE,
   ethereumAssetRegistryV1,
   ethereumMorphoUsdcMarketsV1,
   ethereumTokenRegistryV1,
+  ethereumTokenRegistryAdditionsV1,
 } from "./index.js";
 
 describe("Ethereum blue-chip registry", () => {
@@ -116,17 +120,34 @@ describe("Ethereum blue-chip registry", () => {
 });
 
 describe("static token registry", () => {
-  it("pins at least 250 unique Ethereum ERC-20 contracts", () => {
+  it("pins exactly 250 ranked contracts plus reviewed LINK and MKR additions", () => {
     expect(ETHEREUM_TOKEN_REGISTRY_VERSION).toBe(
       "ethereum-top250-2026-07-29-v1",
     );
-    expect(ethereumTokenRegistryV1.length).toBeGreaterThanOrEqual(250);
-    expect(ethereumTokenRegistryV1.length).toBeLessThanOrEqual(275);
+    expect(ETHEREUM_TOKEN_REGISTRY_RANKED_COUNT).toBe(250);
+    expect(ETHEREUM_TOKEN_REGISTRY_ADDITION_COUNT).toBe(2);
+    expect(ETHEREUM_TOKEN_REGISTRY_TOTAL_COUNT).toBe(252);
+    expect(ethereumTokenRegistryV1).toHaveLength(252);
+    expect(
+      ethereumTokenRegistryAdditionsV1.map((token) => token.symbol),
+    ).toEqual(["LINK", "MKR"]);
     expect(
       new Set(
         ethereumTokenRegistryV1.map((token) => token.address.toLowerCase()),
       ).size,
     ).toBe(ethereumTokenRegistryV1.length);
+  });
+
+  it("allows only the two reviewed deterministic conversion families", () => {
+    const converted = ethereumAssetRegistryV1.filter(
+      (asset) => asset.protocolAssetToken,
+    );
+    expect(
+      converted.map((asset) => [asset.symbol, asset.conversion?.kind]),
+    ).toEqual([
+      ["ETH", "one-to-one"],
+      ["stETH", "wsteth"],
+    ]);
   });
 
   it("contains immutable metadata and an explicit price status", () => {

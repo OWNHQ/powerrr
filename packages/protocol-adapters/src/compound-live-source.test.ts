@@ -13,7 +13,10 @@ import {
   loadCompoundUsdcCometSnapshot,
   type CompoundLiveRpcClient,
 } from "./compound-live-source.js";
-import { quoteCompoundLiveSnapshot } from "./live-snapshots.js";
+import {
+  projectLiveSnapshots,
+  quoteCompoundLiveSnapshot,
+} from "./live-snapshots.js";
 
 const cometAbi = parseAbi([
   "function numAssets() view returns (uint8)",
@@ -21,10 +24,12 @@ const cometAbi = parseAbi([
   "function collateralBalanceOf(address account, address asset) view returns (uint128)",
   "function borrowBalanceOf(address account) view returns (uint256)",
   "function getPrice(address priceFeed) view returns (uint256)",
+  "function totalsCollateral(address asset) view returns (uint128 totalSupplyAsset,uint128 _reserved)",
   "function totalSupply() view returns (uint256)",
   "function totalBorrow() view returns (uint256)",
   "function getUtilization() view returns (uint256)",
   "function getBorrowRate(uint256 utilization) view returns (uint64)",
+  "function baseToken() view returns (address)",
   "function baseScale() view returns (uint64)",
   "function priceScale() view returns (uint64)",
   "function baseBorrowMin() view returns (uint256)",
@@ -33,6 +38,7 @@ const cometAbi = parseAbi([
 ]);
 
 const account = "0x1111111111111111111111111111111111111111" as const;
+const usdc = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as const;
 const weth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" as const;
 const wbtc = "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599" as const;
 const wethPriceFeed = "0x00000000000000000000000000000000000000A1" as const;
@@ -88,20 +94,20 @@ describe("Compound III live Comet snapshot source", () => {
     });
     expect(snapshot.indicativeApr).toBeCloseTo(0.05);
     expect(snapshot.collateral).toEqual([
-      {
+      expect.objectContaining({
         token: weth,
         symbol: "WETH",
         valueUsd: 7_000,
         borrowCollateralFactor: 0.825,
         liquidateCollateralFactor: 0.895,
-      },
-      {
+      }),
+      expect.objectContaining({
         token: wbtc,
         symbol: "WBTC",
         valueUsd: 32_500,
         borrowCollateralFactor: 0.7,
         liquidateCollateralFactor: 0.77,
-      },
+      }),
     ]);
     expect(rpc.calls.some((call) => call.functionName === "getAssetInfo")).toBe(
       true,
@@ -154,7 +160,8 @@ describe("Compound III live Comet snapshot source", () => {
     expect(snapshot.collateral).toEqual([
       expect.objectContaining({ symbol: "WETH", valueUsd: 10_500 }),
     ]);
-    expect(snapshot.assetEvaluations).toEqual(
+    const projected = projectLiveSnapshots([snapshot], [eth, weth])[0]!;
+    expect(projected.assetEvaluations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           symbol: "ETH",
@@ -203,6 +210,32 @@ describe("Compound III live Comet snapshot source", () => {
     expect(quote.healthFactor).toBe(0.7518);
   });
 
+  it("uses totalsCollateral rather than token donations for remaining supply capacity", async () => {
+    const rpc = createCompoundRpcMock({
+      mode: "wallet-estimate",
+      borrowBalanceRaw: 0n,
+      collateralBalances: {},
+      wethSupplyCapRaw: parseUnits("100", 18),
+      wethTotalSupplyAssetRaw: parseUnits("90", 18),
+    });
+    const snapshot = await loadCompoundUsdcCometSnapshot({
+      rpc,
+      address: account,
+      chainId: 1,
+      mode: "wallet-estimate",
+      portfolio: [buildPortfolioAsset("WETH", 20)],
+      targetBorrowAssets: ["USDC"],
+      safetyProfile: "max",
+    });
+
+    expect(
+      rpc.calls.some((call) => call.functionName === "totalsCollateral"),
+    ).toBe(true);
+    expect(snapshot.rawCollateral[0]?.remainingSupplyRaw).toBe(
+      parseUnits("10", 18).toString(),
+    );
+  });
+
   it("fails closed when Compound borrowing operations are paused", async () => {
     const rpc = createCompoundRpcMock({
       mode: "wallet-estimate",
@@ -232,6 +265,8 @@ function createCompoundRpcMock(input: {
   baseBorrowMinRaw?: bigint;
   supplyPaused?: boolean;
   withdrawPaused?: boolean;
+  wethSupplyCapRaw?: bigint;
+  wethTotalSupplyAssetRaw?: bigint;
 }): CompoundLiveRpcClient & {
   calls: Array<{
     functionName: string;
@@ -264,6 +299,18 @@ function createCompoundRpcMock(input: {
         throw new Error("Expected eth_call params");
       }
 
+      if (call.to.toLowerCase() === usdc.toLowerCase()) {
+        calls.push({
+          functionName: "balanceOf",
+          args: [COMPOUND_USDC_COMET_MAINNET],
+          blockTag: String(blockTag),
+        });
+        return encodeFunctionResult({
+          abi: parseAbi(["function balanceOf(address) view returns (uint256)"]),
+          functionName: "balanceOf",
+          result: 750_000_000_000n,
+        }) as TResult;
+      }
       expect(call.to).toBe(COMPOUND_USDC_COMET_MAINNET);
       const decoded = decodeFunctionData({
         abi: cometAbi,
@@ -294,6 +341,8 @@ function resultFor(
     baseBorrowMinRaw?: bigint;
     supplyPaused?: boolean;
     withdrawPaused?: boolean;
+    wethSupplyCapRaw?: bigint;
+    wethTotalSupplyAssetRaw?: bigint;
   },
 ): Hex {
   if (functionName === "numAssets") {
@@ -302,6 +351,10 @@ function resultFor(
 
   if (functionName === "baseScale") {
     return encode(functionName, 1_000_000n);
+  }
+
+  if (functionName === "baseToken") {
+    return encode(functionName, usdc);
   }
 
   if (functionName === "priceScale") {
@@ -341,7 +394,11 @@ function resultFor(
   }
 
   if (functionName === "getAssetInfo") {
-    return encode(functionName, assetInfo(Number(args[0])));
+    return encode(functionName, assetInfo(Number(args[0]), input));
+  }
+
+  if (functionName === "totalsCollateral") {
+    return encode(functionName, [input.wethTotalSupplyAssetRaw ?? 0n, 0n]);
   }
 
   if (functionName === "getPrice") {
@@ -360,7 +417,7 @@ function resultFor(
   throw new Error(`Unexpected function ${functionName}`);
 }
 
-function assetInfo(index: number) {
+function assetInfo(index: number, input: { wethSupplyCapRaw?: bigint }) {
   if (index === 0) {
     return {
       offset: 0,
@@ -370,7 +427,7 @@ function assetInfo(index: number) {
       borrowCollateralFactor: 825_000_000_000_000_000n,
       liquidateCollateralFactor: 895_000_000_000_000_000n,
       liquidationFactor: 950_000_000_000_000_000n,
-      supplyCap: 0n,
+      supplyCap: input.wethSupplyCapRaw ?? 0n,
     };
   }
 

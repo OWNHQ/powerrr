@@ -28,10 +28,9 @@ unavailable one—to inspect:
 
 An RPC failure is labeled “Support could not be checked,” not “Unsupported.”
 
-OWN appears only above a $1,000 request. Every wallet asset is eligible for an
-OWN assessment, but the estimator does not invent capacity, LTV, liquidation
-terms, or a rate. **Contact OWN** opens
-`https://own.casa/borrow#contact`; Powerrr sends no wallet data to that site.
+OWN is not included as a borrowing path in the current comparison. The footer
+credits OWN as the builder and links to `https://own.casa`; Powerrr sends no
+wallet data to that site.
 
 Before acting, recheck the provider’s own interface because rates, factors,
 liquidity, caps, and transaction requirements can change after the pinned block.

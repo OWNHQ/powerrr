@@ -22,6 +22,13 @@ import {
   type Address,
   type Hex,
 } from "viem";
+import {
+  rawAmount,
+  rawAmountToNumber,
+  rawRatio,
+  scaleRawAmount,
+  USDC_DECIMALS,
+} from "@powerrr/math";
 import type { Eip1193Provider } from "./static-discovery";
 
 const ORACLE_PRICE_SCALE = 10n ** 36n;
@@ -114,23 +121,18 @@ type MarketState = {
 export async function loadStaticMorphoSnapshot(input: {
   provider: Eip1193Provider;
   portfolio: PortfolioAsset[];
-  selectedCollateralTokens?: string[];
   receipt: ReadReceipt;
 }): Promise<MorphoLiveSnapshot & { kind: "morpho" }> {
   const blockTag = toHex(BigInt(input.receipt.blockNumber));
   const markets: MorphoLiveMarketSnapshot[] = [];
   const selectedTokens = new Set(
-    (
-      input.selectedCollateralTokens ??
-      input.portfolio.map((asset) => asset.token)
-    ).map((token) => token.toLowerCase()),
+    input.portfolio.map((asset) => asset.token.toLowerCase()),
   );
 
   for (const manifest of ethereumMorphoUsdcMarketsV1) {
     const walletAssets = input.portfolio.filter(
       (asset) =>
         positiveRawBalance(asset) &&
-        selectedTokens.has(asset.token.toLowerCase()) &&
         isAddressEqual(
           (asset.protocolAssetToken ?? asset.token) as Address,
           manifest.collateralToken,
@@ -166,11 +168,19 @@ export async function loadStaticMorphoSnapshot(input: {
     const valueUsd = Number(
       formatUnits(collateralValueLoanRaw, manifest.loanDecimals),
     );
+    const valueExact = rawAmount(
+      scaleRawAmount(
+        collateralValueLoanRaw,
+        manifest.loanDecimals,
+        USDC_DECIMALS,
+      ),
+      USDC_DECIMALS,
+    );
     const liquidityRaw =
       accruedState.totalSupplyAssets > accruedState.totalBorrowAssets
         ? accruedState.totalSupplyAssets - accruedState.totalBorrowAssets
         : 0n;
-    const borrowApy = await readBorrowApy(
+    const borrowRate = await readBorrowRate(
       input.provider,
       params,
       accruedState,
@@ -186,12 +196,48 @@ export async function loadStaticMorphoSnapshot(input: {
         " + ",
       ),
       valueUsd,
+      valueExact,
       lltv: Number(manifest.lltv) / Number(WAD),
       marketId: manifest.marketId,
       availableLiquidityUsd: Number(
         formatUnits(liquidityRaw, manifest.loanDecimals),
       ),
-      borrowApy,
+      availableLiquidityExact: rawAmount(
+        scaleRawAmount(liquidityRaw, manifest.loanDecimals, USDC_DECIMALS),
+        USDC_DECIMALS,
+      ),
+      borrowApy: borrowRate.apy,
+      loanToken: manifest.loanToken,
+      collateralToken: manifest.collateralToken,
+      oracle: manifest.oracle,
+      irm: manifest.irm,
+      totalSupplyAssets: rawAmount(
+        accruedState.totalSupplyAssets,
+        manifest.loanDecimals,
+      ),
+      totalBorrowAssets: rawAmount(
+        accruedState.totalBorrowAssets,
+        manifest.loanDecimals,
+      ),
+      lastUpdate: accruedState.lastUpdate.toString(),
+      fee: rawRatio(accruedState.fee, WAD),
+      borrowRatePerSecond: rawRatio(borrowRate.ratePerSecond, WAD),
+      rawCollateral: {
+        protocolToken: manifest.collateralToken,
+        protocolSymbol: manifest.collateralSymbol,
+        protocolDecimals: manifest.collateralDecimals,
+        sources: walletAssets.map((asset) => ({
+          token: asset.token,
+          symbol: asset.symbol,
+          convertedBalanceRaw: asset.protocolBalanceRaw ?? asset.balanceRaw,
+        })),
+        priceRaw: oraclePrice.toString(),
+        valueNumeratorScale: "1",
+        valueDenominator: ORACLE_PRICE_SCALE.toString(),
+        ltv: rawRatio(manifest.lltv, WAD),
+        liquidationThreshold: rawRatio(manifest.lltv, WAD),
+        marketId: manifest.marketId,
+      },
       priceObservedAt: input.receipt.blockTimestamp,
       freshnessSeconds: input.receipt.blockAgeSeconds,
     });
@@ -208,32 +254,6 @@ export async function loadStaticMorphoSnapshot(input: {
     const selectedMarket = markets.find(
       (market) => market.marketId === manifest?.marketId,
     );
-    const matchingSelectedAssets = manifest
-      ? input.portfolio.filter(
-          (candidate) =>
-            positiveRawBalance(candidate) &&
-            selectedTokens.has(candidate.token.toLowerCase()) &&
-            isAddressEqual(
-              (candidate.protocolAssetToken ?? candidate.token) as Address,
-              manifest.collateralToken,
-            ),
-        )
-      : [];
-    const combinedBalanceRaw = matchingSelectedAssets.reduce(
-      (sum, candidate) =>
-        sum + BigInt(candidate.protocolBalanceRaw ?? candidate.balanceRaw),
-      0n,
-    );
-    const assetBalanceRaw = selected
-      ? BigInt(asset.protocolBalanceRaw ?? asset.balanceRaw)
-      : 0n;
-    const contributionUsd = selectedMarket
-      ? proportionalUsd(
-          selectedMarket.valueUsd,
-          assetBalanceRaw,
-          combinedBalanceRaw,
-        )
-      : 0;
     const balanceUsd =
       Number(asset.balance) * Math.max(0, asset.marketPriceUsd ?? 0);
     if (!manifest) {
@@ -284,13 +304,21 @@ export async function loadStaticMorphoSnapshot(input: {
           : "A reviewed market supports this asset, but it is not selected.",
       ltv: Number(manifest.lltv) / Number(WAD),
       liquidationThreshold: Number(manifest.lltv) / Number(WAD),
-      ...(contributionUsd > 0 ? { contributionUsd } : {}),
       ...(conversionRequired
         ? { requiredAction: `Convert to ${manifest.collateralSymbol}` }
         : {}),
     } satisfies ProtocolAssetEvaluation;
   });
 
+  const availableLiquidityExact = rawAmount(
+    markets.length
+      ? markets.reduce((maximum, market) => {
+          const raw = BigInt(market.availableLiquidityExact.raw);
+          return raw > maximum ? raw : maximum;
+        }, 0n)
+      : 0n,
+    USDC_DECIMALS,
+  );
   return {
     kind: "morpho",
     protocolId: "morpho-blue",
@@ -306,9 +334,9 @@ export async function loadStaticMorphoSnapshot(input: {
     annualRateConvention: "apy",
     rateSourceId: "morpho-blue:adaptive-curve-irm",
     existingDebtUsd: 0,
-    availableLiquidityUsd: markets.length
-      ? Math.max(...markets.map((market) => market.availableLiquidityUsd ?? 0))
-      : 0,
+    availableLiquidityUsd: rawAmountToNumber(availableLiquidityExact),
+    existingDebtExact: rawAmount(0n, USDC_DECIMALS),
+    availableLiquidityExact,
     source: "Morpho Blue market, oracle, and IRM onchain reads",
     sourceType: "on-chain",
     freshnessSeconds: input.receipt.blockAgeSeconds,
@@ -342,19 +370,6 @@ function positiveRawBalance(asset: PortfolioAsset): boolean {
   } catch {
     return false;
   }
-}
-
-function proportionalUsd(
-  totalValueUsd: number,
-  numerator: bigint,
-  denominator: bigint,
-): number {
-  if (numerator <= 0n || denominator <= 0n) return 0;
-  const precision = 1_000_000_000n;
-  const value =
-    (totalValueUsd * Number((numerator * precision) / denominator)) /
-    Number(precision);
-  return Math.round(value * 100) / 100;
 }
 
 async function readMarketParams(
@@ -450,7 +465,7 @@ async function readOraclePrice(
   return price;
 }
 
-async function readBorrowApy(
+async function readBorrowRate(
   provider: Eip1193Provider,
   params: {
     loanToken: Address;
@@ -461,31 +476,27 @@ async function readBorrowApy(
   },
   market: MarketState,
   blockTag: Hex,
-): Promise<number | null> {
-  try {
-    const response = await ethCall(
-      provider,
-      params.irm,
-      encodeFunctionData({
-        abi: irmAbi,
-        functionName: "borrowRateView",
-        args: [params, market],
-      }),
-      blockTag,
-    );
-    const ratePerSecond = decodeFunctionResult({
+): Promise<{ ratePerSecond: bigint; apy: number }> {
+  const response = await ethCall(
+    provider,
+    params.irm,
+    encodeFunctionData({
       abi: irmAbi,
       functionName: "borrowRateView",
-      data: response,
-    });
-    const annualRate = (Number(ratePerSecond) / Number(WAD)) * SECONDS_PER_YEAR;
-    if (!Number.isFinite(annualRate) || annualRate < 0 || annualRate > 20) {
-      return null;
-    }
-    return Math.expm1(annualRate);
-  } catch {
-    return null;
+      args: [params, market],
+    }),
+    blockTag,
+  );
+  const ratePerSecond = decodeFunctionResult({
+    abi: irmAbi,
+    functionName: "borrowRateView",
+    data: response,
+  });
+  const annualRate = (Number(ratePerSecond) / Number(WAD)) * SECONDS_PER_YEAR;
+  if (!Number.isFinite(annualRate) || annualRate < 0 || annualRate > 20) {
+    throw new Error("The Morpho IRM returned an invalid borrow rate.");
   }
+  return { ratePerSecond, apy: Math.expm1(annualRate) };
 }
 
 async function accrueMarketState(
@@ -502,41 +513,41 @@ async function accrueMarketState(
   blockTag: Hex,
 ): Promise<MarketState> {
   const timestampMs = new Date(blockTimestamp).getTime();
-  if (!Number.isFinite(timestampMs)) return market;
+  if (!Number.isFinite(timestampMs)) {
+    throw new Error(
+      "The selected block timestamp is invalid for Morpho accrual.",
+    );
+  }
   const timestamp = BigInt(Math.floor(timestampMs / 1_000));
   if (timestamp <= market.lastUpdate) return market;
   if (market.totalBorrowAssets <= 0n)
     return { ...market, lastUpdate: timestamp };
 
-  try {
-    const response = await ethCall(
-      provider,
-      params.irm,
-      encodeFunctionData({
-        abi: irmAbi,
-        functionName: "borrowRateView",
-        args: [params, market],
-      }),
-      blockTag,
-    );
-    const ratePerSecond = decodeFunctionResult({
+  const response = await ethCall(
+    provider,
+    params.irm,
+    encodeFunctionData({
       abi: irmAbi,
       functionName: "borrowRateView",
-      data: response,
-    });
-    const elapsed = timestamp - market.lastUpdate;
-    const compoundedRate = wTaylorCompounded(ratePerSecond, elapsed);
-    const interest = (market.totalBorrowAssets * compoundedRate) / WAD;
+      args: [params, market],
+    }),
+    blockTag,
+  );
+  const ratePerSecond = decodeFunctionResult({
+    abi: irmAbi,
+    functionName: "borrowRateView",
+    data: response,
+  });
+  const elapsed = timestamp - market.lastUpdate;
+  const compoundedRate = wTaylorCompounded(ratePerSecond, elapsed);
+  const interest = (market.totalBorrowAssets * compoundedRate) / WAD;
 
-    return {
-      ...market,
-      totalSupplyAssets: market.totalSupplyAssets + interest,
-      totalBorrowAssets: market.totalBorrowAssets + interest,
-      lastUpdate: timestamp,
-    };
-  } catch {
-    return market;
-  }
+  return {
+    ...market,
+    totalSupplyAssets: market.totalSupplyAssets + interest,
+    totalBorrowAssets: market.totalBorrowAssets + interest,
+    lastUpdate: timestamp,
+  };
 }
 
 function wTaylorCompounded(

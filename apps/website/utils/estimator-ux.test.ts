@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type {
+  PortfolioAsset,
+  ProtocolAvailability,
+  ProtocolBorrowQuote,
+} from "@powerrr/shared-types";
 import {
   amountForUtilization,
   amountForTargetLtv,
@@ -8,9 +13,53 @@ import {
   friendlyEstimatorError,
   providerRateLabel,
   sortAssetsByUsdValue,
+  summarizeCollateralCoverage,
   summarizeEstimatorCapacity,
   utilizationForAmount,
 } from "./estimator-ux.js";
+
+type CoverageAsset = Pick<
+  PortfolioAsset,
+  "token" | "balance" | "marketPriceUsd"
+>;
+type CoverageQuote = Pick<
+  ProtocolBorrowQuote,
+  "assetEvaluations" | "collateralUsed"
+>;
+
+const tokenA = "0x0000000000000000000000000000000000000001" as const;
+const tokenB = "0x0000000000000000000000000000000000000002" as const;
+
+function availableStatuses(
+  unavailableCount = 0,
+): Pick<ProtocolAvailability, "status">[] {
+  return [
+    { status: "available" },
+    ...Array.from({ length: unavailableCount }, () => ({
+      status: "unavailable" as const,
+    })),
+  ];
+}
+
+function selectedEvaluationQuote(
+  token: typeof tokenA | typeof tokenB,
+  contributionUsd: number,
+): CoverageQuote {
+  return {
+    collateralUsed: [],
+    assetEvaluations: [
+      {
+        token,
+        symbol: token === tokenA ? "AAA" : "BBB",
+        selectionStatus: "selected",
+        eligibilityStatus: "included",
+        reasonCodes: ["INCLUDED"],
+        reason: "Included in this estimate.",
+        contributionUsd,
+      },
+    ],
+  };
+}
 
 describe("estimator UX helpers", () => {
   it.each([
@@ -90,6 +139,119 @@ describe("estimator UX helpers", () => {
     expect(summarizeEstimatorCapacity([0, Number.NaN])).toEqual({
       providerMaximumUsd: 0,
       providerPathCount: 0,
+    });
+  });
+
+  it("reports complete coverage and does not double-count a token modeled by multiple paths", () => {
+    const assets: CoverageAsset[] = [
+      { token: tokenA, balance: "2", marketPriceUsd: 100 },
+    ];
+    const quote = selectedEvaluationQuote(tokenA, 200);
+
+    expect(
+      summarizeCollateralCoverage(assets, [quote, quote], availableStatuses()),
+    ).toEqual({
+      selectedValueUsd: 200,
+      modeledValueUsd: 200,
+      gapValueUsd: 0,
+      sourceStatus: "complete",
+    });
+  });
+
+  it("reports selected value that is not modeled by any pooled path", () => {
+    const assets: CoverageAsset[] = [
+      { token: tokenA, balance: "2", marketPriceUsd: 100 },
+      { token: tokenB, balance: "3", marketPriceUsd: 50 },
+    ];
+
+    expect(
+      summarizeCollateralCoverage(
+        assets,
+        [selectedEvaluationQuote(tokenA, 200)],
+        availableStatuses(),
+      ),
+    ).toEqual({
+      selectedValueUsd: 350,
+      modeledValueUsd: 200,
+      gapValueUsd: 150,
+      sourceStatus: "complete",
+    });
+  });
+
+  it("uses a selected converted asset evaluation with a positive contribution", () => {
+    const assets: CoverageAsset[] = [
+      { token: tokenA, balance: "1", marketPriceUsd: 2_000 },
+    ];
+    const quote = selectedEvaluationQuote(tokenA, 1_950);
+    quote.assetEvaluations![0]!.selectionStatus = "unselectable";
+    quote.assetEvaluations![0]!.eligibilityStatus = "supported";
+    quote.assetEvaluations![0]!.reasonCodes = ["CONVERSION_REQUIRED"];
+
+    expect(
+      summarizeCollateralCoverage(assets, [quote], availableStatuses()),
+    ).toMatchObject({ modeledValueUsd: 2_000, gapValueUsd: 0 });
+  });
+
+  it("falls back to collateral used when asset evaluations are absent", () => {
+    const assets: CoverageAsset[] = [
+      { token: tokenA, balance: "4", marketPriceUsd: 25 },
+    ];
+    const quote: CoverageQuote = {
+      collateralUsed: [
+        {
+          token: tokenA,
+          symbol: "AAA",
+          valueUsd: 100,
+          valueExact: { raw: "100000000", decimals: 6 },
+          ltvExact: { numerator: "0", denominator: "1" },
+          liquidationThresholdExact: { numerator: "0", denominator: "1" },
+        },
+      ],
+    };
+
+    expect(
+      summarizeCollateralCoverage(assets, [quote], availableStatuses()),
+    ).toMatchObject({ modeledValueUsd: 100, gapValueUsd: 0 });
+  });
+
+  it("marks partial and total provider failures without overstating the gap", () => {
+    const assets: CoverageAsset[] = [
+      { token: tokenA, balance: "2", marketPriceUsd: 100 },
+    ];
+    const quote = selectedEvaluationQuote(tokenA, 200);
+
+    expect(
+      summarizeCollateralCoverage(assets, [quote], availableStatuses(1)),
+    ).toMatchObject({ sourceStatus: "partial", gapValueUsd: 0 });
+    expect(
+      summarizeCollateralCoverage(assets, [], [{ status: "unavailable" }]),
+    ).toEqual({
+      selectedValueUsd: 200,
+      modeledValueUsd: null,
+      gapValueUsd: null,
+      sourceStatus: "unavailable",
+    });
+  });
+
+  it("excludes invalid, missing, zero, and negative valuations", () => {
+    const assets: CoverageAsset[] = [
+      { token: tokenA, balance: "not-a-number", marketPriceUsd: 100 },
+      { token: tokenB, balance: "10", marketPriceUsd: undefined },
+      { token: tokenA, balance: "0", marketPriceUsd: 100 },
+      { token: tokenB, balance: "5", marketPriceUsd: -10 },
+    ];
+
+    expect(
+      summarizeCollateralCoverage(
+        assets,
+        [{ collateralUsed: [] }],
+        availableStatuses(),
+      ),
+    ).toEqual({
+      selectedValueUsd: 0,
+      modeledValueUsd: 0,
+      gapValueUsd: 0,
+      sourceStatus: "complete",
     });
   });
 

@@ -7,6 +7,33 @@ export type RateType = "fixed" | "variable" | "mixed" | "unknown";
 export type AnnualRateConvention = "apr" | "apy";
 export type FreshnessStatus = "fresh" | "stale" | "unknown";
 
+export type RawAmount = {
+  raw: string;
+  decimals: number;
+};
+
+export type RawRatio = {
+  numerator: string;
+  denominator: string;
+};
+
+export type AssetConversionSnapshot = {
+  sourceToken: HexAddress;
+  targetToken: HexAddress;
+  sourceAmount: RawAmount;
+  targetAmount: RawAmount;
+  kind: "identity" | "one-to-one" | "wsteth";
+  observedBlockNumber: string;
+};
+
+export type BlockContext = {
+  chainId: 1;
+  blockTag: `0x${string}`;
+  blockNumber: string;
+  blockTimestamp: string;
+  blockAgeSeconds: number;
+};
+
 export type WalletProviderDescriptor = {
   uuid: string;
   name: string;
@@ -38,6 +65,13 @@ export type ReadReceipt = {
   postedToPowerrr: false;
 };
 
+export type WalletSnapshot = {
+  block: BlockContext;
+  assets: PortfolioAsset[];
+  receipt: ReadReceipt;
+  registrySource: string;
+};
+
 export type PortfolioAsset = {
   chainId: number;
   token: HexAddress;
@@ -59,6 +93,7 @@ export type PortfolioAsset = {
     toSymbol: string;
     rate: string;
   };
+  conversionSnapshot?: AssetConversionSnapshot;
   balanceReadStatus?: "success" | "failed";
   balanceReadReason?: string;
   valuationStatus?: "available" | "manual-review" | "failed";
@@ -120,6 +155,14 @@ export type ProtocolCapacityBreakdown = {
     | "liquidity"
     | "minimum-borrow"
     | "no-eligible-collateral";
+  exact: {
+    collateralValue: RawAmount;
+    protocolBorrowLimit: RawAmount;
+    safetyAdjustedLimit: RawAmount;
+    liquidityLimit: RawAmount;
+    recommendedMaximum: RawAmount;
+    minimumBorrow?: RawAmount;
+  };
 };
 
 export type CollateralUsed = {
@@ -128,6 +171,9 @@ export type CollateralUsed = {
   valueUsd: number;
   ltv?: number | null;
   liquidationThreshold?: number | null;
+  valueExact: RawAmount;
+  ltvExact: RawRatio;
+  liquidationThresholdExact: RawRatio;
   marketId?: string;
   vaultId?: string;
 };
@@ -182,6 +228,7 @@ export type ProtocolBorrowQuote = {
   assumptions: string[];
   warnings: string[];
   provenance: QuoteProvenance[];
+  exactMaximum: RawAmount;
 };
 
 export type ProtocolAdapterInput = {
