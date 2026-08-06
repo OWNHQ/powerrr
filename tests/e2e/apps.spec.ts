@@ -737,12 +737,19 @@ test("wallet identity resolves before its final label is published", async ({
   await expect(
     page.getByRole("button", { name: "Resolving wallet name" }),
   ).toBeVisible();
-  await expect(page.getByText("0x0000…00A1", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("0x0000...00A1", { exact: true })).toHaveCount(0);
   await expect(
     page.getByRole("button", {
       name: /Disconnect wallet powerrr\.eth · powerrr\.gwei/i,
     }),
   ).toBeVisible();
+
+  const estimateDetails = page.locator("[data-estimate-details]");
+  await estimateDetails.getByText("About this estimate").click();
+  await expect(
+    estimateDetails.getByText("Test Wallet · powerrr.eth", { exact: true }),
+  ).toBeVisible();
+  await expect(estimateDetails.getByText(/0x0000\.\.\.00A1/)).toHaveCount(0);
 });
 
 test("wallet identity falls back to the address after name lookup completes", async ({
@@ -756,7 +763,13 @@ test("wallet identity falls back to the address after name lookup completes", as
     page.getByRole("button", { name: "Resolving wallet name" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /Disconnect wallet 0x0000…00A1/i }),
+    page.getByRole("button", { name: /Disconnect wallet 0x0000\.\.\.00A1/i }),
+  ).toBeVisible();
+
+  const estimateDetails = page.locator("[data-estimate-details]");
+  await estimateDetails.getByText("About this estimate").click();
+  await expect(
+    estimateDetails.getByText("Test Wallet · 0x0000...00A1", { exact: true }),
   ).toBeVisible();
 });
 
@@ -1015,7 +1028,7 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
       "Ceiling and projected LTV use the highest pooled estimate ($4,800).",
       { exact: true },
     ),
-  ).toBeVisible();
+  ).toHaveCount(0);
   const fiftyPercentLtv = page.getByRole("button", {
     name: /50% projected LTV/,
   });

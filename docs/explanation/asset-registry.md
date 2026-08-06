@@ -3,8 +3,10 @@
 The static application uses the checked-in registry
 `ethereum-top250-2026-07-29-v1`. It contains a dated CoinGecko market-cap
 snapshot joined to a chain-1 token metadata list: 250 ranked Ethereum ERC-20
-contracts plus two reviewed registry additions, LINK and MKR, for 252 runtime
-contracts. Balances are read through the connected wallet's
+contracts plus four reviewed registry additions—BTC.b, eBTC, LINK and MKR—for
+254 runtime contracts. BTC.b and eBTC were added after the live provider-path
+audit found that Aave Ethereum Core accepts both as standard-mode collateral
+with positive new-position supply capacity. Balances are read through the connected wallet's
 EIP-1193 provider using chunked Multicall3 calls.
 
 The static registry is bundled into the application. It is never fetched from
@@ -19,11 +21,13 @@ the exact reason LINK and MKR missed the original ranking join cannot be
 reconstructed. Future registry generations must emit input hashes and rejected
 token reasons.
 
-The [2026-08-05 latest-block coverage audit](../audits/ethereum-token-price-coverage-2026-08-05.md)
-replayed the production hierarchy for all 252 contracts and investigated every
-failure against contract state, recent transfers, and broader direct V2
-liquidity. It found no high-confidence dead Ethereum contract, so the audit did
-not remove any registry entry.
+The [2026-08-05 latest-block price audit](../audits/ethereum-token-price-coverage-2026-08-05.md)
+replayed the production hierarchy for the 252 contracts present at that time
+and investigated every failure against contract state, recent transfers, and
+broader direct V2 liquidity. It found no high-confidence dead Ethereum contract,
+so the audit did not remove any registry entry. The later
+[provider collateral audit](../audits/ethereum-provider-collateral-coverage-2026-08-05.md)
+added BTC.b and eBTC.
 
 Live wallet discovery is deliberately finite and never enumerates arbitrary
 wallet tokens. The browser uses reviewed Aave and Spark oracles, fresh
@@ -42,6 +46,8 @@ an asset-specific reason.
 | Liquid staking | rETH   | `0xae78736Cd615f374D3085123A210448E74Fc6393` |
 | Liquid staking | cbETH  | `0xBe9895146f7AF43049ca1c1AE358B0541Ea49704` |
 | Bitcoin        | WBTC   | `0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599` |
+| Bitcoin        | eBTC   | `0x657e8C867D8B37dCC18fA4Caead9C45EB088C642` |
+| Bitcoin        | BTC.b  | `0xB0F70C0bD6FD87dbEb7C10dC692a2a6106817072` |
 | Bitcoin        | cbBTC  | `0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf` |
 | Bitcoin        | tBTC   | `0x18084fbA666a33d37592fA2633fD49a74DD93a88` |
 | Stablecoin     | USDC   | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` |

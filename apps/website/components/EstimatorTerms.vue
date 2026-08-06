@@ -134,7 +134,7 @@ function isSelectedLtv(targetPercent: number): boolean {
               inputmode="decimal"
               class="type-data min-w-0 flex-1 bg-transparent text-3xl leading-9 outline-none"
               aria-label="Borrow amount in USDC"
-              aria-describedby="comparison-range-note amount-error"
+              :aria-describedby="error ? 'amount-error' : undefined"
               @input="onTextInput"
               @focus="editing = true"
               @blur="
@@ -173,16 +173,6 @@ function isSelectedLtv(targetPercent: number): boolean {
         </div>
       </div>
 
-      <div
-        id="comparison-range-note"
-        class="mt-5 border-t border-line pt-4 text-xs leading-5 text-slate"
-      >
-        <p>
-          Ceiling and projected LTV use the highest pooled estimate ({{
-            formatUsdValue(comparisonCeilingUsd)
-          }}).
-        </p>
-      </div>
       <p
         v-if="error"
         id="amount-error"

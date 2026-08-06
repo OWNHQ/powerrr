@@ -1,4 +1,8 @@
-import type { ProtocolBorrowQuote } from "@powerrr/shared-types";
+import type {
+  IsolatedBorrowRoute,
+  ProtocolBorrowQuote,
+} from "@powerrr/shared-types";
+import { buildMorphoBorrowRoute } from "@powerrr/protocol-adapters";
 import {
   decimalStringToRaw,
   mulDivDown,
@@ -24,6 +28,7 @@ export type PooledBorrowPreview = {
   actionable: boolean;
   reasonCodes: PooledPreviewReasonCode[];
   status: "below-liquidation-threshold" | "at-or-above-liquidation-threshold";
+  isolatedRoute?: IsolatedBorrowRoute;
 };
 
 export type PooledRiskBand =
@@ -75,15 +80,34 @@ export function calculatePooledBorrowPreview(
   quote: ProtocolBorrowQuote,
   borrowAmountUsd: number,
 ): PooledBorrowPreview {
-  const collateralValueUsd = quote.collateralUsed.reduce(
+  const requestedRaw = decimalStringToRaw(
+    Math.max(0, borrowAmountUsd).toFixed(USDC_DECIMALS),
+    USDC_DECIMALS,
+  );
+  const isolatedRoute = quote.isolatedMarketCapacities
+    ? buildMorphoBorrowRoute(
+        quote.isolatedMarketCapacities,
+        requestedRaw,
+        "rate",
+      )
+    : undefined;
+  const collateralForPreview = isolatedRoute?.legs.length
+    ? isolatedRoute.legs.map((leg) => ({
+        valueUsd: rawAmountToNumber(leg.collateralValue),
+        ltv: Number(leg.lltv.numerator) / Number(leg.lltv.denominator),
+        liquidationThreshold:
+          Number(leg.lltv.numerator) / Number(leg.lltv.denominator),
+      }))
+    : quote.collateralUsed;
+  const collateralValueUsd = collateralForPreview.reduce(
     (sum, item) => sum + item.valueUsd,
     0,
   );
-  const borrowCapacityUsd = quote.collateralUsed.reduce(
+  const borrowCapacityUsd = collateralForPreview.reduce(
     (sum, item) => sum + item.valueUsd * (item.ltv ?? 0),
     0,
   );
-  const liquidationCapacityUsd = quote.collateralUsed.reduce(
+  const liquidationCapacityUsd = collateralForPreview.reduce(
     (sum, item) =>
       sum + item.valueUsd * (item.liquidationThreshold ?? item.ltv ?? 0),
     0,
@@ -103,16 +127,12 @@ export function calculatePooledBorrowPreview(
     projectedDebtUsd <= 0
       ? Number.POSITIVE_INFINITY
       : liquidationCapacityUsd / projectedDebtUsd;
-  const healthFactor = Number.isFinite(liquidationSafetyRatio)
-    ? liquidationSafetyRatio
-    : null;
+  const healthFactor =
+    isolatedRoute?.worstHealthFactor ??
+    (Number.isFinite(liquidationSafetyRatio) ? liquidationSafetyRatio : null);
   const liquidationHeadroomUsd = liquidationCapacityUsd - projectedDebtUsd;
   const modeledLimitUsd = pooledBorrowAvailableUsd(quote);
   const minimumBorrowUsd = Math.max(0, quote.minimumBorrowUsd ?? 0);
-  const requestedRaw = decimalStringToRaw(
-    Math.max(0, borrowAmountUsd).toFixed(USDC_DECIMALS),
-    USDC_DECIMALS,
-  );
   const startingDebtRaw = decimalStringToRaw(
     quote.mode === "existing-position"
       ? Math.max(0, quote.existingDebtUsd ?? 0).toFixed(USDC_DECIMALS)
@@ -151,12 +171,15 @@ export function calculatePooledBorrowPreview(
   } else if (riskBand === "above-threshold") {
     reasonCodes.push("above-liquidation-threshold");
   }
-  const actionable =
-    requestedRaw > 0n &&
-    modeledLimitRaw > 0n &&
-    requestedRaw <= modeledLimitRaw &&
-    projectedDebtRaw >= minimumBorrowRaw &&
-    projectedDebtRaw < liquidationLimitRaw;
+  const actionable = isolatedRoute
+    ? requestedRaw > 0n &&
+      isolatedRoute.feasible &&
+      requestedRaw <= modeledLimitRaw
+    : requestedRaw > 0n &&
+      modeledLimitRaw > 0n &&
+      requestedRaw <= modeledLimitRaw &&
+      projectedDebtRaw >= minimumBorrowRaw &&
+      projectedDebtRaw < liquidationLimitRaw;
   const status =
     liquidationSafetyRatio > 1
       ? "below-liquidation-threshold"
@@ -179,6 +202,7 @@ export function calculatePooledBorrowPreview(
     actionable,
     reasonCodes,
     status,
+    ...(isolatedRoute ? { isolatedRoute } : {}),
   };
 }
 

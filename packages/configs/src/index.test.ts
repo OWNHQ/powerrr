@@ -5,6 +5,7 @@ import {
   ETHEREUM_ASSET_REGISTRY_VERSION,
   ETHEREUM_NATIVE_TOKEN,
   ETHEREUM_MORPHO_USDC_MARKET_MANIFEST_VERSION,
+  ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT,
   ETHEREUM_TOKEN_REGISTRY_VERSION,
   ETHEREUM_TOKEN_REGISTRY_RANKED_COUNT,
   ETHEREUM_TOKEN_REGISTRY_ADDITION_COUNT,
@@ -13,6 +14,7 @@ import {
   SPARK_ORACLE,
   ethereumAssetRegistryV1,
   ethereumMorphoUsdcMarketsV1,
+  ethereumMorphoCollateralTokensV1,
   ethereumTokenRegistryV1,
   ethereumTokenRegistryAdditionsV1,
 } from "./index.js";
@@ -28,6 +30,8 @@ describe("Ethereum blue-chip registry", () => {
       "rETH",
       "cbETH",
       "WBTC",
+      "eBTC",
+      "BTC.b",
       "cbBTC",
       "tBTC",
       "USDC",
@@ -140,17 +144,17 @@ describe("Ethereum blue-chip registry", () => {
 });
 
 describe("static token registry", () => {
-  it("pins exactly 250 ranked contracts plus reviewed LINK and MKR additions", () => {
+  it("pins 250 ranked contracts plus reviewed provider-path additions", () => {
     expect(ETHEREUM_TOKEN_REGISTRY_VERSION).toBe(
       "ethereum-top250-2026-07-29-v1",
     );
     expect(ETHEREUM_TOKEN_REGISTRY_RANKED_COUNT).toBe(250);
-    expect(ETHEREUM_TOKEN_REGISTRY_ADDITION_COUNT).toBe(2);
-    expect(ETHEREUM_TOKEN_REGISTRY_TOTAL_COUNT).toBe(252);
-    expect(ethereumTokenRegistryV1).toHaveLength(252);
+    expect(ETHEREUM_TOKEN_REGISTRY_ADDITION_COUNT).toBe(80);
+    expect(ETHEREUM_TOKEN_REGISTRY_TOTAL_COUNT).toBe(330);
+    expect(ethereumTokenRegistryV1).toHaveLength(330);
     expect(
       ethereumTokenRegistryAdditionsV1.map((token) => token.symbol),
-    ).toEqual(["LINK", "MKR"]);
+    ).toEqual(expect.arrayContaining(["BTC.b", "eBTC", "LINK", "MKR"]));
     expect(
       new Set(
         ethereumTokenRegistryV1.map((token) => token.address.toLowerCase()),
@@ -170,6 +174,24 @@ describe("static token registry", () => {
     ]);
   });
 
+  it("pins newly discovered Aave collateral to the reviewed provider and oracle", () => {
+    for (const symbol of ["eBTC", "BTC.b"]) {
+      const asset = ethereumAssetRegistryV1.find(
+        (candidate) => candidate.symbol === symbol,
+      );
+      const discovery = ethereumTokenRegistryV1.find(
+        (candidate) => candidate.symbol === symbol,
+      );
+
+      expect(asset?.candidateProviders).toEqual(["aave-v3"]);
+      expect(asset?.priceSource.oracle).toBe(AAVE_V3_ORACLE);
+      expect(discovery?.priceRoute).toMatchObject({
+        kind: "aave-oracle",
+        oracle: AAVE_V3_ORACLE,
+      });
+    }
+  });
+
   it("contains immutable metadata and an explicit price status", () => {
     for (const token of ethereumTokenRegistryV1) {
       expect(token.address).toMatch(/^0x[a-fA-F0-9]{40}$/);
@@ -181,10 +203,11 @@ describe("static token registry", () => {
         "erc4626-rate",
         "contract-rate",
         "conversion-rate",
+        "morpho-oracle",
         "automatic-onchain",
       ]).toContain(token.priceRoute.kind);
-      expect(token.snapshotDate).toBe("2026-07-29");
-      expect(token.rankingSource).toContain("CoinGecko");
+      expect(["2026-07-29", "2026-08-06"]).toContain(token.snapshotDate);
+      expect(token.rankingSource).toMatch(/CoinGecko|Morpho official/);
     }
   });
 
@@ -221,17 +244,25 @@ describe("static token registry", () => {
 });
 
 describe("static Morpho USDC market manifest", () => {
-  it("pins a reviewed WETH market with complete immutable parameters", () => {
+  it("pins the complete executable official set with immutable parameters", () => {
     expect(ETHEREUM_MORPHO_USDC_MARKET_MANIFEST_VERSION).toBe(
-      "ethereum-morpho-usdc-2026-07-21-v1",
+      "ethereum-morpho-usdc-25694451-v1",
     );
-    expect(ethereumMorphoUsdcMarketsV1).toHaveLength(1);
-    expect(ethereumMorphoUsdcMarketsV1[0]).toMatchObject({
-      marketId:
-        "0x94b823e6bd8ea533b4e33fbc307faea0b307301bc48763acc4d4aa4def7636cd",
-      loanSymbol: "USDC",
-      collateralSymbol: "WETH",
-      lltv: 860_000_000_000_000_000n,
-    });
+    expect(ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT).toBe(120);
+    expect(ethereumMorphoUsdcMarketsV1).toHaveLength(119);
+    expect(ethereumMorphoCollateralTokensV1).toHaveLength(108);
+    expect(
+      new Set(ethereumMorphoUsdcMarketsV1.map((market) => market.marketId))
+        .size,
+    ).toBe(ethereumMorphoUsdcMarketsV1.length);
+    expect(ethereumMorphoUsdcMarketsV1).toContainEqual(
+      expect.objectContaining({
+        marketId:
+          "0x94b823e6bd8ea533b4e33fbc307faea0b307301bc48763acc4d4aa4def7636cd",
+        loanSymbol: "USDC",
+        collateralSymbol: "WETH",
+        lltv: "860000000000000000",
+      }),
+    );
   });
 });

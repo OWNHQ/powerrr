@@ -70,8 +70,14 @@ export type StaticDiscoveryResult = {
   registrySource: string;
 };
 
-type Call = { target: Address; allowFailure: boolean; callData: Hex };
-type CallResult = { success: boolean; returnData: Hex };
+export type PinnedCall = {
+  target: Address;
+  allowFailure: boolean;
+  callData: Hex;
+};
+export type PinnedCallResult = { success: boolean; returnData: Hex };
+type Call = PinnedCall;
+type CallResult = PinnedCallResult;
 
 const erc20Abi = [
   {
@@ -103,6 +109,16 @@ const oracleAbi = [
     name: "getAssetPrice",
     stateMutability: "view",
     inputs: [{ name: "asset", type: "address" }],
+    outputs: [{ name: "price", type: "uint256" }],
+  },
+] as const;
+
+const morphoOracleAbi = [
+  {
+    type: "function",
+    name: "price",
+    stateMutability: "view",
+    inputs: [],
     outputs: [{ name: "price", type: "uint256" }],
   },
 ] as const;
@@ -689,6 +705,21 @@ async function loadPrices(
     });
   });
 
+  const morphoOracleTokens = tokens.filter(
+    (token) =>
+      token.priceRoute.kind === "morpho-oracle" &&
+      !result.get(token.address.toLowerCase())?.priceUsd,
+  );
+  if (morphoOracleTokens.length) {
+    await loadMorphoOraclePrices(
+      provider,
+      morphoOracleTokens,
+      blockTag,
+      chunkSizes,
+      result,
+    );
+  }
+
   const directFeedTokens = tokens.filter(
     (token) =>
       token.priceRoute.kind === "chainlink-feed" &&
@@ -792,6 +823,74 @@ async function loadPrices(
     }
   }
   return result;
+}
+
+async function loadMorphoOraclePrices(
+  provider: Eip1193Provider,
+  tokens: EthereumTokenRegistryEntry[],
+  blockTag: Hex,
+  chunkSizes: number[],
+  output: Map<string, OnchainPriceResult>,
+): Promise<void> {
+  const routed = tokens.filter(
+    (token) => token.priceRoute.kind === "morpho-oracle",
+  );
+  const responses = await multicallWithDeterministicRetry(
+    provider,
+    routed.map((token) => ({
+      target:
+        token.priceRoute.kind === "morpho-oracle"
+          ? token.priceRoute.oracle
+          : token.address,
+      allowFailure: true,
+      callData: encodeFunctionData({
+        abi: morphoOracleAbi,
+        functionName: "price",
+      }),
+    })),
+    blockTag,
+    chunkSizes,
+  );
+
+  routed.forEach((token, index) => {
+    if (token.priceRoute.kind !== "morpho-oracle") return;
+    const response = responses[index];
+    let raw: bigint | null = null;
+    if (response?.success) {
+      try {
+        raw = decodeFunctionResult({
+          abi: morphoOracleAbi,
+          functionName: "price",
+          data: response.returnData,
+        });
+      } catch {
+        raw = null;
+      }
+    }
+    if (!raw || raw <= 0n) {
+      output.set(token.address.toLowerCase(), {
+        reason: `${token.symbol} returned no valid price from its pinned Morpho market oracle.`,
+      });
+      return;
+    }
+    const loanRaw =
+      (10n ** BigInt(token.priceRoute.collateralDecimals) * raw) / 10n ** 36n;
+    const priceUsd = Number(
+      formatUnits(loanRaw, token.priceRoute.loanDecimals),
+    );
+    if (!isCredibleTokenPriceUsd(priceUsd)) {
+      output.set(token.address.toLowerCase(), {
+        reason: `${token.symbol} returned an implausible USDC price from its pinned Morpho market oracle.`,
+      });
+      return;
+    }
+    output.set(token.address.toLowerCase(), {
+      priceUsd,
+      source: `Morpho market oracle ${token.priceRoute.oracle}`,
+      confidence: "high",
+      route: `${token.symbol}/USDC Morpho market ${token.priceRoute.marketId}`,
+    });
+  });
 }
 
 function expandPricingDependencies(
@@ -1801,6 +1900,15 @@ function estimateQuoteLiquidityUsd(
     ? Number(liquidity) * (Number(sqrtPriceX96) / q96)
     : Number(liquidity) * (q96 / Number(sqrtPriceX96));
   return (quoteRaw / 10 ** quote.decimals) * quoteUsd;
+}
+
+export async function multicallAtPinnedBlock(
+  provider: Eip1193Provider,
+  calls: PinnedCall[],
+  blockTag: Hex,
+  chunkSizes: number[] = [],
+): Promise<PinnedCallResult[]> {
+  return multicallWithDeterministicRetry(provider, calls, blockTag, chunkSizes);
 }
 
 async function multicallWithDeterministicRetry(

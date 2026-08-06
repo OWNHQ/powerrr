@@ -32,12 +32,23 @@ export function providerDestination(
   const marketId = market?.marketId;
   if (!marketId || !/^0x[0-9a-fA-F]{64}$/.test(marketId)) return undefined;
 
-  const collateral = market.symbol.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-  const loan = quote.targetBorrowAsset
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-");
+  return morphoMarketDestination(
+    marketId,
+    market.symbol,
+    quote.targetBorrowAsset,
+  );
+}
+
+export function morphoMarketDestination(
+  marketId: string,
+  collateralSymbol: string,
+  loanSymbol = "USDC",
+): ProviderDestination | undefined {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(marketId)) return undefined;
+  const collateral = collateralSymbol.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const loan = loanSymbol.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   return {
     href: `https://app.morpho.org/ethereum/variable/${marketId.toLowerCase()}/${collateral}-${loan}`,
-    label: `Morpho ${market.symbol}/${quote.targetBorrowAsset} market`,
+    label: `Morpho ${collateralSymbol}/${loanSymbol} market`,
   };
 }

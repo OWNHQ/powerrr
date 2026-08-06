@@ -2,13 +2,14 @@ import {
   calculateAaveLikeBorrow,
   calculateCompoundBorrow,
   calculateConfidenceScore,
-  calculateMorphoMarket,
   riskLevelFromHealthFactor,
   roundUsd,
   safetyBufferForProfile,
   minBigInt,
   mulDivDown,
+  mulDivUp,
   rawAmount,
+  rawRatio,
   rawAmountToNumber,
   decimalStringToRaw,
   USDC_DECIMALS,
@@ -23,6 +24,9 @@ import type {
   SafetyProfile,
   RawAmount,
   RawRatio,
+  BorrowRouteLeg,
+  IsolatedBorrowRoute,
+  IsolatedMarketCapacity,
 } from "@powerrr/shared-types";
 
 export type LiveConfidencePenalties = {
@@ -138,6 +142,7 @@ export type MorphoLiveMarketSnapshot = {
   lastUpdate: string;
   fee: RawRatio;
   borrowRatePerSecond: RawRatio;
+  collateralAvailableExact: RawAmount;
   priceObservedAt?: string;
   freshnessSeconds?: number;
   rawCollateral: RawCollateralGroup;
@@ -234,6 +239,18 @@ export function projectLiveSnapshots(
                   symbol: collateral.symbol,
                   valueUsd: collateral.valueUsd,
                   valueExact: collateral.valueExact,
+                  collateralAvailableExact: rawAmount(
+                    market.rawCollateral.sources
+                      .filter((source) =>
+                        selected.has(source.token.toLowerCase()),
+                      )
+                      .reduce(
+                        (sum, source) =>
+                          sum + BigInt(source.convertedBalanceRaw),
+                        0n,
+                      ),
+                    market.rawCollateral.protocolDecimals,
+                  ),
                 },
               ]
             : [];
@@ -442,35 +459,330 @@ export function quoteAaveLikeLiveSnapshot(
   });
 }
 
+export function buildMorphoBorrowRoute(
+  candidates: IsolatedMarketCapacity[],
+  requestedBorrowRaw: bigint,
+  objective: "rate" | "capacity" = "rate",
+): IsolatedBorrowRoute {
+  const usable = candidates.filter(
+    (candidate) =>
+      BigInt(candidate.collateralAvailable.raw) > 0n &&
+      BigInt(candidate.availableLiquidity.raw) > 0n &&
+      BigInt(candidate.oraclePrice.numerator) > 0n &&
+      BigInt(candidate.lltv.numerator) > 0n,
+  );
+  const remainingCollateral = new Map<string, bigint>();
+  const remainingLiquidity = new Map<string, bigint>();
+  for (const candidate of usable) {
+    const key = candidate.collateralToken.toLowerCase();
+    const available = BigInt(candidate.collateralAvailable.raw);
+    remainingCollateral.set(
+      key,
+      available > (remainingCollateral.get(key) ?? 0n)
+        ? available
+        : (remainingCollateral.get(key) ?? 0n),
+    );
+    remainingLiquidity.set(
+      candidate.marketId,
+      BigInt(candidate.availableLiquidity.raw),
+    );
+  }
+
+  const maximum = maximumMorphoAllocation(
+    usable,
+    remainingCollateral,
+    remainingLiquidity,
+  );
+  const maximumRaw = maximum.reduce(
+    (sum, leg) => sum + BigInt(leg.borrowAmount.raw),
+    0n,
+  );
+  const targetRaw =
+    objective === "capacity"
+      ? maximumRaw
+      : requestedBorrowRaw < maximumRaw
+        ? requestedBorrowRaw
+        : maximumRaw;
+  let legs: BorrowRouteLeg[];
+
+  if (objective === "capacity") {
+    legs = maximum;
+  } else {
+    legs = [];
+    let outstanding = targetRaw;
+    const ordered = [...usable].sort(compareMarketRateThenCapacity);
+    for (const [candidateIndex, candidate] of ordered.entries()) {
+      if (outstanding <= 0n) break;
+      const collateralKey = candidate.collateralToken.toLowerCase();
+      const collateralRaw = remainingCollateral.get(collateralKey) ?? 0n;
+      const liquidityRaw = remainingLiquidity.get(candidate.marketId) ?? 0n;
+      const candidateMaximum = marketBorrowCapacity(
+        candidate,
+        collateralRaw,
+        liquidityRaw,
+      );
+      let low = 0n;
+      let high = minBigInt(candidateMaximum, outstanding);
+      if (candidateMaximum >= outstanding) low = outstanding;
+      while (low < high) {
+        const midpoint = (low + high + 1n) / 2n;
+        const assigned = collateralForBorrow(candidate, midpoint);
+        const nextCollateral = new Map(remainingCollateral);
+        const nextLiquidity = new Map(remainingLiquidity);
+        nextCollateral.set(
+          collateralKey,
+          collateralRaw > assigned ? collateralRaw - assigned : 0n,
+        );
+        nextLiquidity.set(
+          candidate.marketId,
+          liquidityRaw > midpoint ? liquidityRaw - midpoint : 0n,
+        );
+        const residualMaximum = maximumMorphoAllocation(
+          ordered.slice(candidateIndex + 1),
+          nextCollateral,
+          nextLiquidity,
+        ).reduce((sum, leg) => sum + BigInt(leg.borrowAmount.raw), 0n);
+        if (residualMaximum >= outstanding - midpoint) low = midpoint;
+        else high = midpoint - 1n;
+      }
+      if (low <= 0n) continue;
+      const assigned = collateralForBorrow(candidate, low);
+      legs.push(routeLeg(candidate, assigned, low));
+      remainingCollateral.set(
+        collateralKey,
+        collateralRaw > assigned ? collateralRaw - assigned : 0n,
+      );
+      remainingLiquidity.set(
+        candidate.marketId,
+        liquidityRaw > low ? liquidityRaw - low : 0n,
+      );
+      outstanding -= low;
+    }
+  }
+
+  const routedRaw = legs.reduce(
+    (sum, leg) => sum + BigInt(leg.borrowAmount.raw),
+    0n,
+  );
+  const collateralValueRaw = legs.reduce(
+    (sum, leg) => sum + BigInt(leg.collateralValue.raw),
+    0n,
+  );
+  const weightedLltvNumerator = legs.reduce(
+    (sum, leg) =>
+      sum +
+      mulDivDown(
+        BigInt(leg.collateralValue.raw),
+        BigInt(leg.lltv.numerator),
+        BigInt(leg.lltv.denominator),
+      ),
+    0n,
+  );
+  const lltvs = legs.map((leg) => ratioToNumber(leg.lltv));
+  const healthFactors = legs
+    .map((leg) => leg.healthFactor)
+    .filter((value): value is number => value !== null);
+
+  return {
+    requestedBorrow: rawAmount(requestedBorrowRaw, USDC_DECIMALS),
+    legs,
+    weightedCurrentApy: weightedRouteApy(legs),
+    effectiveLltv:
+      collateralValueRaw > 0n
+        ? Number(weightedLltvNumerator) / Number(collateralValueRaw)
+        : null,
+    lltvMinimum: lltvs.length ? Math.min(...lltvs) : null,
+    lltvMaximum: lltvs.length ? Math.max(...lltvs) : null,
+    worstHealthFactor: healthFactors.length ? Math.min(...healthFactors) : null,
+    feasible:
+      requestedBorrowRaw <= maximumRaw && routedRaw >= requestedBorrowRaw,
+  };
+}
+
+function isolatedMarketCapacityFromSnapshot(
+  market: MorphoLiveMarketSnapshot,
+): IsolatedMarketCapacity {
+  return {
+    marketId: market.marketId,
+    collateralToken: market.collateralToken,
+    collateralSymbol: market.symbol,
+    collateralAvailable: market.collateralAvailableExact,
+    oraclePrice: rawRatio(
+      BigInt(market.rawCollateral.priceRaw) *
+        BigInt(market.rawCollateral.valueNumeratorScale),
+      BigInt(market.rawCollateral.valueDenominator),
+    ),
+    lltv: market.rawCollateral.ltv,
+    availableLiquidity: market.availableLiquidityExact,
+    currentBorrowApy: rawRatio(
+      compoundedAnnualRateRaw(market.borrowRatePerSecond),
+      10n ** 18n,
+    ),
+  };
+}
+
+function maximumMorphoAllocation(
+  candidates: IsolatedMarketCapacity[],
+  sourceCollateral: Map<string, bigint>,
+  sourceLiquidity: Map<string, bigint>,
+): BorrowRouteLeg[] {
+  const collateral = new Map(sourceCollateral);
+  const liquidity = new Map(sourceLiquidity);
+  const legs: BorrowRouteLeg[] = [];
+  const ordered = [...candidates].sort(compareMarketCapacityPriority);
+  for (const candidate of ordered) {
+    const key = candidate.collateralToken.toLowerCase();
+    const collateralRaw = collateral.get(key) ?? 0n;
+    const liquidityRaw = liquidity.get(candidate.marketId) ?? 0n;
+    const capacityRaw = marketBorrowCapacity(
+      candidate,
+      collateralRaw,
+      liquidityRaw,
+    );
+    if (capacityRaw <= 0n) continue;
+    const assignedRaw = minBigInt(
+      collateralRaw,
+      collateralForBorrow(candidate, capacityRaw),
+    );
+    legs.push(routeLeg(candidate, assignedRaw, capacityRaw));
+    collateral.set(key, collateralRaw - assignedRaw);
+    liquidity.set(candidate.marketId, liquidityRaw - capacityRaw);
+  }
+  return legs;
+}
+
+function marketBorrowCapacity(
+  candidate: IsolatedMarketCapacity,
+  collateralRaw: bigint,
+  liquidityRaw: bigint,
+): bigint {
+  const collateralValueRaw = mulDivDown(
+    collateralRaw,
+    BigInt(candidate.oraclePrice.numerator),
+    BigInt(candidate.oraclePrice.denominator),
+  );
+  return minBigInt(
+    mulDivDown(
+      collateralValueRaw,
+      BigInt(candidate.lltv.numerator),
+      BigInt(candidate.lltv.denominator),
+    ),
+    liquidityRaw,
+  );
+}
+
+function collateralForBorrow(
+  candidate: IsolatedMarketCapacity,
+  borrowRaw: bigint,
+): bigint {
+  return mulDivUp(
+    borrowRaw * BigInt(candidate.oraclePrice.denominator),
+    BigInt(candidate.lltv.denominator),
+    BigInt(candidate.oraclePrice.numerator) * BigInt(candidate.lltv.numerator),
+  );
+}
+
+function routeLeg(
+  candidate: IsolatedMarketCapacity,
+  collateralRaw: bigint,
+  borrowRaw: bigint,
+): BorrowRouteLeg {
+  const collateralValueRaw = mulDivDown(
+    collateralRaw,
+    BigInt(candidate.oraclePrice.numerator),
+    BigInt(candidate.oraclePrice.denominator),
+  );
+  const borrowLimitRaw = mulDivDown(
+    collateralValueRaw,
+    BigInt(candidate.lltv.numerator),
+    BigInt(candidate.lltv.denominator),
+  );
+  return {
+    marketId: candidate.marketId,
+    collateralToken: candidate.collateralToken,
+    collateralSymbol: candidate.collateralSymbol,
+    collateralAssigned: rawAmount(
+      collateralRaw,
+      candidate.collateralAvailable.decimals,
+    ),
+    collateralValue: rawAmount(collateralValueRaw, USDC_DECIMALS),
+    borrowAmount: rawAmount(borrowRaw, USDC_DECIMALS),
+    currentBorrowApy: candidate.currentBorrowApy,
+    lltv: candidate.lltv,
+    availableLiquidity: candidate.availableLiquidity,
+    healthFactor:
+      borrowRaw > 0n ? Number(borrowLimitRaw) / Number(borrowRaw) : null,
+  };
+}
+
+function compareMarketCapacityPriority(
+  left: IsolatedMarketCapacity,
+  right: IsolatedMarketCapacity,
+): number {
+  const lltvComparison = compareRatios(right.lltv, left.lltv);
+  if (lltvComparison !== 0) return lltvComparison;
+  const liquidityComparison =
+    BigInt(right.availableLiquidity.raw) - BigInt(left.availableLiquidity.raw);
+  if (liquidityComparison !== 0n) return liquidityComparison > 0n ? 1 : -1;
+  return left.marketId.localeCompare(right.marketId);
+}
+
+function compareMarketRateThenCapacity(
+  left: IsolatedMarketCapacity,
+  right: IsolatedMarketCapacity,
+): number {
+  const rateComparison = compareRatios(
+    left.currentBorrowApy,
+    right.currentBorrowApy,
+  );
+  return rateComparison !== 0
+    ? rateComparison
+    : compareMarketCapacityPriority(left, right);
+}
+
+function compareRatios(left: RawRatio, right: RawRatio): number {
+  const leftScaled = BigInt(left.numerator) * BigInt(right.denominator);
+  const rightScaled = BigInt(right.numerator) * BigInt(left.denominator);
+  return leftScaled < rightScaled ? -1 : leftScaled > rightScaled ? 1 : 0;
+}
+
+function weightedRouteApy(legs: BorrowRouteLeg[]): number | null {
+  const borrowedRaw = legs.reduce(
+    (sum, leg) => sum + BigInt(leg.borrowAmount.raw),
+    0n,
+  );
+  if (borrowedRaw <= 0n) return null;
+  const weightedWad = legs.reduce(
+    (sum, leg) =>
+      sum +
+      mulDivDown(
+        BigInt(leg.borrowAmount.raw),
+        BigInt(leg.currentBorrowApy.numerator),
+        BigInt(leg.currentBorrowApy.denominator),
+      ),
+    0n,
+  );
+  return Number(weightedWad) / Number(borrowedRaw);
+}
+
 export function quoteMorphoLiveSnapshot(
   input: MorphoLiveSnapshot,
 ): ProtocolBorrowQuote {
-  const marketQuotes = input.markets.map((market) => {
-    const exactBorrowLimitRaw = mulDivDown(
-      BigInt(market.valueExact.raw),
-      BigInt(market.rawCollateral.ltv.numerator),
-      BigInt(market.rawCollateral.ltv.denominator),
-    );
-    const capacity = calculateMorphoMarket({
-      collateralValueUsd: market.valueUsd,
-      lltv: market.lltv,
-      borrowedUsd: input.existingDebtUsd,
-      availableLiquidityUsd:
-        market.availableLiquidityUsd ?? input.availableLiquidityUsd,
-      safetyBuffer: safetyBufferForProfile(input.safetyProfile),
-    });
+  const candidates = input.markets.map(isolatedMarketCapacityFromSnapshot);
+  const maximumRoute = buildMorphoBorrowRoute(
+    candidates,
+    candidates.reduce(
+      (sum, candidate) => sum + BigInt(candidate.availableLiquidity.raw),
+      0n,
+    ),
+    "capacity",
+  );
+  const exactBorrowLimitRaw = maximumRoute.legs.reduce(
+    (sum, leg) => sum + BigInt(leg.borrowAmount.raw),
+    0n,
+  );
 
-    return {
-      market,
-      capacity,
-      exactBorrowLimitRaw,
-    };
-  });
-  const best = marketQuotes.sort(
-    (a, b) => b.capacity.safeBorrowUsd - a.capacity.safeBorrowUsd,
-  )[0];
-
-  if (!best) {
+  if (!maximumRoute.legs.length) {
     return buildLiveQuote({
       input,
       theoreticalBorrowUsd: 0,
@@ -484,60 +796,57 @@ export function quoteMorphoLiveSnapshot(
       ],
       exactProtocolBorrowLimitRaw: 0n,
       exactRecommendedMaximumRaw: 0n,
+      isolatedMarketCapacities: candidates,
+      maximumBorrowRoute: [],
     });
   }
+
+  const weightedApy = weightedRouteApy(maximumRoute.legs);
+  const collateralUsed = maximumRoute.legs.map((leg) => ({
+    token: leg.collateralToken,
+    symbol: leg.collateralSymbol,
+    valueUsd: rawAmountToNumber(leg.collateralValue),
+    valueExact: leg.collateralValue,
+    ltv: ratioToNumber(leg.lltv),
+    liquidationThreshold: ratioToNumber(leg.lltv),
+    ltvExact: leg.lltv,
+    liquidationThresholdExact: leg.lltv,
+    marketId: leg.marketId,
+  }));
+  const safetyAdjustedRaw = mulDivDown(
+    exactBorrowLimitRaw,
+    BigInt(Math.round(safetyBufferForProfile(input.safetyProfile) * 100)),
+    100n,
+  );
 
   return buildLiveQuote({
     input: {
       ...input,
-      availableLiquidityUsd:
-        best.market.availableLiquidityUsd ?? input.availableLiquidityUsd,
-      availableLiquidityExact: best.market.availableLiquidityExact,
       indicativeApr: null,
-      annualRateValue: best.market.borrowApy,
-      annualRateExact: best.market.borrowRatePerSecond,
-      annualRateTransform: "per-second-apy",
+      annualRateValue: weightedApy,
+      annualRateExact: undefined,
+      annualRateTransform: "ratio",
       annualRateConvention: "apy",
-      rateSourceId: `morpho-blue:${best.market.marketId}`,
-      ...(best.market.priceObservedAt
-        ? { observedAt: best.market.priceObservedAt }
-        : {}),
-      ...(best.market.freshnessSeconds === undefined
-        ? {}
-        : { freshnessSeconds: best.market.freshnessSeconds }),
+      rateSourceId: "morpho-blue:weighted-current-route",
       assumptions: [
         ...(input.assumptions ?? []),
-        `Selected isolated market ${best.market.marketId}.`,
+        "Aggregate capacity allocates each collateral family once across independent markets.",
       ],
     },
-    theoreticalBorrowUsd: best.capacity.theoreticalBorrowUsd,
-    safeBorrowUsd: best.capacity.safeBorrowUsd,
-    liquidationRisk: "ltv-threshold",
-    collateralUsed: [
-      {
-        token: best.market.token,
-        symbol: best.market.symbol,
-        valueUsd: roundUsd(best.market.valueUsd),
-        valueExact: best.market.valueExact,
-        ltv: best.market.lltv,
-        liquidationThreshold: best.market.lltv,
-        ltvExact: best.market.rawCollateral.ltv,
-        liquidationThresholdExact:
-          best.market.rawCollateral.liquidationThreshold,
-        marketId: best.market.marketId,
-      },
-    ],
-    healthFactor: best.capacity.healthFactor,
-    warnings: input.warnings ?? [],
-    exactProtocolBorrowLimitRaw: best.exactBorrowLimitRaw,
-    exactRecommendedMaximumRaw: minBigInt(
-      mulDivDown(
-        best.exactBorrowLimitRaw,
-        BigInt(Math.round(safetyBufferForProfile(input.safetyProfile) * 100)),
-        100n,
-      ),
-      BigInt(best.market.availableLiquidityExact.raw),
+    theoreticalBorrowUsd: rawAmountToNumber(
+      rawAmount(exactBorrowLimitRaw, USDC_DECIMALS),
     ),
+    safeBorrowUsd: rawAmountToNumber(
+      rawAmount(safetyAdjustedRaw, USDC_DECIMALS),
+    ),
+    liquidationRisk: "ltv-threshold",
+    collateralUsed,
+    healthFactor: null,
+    warnings: input.warnings ?? [],
+    exactProtocolBorrowLimitRaw: exactBorrowLimitRaw,
+    exactRecommendedMaximumRaw: safetyAdjustedRaw,
+    isolatedMarketCapacities: candidates,
+    maximumBorrowRoute: maximumRoute.legs,
   });
 }
 
@@ -616,6 +925,8 @@ function buildLiveQuote(input: {
   warnings: string[];
   exactProtocolBorrowLimitRaw: bigint;
   exactRecommendedMaximumRaw: bigint;
+  isolatedMarketCapacities?: IsolatedMarketCapacity[];
+  maximumBorrowRoute?: BorrowRouteLeg[];
 }): ProtocolBorrowQuote {
   const confidence = calculateConfidenceScore(input.input.confidencePenalties);
   const collateralValueUsd = input.collateralUsed.reduce(
@@ -757,17 +1068,39 @@ function buildLiveQuote(input: {
       },
     ],
     exactMaximum: rawAmount(exactMaximumRaw, USDC_DECIMALS),
+    ...(input.isolatedMarketCapacities
+      ? { isolatedMarketCapacities: input.isolatedMarketCapacities }
+      : {}),
+    ...(input.maximumBorrowRoute
+      ? { maximumBorrowRoute: input.maximumBorrowRoute }
+      : {}),
   };
 }
 
 function exactAnnualRateValue(input: LiveProtocolSnapshot): number | null {
   if (input.annualRateExact) {
-    const ratio = ratioToNumber(input.annualRateExact);
-    return input.annualRateTransform === "per-second-apy"
-      ? Math.expm1(ratio * 31_536_000)
-      : ratio;
+    if (input.annualRateTransform === "per-second-apy") {
+      return compoundedAnnualRate(input.annualRateExact);
+    }
+    return ratioToNumber(input.annualRateExact);
   }
   return input.annualRateValue ?? input.indicativeApr ?? null;
+}
+
+function compoundedAnnualRate(ratePerSecond: RawRatio): number {
+  return (
+    Number(compoundedAnnualRateRaw(ratePerSecond)) /
+    Number(BigInt(ratePerSecond.denominator))
+  );
+}
+
+function compoundedAnnualRateRaw(ratePerSecond: RawRatio): bigint {
+  const numerator = BigInt(ratePerSecond.numerator);
+  const denominator = BigInt(ratePerSecond.denominator);
+  const firstTerm = numerator * 31_536_000n;
+  const secondTerm = (firstTerm * firstTerm) / (2n * denominator);
+  const thirdTerm = (secondTerm * firstTerm) / (3n * denominator);
+  return firstTerm + secondTerm + thirdTerm;
 }
 
 function collateralUsedFromSnapshot(

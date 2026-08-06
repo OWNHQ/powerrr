@@ -2,16 +2,54 @@ import { MORPHO_BLUE, ethereumMorphoUsdcMarketsV1 } from "@powerrr/configs";
 import type { PortfolioAsset, ReadReceipt } from "@powerrr/shared-types";
 import {
   decodeFunctionData,
+  encodeFunctionData,
   encodeFunctionResult,
   type Address,
   type Hex,
 } from "viem";
 import { describe, expect, it } from "vitest";
-import type { Eip1193Provider, Eip1193Request } from "./static-discovery";
+import {
+  MULTICALL3_ADDRESS,
+  type Eip1193Provider,
+  type Eip1193Request,
+} from "./static-discovery";
 import { loadStaticMorphoSnapshot } from "./static-morpho";
 import { projectLiveSnapshots } from "@powerrr/protocol-adapters";
 
-const manifest = ethereumMorphoUsdcMarketsV1[0]!;
+const manifest = ethereumMorphoUsdcMarketsV1.find(
+  (market) =>
+    market.marketId ===
+    "0x94b823e6bd8ea533b4e33fbc307faea0b307301bc48763acc4d4aa4def7636cd",
+)!;
+
+const multicall3Abi = [
+  {
+    type: "function",
+    name: "aggregate3",
+    stateMutability: "payable",
+    inputs: [
+      {
+        name: "calls",
+        type: "tuple[]",
+        components: [
+          { name: "target", type: "address" },
+          { name: "allowFailure", type: "bool" },
+          { name: "callData", type: "bytes" },
+        ],
+      },
+    ],
+    outputs: [
+      {
+        name: "returnData",
+        type: "tuple[]",
+        components: [
+          { name: "success", type: "bool" },
+          { name: "returnData", type: "bytes" },
+        ],
+      },
+    ],
+  },
+] as const;
 
 const morphoAbi = [
   {
@@ -91,7 +129,6 @@ describe("static Morpho market reader", () => {
   it("maps native ETH to WETH and reads capacity at the pinned block", async () => {
     const blockTags: unknown[] = [];
     const borrowAssetsSeenByIrm: bigint[] = [];
-    let morphoCall = 0;
     const provider: Eip1193Provider = {
       async request<TResult>(request: Eip1193Request): Promise<TResult> {
         expect(request.method).toBe("eth_call");
@@ -100,53 +137,87 @@ describe("static Morpho market reader", () => {
           Hex,
         ];
         blockTags.push(blockTag);
-        if (call.to.toLowerCase() === MORPHO_BLUE.toLowerCase()) {
-          morphoCall += 1;
-          return (
-            morphoCall === 1
-              ? encodeFunctionResult({
-                  abi: morphoAbi,
-                  functionName: "idToMarketParams",
-                  result: [
-                    manifest.loanToken,
-                    manifest.collateralToken,
-                    manifest.oracle,
-                    manifest.irm,
-                    manifest.lltv,
-                  ],
-                })
-              : encodeFunctionResult({
-                  abi: morphoAbi,
-                  functionName: "market",
-                  result: [
-                    1_000_000n * 10n ** 6n,
-                    1_000_000n * 10n ** 6n,
-                    400_000n * 10n ** 6n,
-                    400_000n * 10n ** 6n,
-                    1_799_900_000n,
-                    0n,
-                  ],
-                })
-          ) as TResult;
-        }
-        if (call.to.toLowerCase() === manifest.oracle.toLowerCase()) {
-          return encodeFunctionResult({
-            abi: oracleAbi,
-            functionName: "price",
-            result: 3_000n * 10n ** 24n,
-          }) as TResult;
-        }
-        if (call.to.toLowerCase() === manifest.irm.toLowerCase()) {
-          const decoded = decodeFunctionData({ abi: irmAbi, data: call.data });
-          const market = decoded.args?.[1];
-          if (market) borrowAssetsSeenByIrm.push(market.totalBorrowAssets);
-          return encodeFunctionResult({
-            abi: irmAbi,
-            functionName: "borrowRateView",
-            result: 1_585_489_599n,
-          }) as TResult;
-        }
-        throw new Error(`Unexpected call to ${call.to}`);
+        expect(call.to.toLowerCase()).toBe(MULTICALL3_ADDRESS.toLowerCase());
+        const decoded = decodeFunctionData({
+          abi: multicall3Abi,
+          data: call.data,
+        });
+        const responses = decoded.args[0].map((nested) => {
+          try {
+            if (nested.target.toLowerCase() === MORPHO_BLUE.toLowerCase()) {
+              const morphoCall = decodeFunctionData({
+                abi: morphoAbi,
+                data: nested.callData,
+              });
+              const marketId = morphoCall.args[0];
+              if (marketId !== manifest.marketId) {
+                return { success: false, returnData: "0x" as Hex };
+              }
+              return {
+                success: true,
+                returnData:
+                  morphoCall.functionName === "idToMarketParams"
+                    ? encodeFunctionResult({
+                        abi: morphoAbi,
+                        functionName: "idToMarketParams",
+                        result: [
+                          manifest.loanToken,
+                          manifest.collateralToken,
+                          manifest.oracle,
+                          manifest.irm,
+                          BigInt(manifest.lltv),
+                        ],
+                      })
+                    : encodeFunctionResult({
+                        abi: morphoAbi,
+                        functionName: "market",
+                        result: [
+                          1_000_000n * 10n ** 6n,
+                          1_000_000n * 10n ** 6n,
+                          400_000n * 10n ** 6n,
+                          400_000n * 10n ** 6n,
+                          1_799_900_000n,
+                          0n,
+                        ],
+                      }),
+              };
+            }
+            if (nested.target.toLowerCase() === manifest.oracle.toLowerCase()) {
+              return {
+                success: true,
+                returnData: encodeFunctionResult({
+                  abi: oracleAbi,
+                  functionName: "price",
+                  result: 3_000n * 10n ** 24n,
+                }),
+              };
+            }
+            if (nested.target.toLowerCase() === manifest.irm.toLowerCase()) {
+              const irmCall = decodeFunctionData({
+                abi: irmAbi,
+                data: nested.callData,
+              });
+              const market = irmCall.args[1];
+              borrowAssetsSeenByIrm.push(market.totalBorrowAssets);
+              return {
+                success: true,
+                returnData: encodeFunctionResult({
+                  abi: irmAbi,
+                  functionName: "borrowRateView",
+                  result: 1_585_489_599n,
+                }),
+              };
+            }
+          } catch {
+            // A single failed nested call remains isolated by aggregate3.
+          }
+          return { success: false, returnData: "0x" as Hex };
+        });
+        return encodeFunctionResult({
+          abi: multicall3Abi,
+          functionName: "aggregate3",
+          result: responses,
+        }) as TResult;
       },
     };
     const portfolio: PortfolioAsset[] = [

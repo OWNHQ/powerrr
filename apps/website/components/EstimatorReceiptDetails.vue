@@ -3,7 +3,7 @@ import { PhCaretDown, PhInfo } from "@phosphor-icons/vue";
 
 defineProps<{
   walletName: string;
-  walletIdentityTitle: string;
+  walletIdentityLabel: string;
   blockNumber: string | number;
   blockTimestamp: string;
   blockLoadedAtLabel: string;
@@ -30,9 +30,9 @@ defineProps<{
         <p class="text-slate">Wallet</p>
         <p
           class="mt-1 truncate whitespace-nowrap font-semibold"
-          :title="`${walletName} · ${walletIdentityTitle}`"
+          :title="`${walletName} · ${walletIdentityLabel}`"
         >
-          {{ walletName }} · {{ walletIdentityTitle }}
+          {{ walletName }} · {{ walletIdentityLabel }}
         </p>
       </div>
       <div>

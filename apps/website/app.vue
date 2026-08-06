@@ -27,6 +27,7 @@ import {
   type ProviderDestination,
 } from "./utils/provider-destination";
 import WalletConnectDialog from "./components/WalletConnectDialog.vue";
+import { formatWalletIdentityLabel } from "./utils/wallet-identity";
 
 type EstimatorStage = "assets" | "comparison";
 type ProviderItem = {
@@ -78,9 +79,7 @@ const stageError = ref("");
 const showWalletReadInfo = ref(false);
 const walletDialog = ref<InstanceType<typeof WalletConnectDialog> | null>(null);
 const walletIdentityLabel = computed(() =>
-  resolvedWalletNames.value.length
-    ? resolvedWalletNames.value[0]
-    : compactAccount.value,
+  formatWalletIdentityLabel(resolvedWalletNames.value, compactAccount.value),
 );
 const walletIdentityTitle = computed(() =>
   [...resolvedWalletNames.value, compactAccount.value]
@@ -613,7 +612,7 @@ function providerStatus(provider: ProviderItem) {
                 <template #after-main>
                   <EstimatorReceiptDetails
                     :wallet-name="receipt.walletName"
-                    :wallet-identity-title="walletIdentityTitle"
+                    :wallet-identity-label="walletIdentityLabel"
                     :block-number="receipt.blockNumber"
                     :block-timestamp="receipt.blockTimestamp"
                     :block-loaded-at-label="blockLoadedAtLabel"
@@ -692,7 +691,7 @@ function providerStatus(provider: ProviderItem) {
           v-if="currentStage === 'comparison'"
           class="mt-5"
           :wallet-name="receipt.walletName"
-          :wallet-identity-title="walletIdentityTitle"
+          :wallet-identity-label="walletIdentityLabel"
           :block-number="receipt.blockNumber"
           :block-timestamp="receipt.blockTimestamp"
           :block-loaded-at-label="blockLoadedAtLabel"

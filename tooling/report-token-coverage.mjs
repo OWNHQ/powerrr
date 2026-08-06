@@ -50,7 +50,8 @@ if (!reviewedSection)
 const reviewedTokens = [
   ...reviewedSection.matchAll(/\["(0x[0-9a-fA-F]{40})", "([^"]+)"/g),
 ].map(([, address, symbol]) => ({ address, symbol }));
-const reviewedAdditions = ["LINK", "MKR"].map((symbol) => {
+const expectedAdditionSymbols = ["BTC.b", "eBTC", "LINK", "MKR"];
+const reviewedAdditions = expectedAdditionSymbols.map((symbol) => {
   const token = reviewedTokens.find((candidate) => candidate.symbol === symbol);
   if (!token) throw new Error(`Missing reviewed registry addition ${symbol}`);
   if (addresses.has(token.address.toLowerCase())) {
@@ -58,9 +59,12 @@ const reviewedAdditions = ["LINK", "MKR"].map((symbol) => {
   }
   return token;
 });
-if (reviewedAdditions.map((token) => token.symbol).join(",") !== "LINK,MKR") {
+if (
+  reviewedAdditions.map((token) => token.symbol).join(",") !==
+  expectedAdditionSymbols.join(",")
+) {
   throw new Error(
-    `Expected reviewed additions LINK,MKR; received ${reviewedAdditions.map((token) => token.symbol).join(",")}`,
+    `Expected reviewed additions ${expectedAdditionSymbols.join(",")}; received ${reviewedAdditions.map((token) => token.symbol).join(",")}`,
   );
 }
 

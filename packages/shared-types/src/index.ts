@@ -178,6 +178,41 @@ export type CollateralUsed = {
   vaultId?: string;
 };
 
+export type IsolatedMarketCapacity = {
+  marketId: string;
+  collateralToken: HexAddress;
+  collateralSymbol: string;
+  collateralAvailable: RawAmount;
+  oraclePrice: RawRatio;
+  lltv: RawRatio;
+  availableLiquidity: RawAmount;
+  currentBorrowApy: RawRatio;
+};
+
+export type BorrowRouteLeg = {
+  marketId: string;
+  collateralToken: HexAddress;
+  collateralSymbol: string;
+  collateralAssigned: RawAmount;
+  collateralValue: RawAmount;
+  borrowAmount: RawAmount;
+  currentBorrowApy: RawRatio;
+  lltv: RawRatio;
+  availableLiquidity: RawAmount;
+  healthFactor: number | null;
+};
+
+export type IsolatedBorrowRoute = {
+  requestedBorrow: RawAmount;
+  legs: BorrowRouteLeg[];
+  weightedCurrentApy: number | null;
+  effectiveLltv: number | null;
+  lltvMinimum: number | null;
+  lltvMaximum: number | null;
+  worstHealthFactor: number | null;
+  feasible: boolean;
+};
+
 export type QuoteProvenance = {
   source: string;
   sourceType:
@@ -229,6 +264,8 @@ export type ProtocolBorrowQuote = {
   warnings: string[];
   provenance: QuoteProvenance[];
   exactMaximum: RawAmount;
+  isolatedMarketCapacities?: IsolatedMarketCapacity[];
+  maximumBorrowRoute?: BorrowRouteLeg[];
 };
 
 export type ProtocolAdapterInput = {

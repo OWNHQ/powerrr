@@ -6,12 +6,14 @@ import type {
   ProtocolBorrowQuote,
   ProtocolAssetEvaluation,
 } from "@powerrr/shared-types";
+import { rawAmountToNumber } from "@powerrr/math";
 import {
   calculatePooledBorrowPreview,
   pooledBorrowAvailableUsd,
   pooledRiskTitle,
 } from "../utils/borrow-preview";
 import { formatUsdValue, providerRateLabel } from "../utils/estimator-ux";
+import { morphoMarketDestination } from "../utils/provider-destination";
 
 const props = defineProps<{
   id: string;
@@ -75,7 +77,12 @@ const statusLabel = computed(() => {
   if (preview.value?.actionable) return "Covers request";
   return `Below request by ${formatUsdValue(props.amountUsd - capacity.value)}`;
 });
-const weightedLtv = computed(() => weightedFactor("ltv"));
+const weightedLtv = computed(() => {
+  const routeLltv = preview.value?.isolatedRoute?.effectiveLltv;
+  return routeLltv === null || routeLltv === undefined
+    ? weightedFactor("ltv")
+    : `${(routeLltv * 100).toFixed(1)}%`;
+});
 const weightedLiquidation = computed(() =>
   weightedFactor("liquidationThreshold"),
 );
@@ -103,8 +110,48 @@ const healthFactorToneClass = computed(() => {
   }
 });
 const breakdown = computed(() => props.quote?.capacityBreakdown);
+const isolatedRoute = computed(() => preview.value?.isolatedRoute);
+const isMorpho = computed(() => Boolean(props.quote?.isolatedMarketCapacities));
+const rateLabel = computed(() => {
+  const rate = isolatedRoute.value?.weightedCurrentApy;
+  if (rate === null || rate === undefined) {
+    return props.quote ? providerRateLabel(props.quote) : "—";
+  }
+  return `${new Intl.NumberFormat("en-US", {
+    style: "percent",
+    maximumFractionDigits: 1,
+  }).format(rate)} current APY`;
+});
+const isolatedLltvRange = computed(() => {
+  const route = isolatedRoute.value;
+  if (route?.lltvMinimum === null || route?.lltvMaximum === null) return "—";
+  if (route?.lltvMinimum === undefined || route.lltvMaximum === undefined)
+    return "—";
+  const minimum = `${(route.lltvMinimum * 100).toFixed(1)}%`;
+  const maximum = `${(route.lltvMaximum * 100).toFixed(1)}%`;
+  return minimum === maximum ? minimum : `${minimum}–${maximum}`;
+});
+const singleMarketDestination = computed(() => {
+  const leg = isolatedRoute.value?.legs[0];
+  if (isolatedRoute.value?.legs.length !== 1 || !leg) return undefined;
+  return morphoMarketDestination(
+    leg.marketId,
+    leg.collateralSymbol,
+    props.quote?.targetBorrowAsset,
+  );
+});
+const actionDestination = computed(() =>
+  isMorpho.value
+    ? singleMarketDestination.value
+    : props.link
+      ? { href: props.link, label: props.destinationLabel ?? props.label }
+      : undefined,
+);
+const hasMultipleRouteLegs = computed(
+  () => (isolatedRoute.value?.legs.length ?? 0) > 1,
+);
 const canOpenDestination = computed(() =>
-  Boolean(preview.value?.actionable && props.link),
+  Boolean(preview.value?.actionable && actionDestination.value),
 );
 
 function weightedFactor(field: "ltv" | "liquidationThreshold"): string {
@@ -124,6 +171,16 @@ function assetUsd(asset: PortfolioAsset): number {
 
 function formatPercent(value: number | undefined): string {
   return value === undefined ? "—" : `${(value * 100).toFixed(1)}%`;
+}
+
+function formatRawPercent(value: { numerator: string; denominator: string }) {
+  return formatPercent(Number(value.numerator) / Number(value.denominator));
+}
+
+function formatTokenAmount(value: { raw: string; decimals: number }): string {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 6,
+  }).format(rawAmountToNumber(value));
 }
 
 function evaluationLabel(item: ProtocolAssetEvaluation): string {
@@ -178,24 +235,26 @@ function evaluationLabel(item: ProtocolAssetEvaluation): string {
       >
         <span>
           <span class="type-metric-label block text-slate">Rate</span>
-          <strong class="type-data mt-0.5 block">{{
-            quote ? providerRateLabel(quote) : "—"
-          }}</strong>
+          <strong class="type-data mt-0.5 block">{{ rateLabel }}</strong>
         </span>
         <span>
-          <span class="type-metric-label block text-slate">Borrow LTV</span>
+          <span class="type-metric-label block text-slate">{{
+            isMorpho ? "Effective LLTV" : "Borrow LTV"
+          }}</span>
           <strong class="type-data mt-0.5 block">{{ weightedLtv }}</strong>
         </span>
         <span>
-          <span class="type-metric-label block text-slate"
-            >Liquidation threshold</span
-          >
+          <span class="type-metric-label block text-slate">{{
+            isMorpho ? "Route LLTV range" : "Liquidation threshold"
+          }}</span>
           <strong class="type-data mt-0.5 block">{{
-            weightedLiquidation
+            isMorpho ? isolatedLltvRange : weightedLiquidation
           }}</strong>
         </span>
         <span>
-          <span class="type-metric-label block text-slate">Health factor</span>
+          <span class="type-metric-label block text-slate">{{
+            isMorpho ? "Worst health factor" : "Health factor"
+          }}</span>
           <span
             class="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5"
             :class="healthFactorToneClass"
@@ -219,8 +278,17 @@ function evaluationLabel(item: ProtocolAssetEvaluation): string {
       class="flex min-h-14 items-center justify-end border-t border-line bg-mist/30 px-4 py-2 sm:px-5"
       data-provider-action
     >
+      <button
+        v-if="hasMultipleRouteLegs"
+        type="button"
+        class="focus-ring inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-surface px-4 text-sm font-semibold text-river hover:border-river"
+        @click="emit('toggle', id)"
+      >
+        Review market routes
+      </button>
       <a
-        :href="canOpenDestination ? link : undefined"
+        v-else
+        :href="canOpenDestination ? actionDestination?.href : undefined"
         target="_blank"
         rel="noopener noreferrer"
         class="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line bg-surface px-4 text-sm font-semibold text-river"
@@ -231,7 +299,7 @@ function evaluationLabel(item: ProtocolAssetEvaluation): string {
         "
         :aria-disabled="!canOpenDestination"
       >
-        Review {{ destinationLabel ?? label }}
+        Review {{ actionDestination?.label ?? destinationLabel ?? label }}
         <PhArrowSquareOut :size="17" aria-hidden="true" />
       </a>
     </div>
@@ -279,6 +347,75 @@ function evaluationLabel(item: ProtocolAssetEvaluation): string {
                   }}</strong>
                 </div>
               </div>
+            </section>
+
+            <section
+              v-if="isolatedRoute?.legs.length"
+              class="mt-6"
+              :aria-labelledby="`${id}-routes-title`"
+            >
+              <h3 :id="`${id}-routes-title`" class="font-semibold">
+                Market route
+              </h3>
+              <p class="mt-1 text-xs leading-5 text-slate">
+                Independent Morpho positions for the requested amount. The
+                displayed rate is weighted by USDC borrowed in each leg.
+              </p>
+              <ul
+                class="mt-3 divide-y divide-line rounded-lg border border-line"
+              >
+                <li
+                  v-for="leg in isolatedRoute.legs"
+                  :key="leg.marketId"
+                  class="grid gap-3 px-3 py-3 text-sm sm:grid-cols-[minmax(8rem,1fr)_repeat(4,minmax(5rem,0.75fr))_auto] sm:items-center"
+                >
+                  <span>
+                    <strong class="block">{{ leg.collateralSymbol }}</strong>
+                    <span class="block text-xs tabular-nums text-slate">
+                      {{ formatTokenAmount(leg.collateralAssigned) }} assigned
+                    </span>
+                  </span>
+                  <span>
+                    <span class="block text-xs text-slate">USDC</span>
+                    <strong class="tabular-nums">{{
+                      formatUsdValue(rawAmountToNumber(leg.borrowAmount))
+                    }}</strong>
+                  </span>
+                  <span>
+                    <span class="block text-xs text-slate">Current APY</span>
+                    <strong class="tabular-nums">{{
+                      formatRawPercent(leg.currentBorrowApy)
+                    }}</strong>
+                  </span>
+                  <span>
+                    <span class="block text-xs text-slate">LLTV</span>
+                    <strong class="tabular-nums">{{
+                      formatRawPercent(leg.lltv)
+                    }}</strong>
+                  </span>
+                  <span>
+                    <span class="block text-xs text-slate">Liquidity</span>
+                    <strong class="tabular-nums">{{
+                      formatUsdValue(rawAmountToNumber(leg.availableLiquidity))
+                    }}</strong>
+                  </span>
+                  <a
+                    :href="
+                      morphoMarketDestination(
+                        leg.marketId,
+                        leg.collateralSymbol,
+                        quote?.targetBorrowAsset,
+                      )?.href
+                    "
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="focus-ring inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-line px-3 font-semibold text-river hover:border-river"
+                  >
+                    Market
+                    <PhArrowSquareOut :size="16" aria-hidden="true" />
+                  </a>
+                </li>
+              </ul>
             </section>
 
             <section class="mt-6" :aria-labelledby="`${id}-assets-title`">

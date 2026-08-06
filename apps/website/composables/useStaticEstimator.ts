@@ -25,6 +25,7 @@ import {
 import { filterSmallBalances } from "../utils/estimator-ux";
 import { loadStaticMorphoSnapshot } from "../utils/static-morpho";
 import { resolveWalletNames, type WalletNames } from "../utils/static-names";
+import { formatCompactWalletAddress } from "../utils/wallet-identity";
 
 type AnnouncedProvider = {
   descriptor: WalletProviderDescriptor;
@@ -145,9 +146,7 @@ export function useStaticEstimator() {
     ),
   );
   const compactAccount = computed(() =>
-    account.value
-      ? `${account.value.slice(0, 6)}…${account.value.slice(-4)}`
-      : "",
+    formatCompactWalletAddress(account.value),
   );
   const resolvedWalletNames = computed(() =>
     [walletNames.value.ensName, walletNames.value.gweiName].filter(
@@ -700,5 +699,5 @@ function friendlyError(cause: unknown): string {
 }
 
 function compactAddress(address: string): string {
-  return address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "";
+  return formatCompactWalletAddress(address);
 }

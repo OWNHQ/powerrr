@@ -18,6 +18,7 @@
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test",
     "verify:static": "node tooling/verify-static-artifact.mjs",
     "report:token-coverage": "node tooling/report-token-coverage.mjs",
+    "generate:morpho-registry": "node tooling/generate-morpho-market-registry.mjs",
     "deploy:pinata": "pnpm build:static && pnpm verify:static && node --env-file=.env tooling/pinata-release.mjs upload-directory"
   },
   "devDependencies": {

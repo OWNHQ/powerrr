@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildMorphoBorrowRoute,
   quoteAaveLikeLiveSnapshot,
   quoteCompoundLiveSnapshot,
   quoteLiveSnapshots,
@@ -13,6 +14,7 @@ import {
   type LiveQuoteSnapshot,
   type LiveProtocolSnapshot,
 } from "./live-snapshots.js";
+import type { IsolatedMarketCapacity } from "@powerrr/shared-types";
 
 const confidencePenalties: LiveConfidencePenalties = {
   sourcePenalty: 1,
@@ -145,6 +147,7 @@ function morphoMarket(
     totalBorrowAssets: usd(0),
     lastUpdate: "0",
     fee: ratio(0),
+    collateralAvailableExact: usd(valueUsd),
     borrowRatePerSecond: {
       numerator: BigInt(
         Math.round((Math.log1p(borrowApy) / 31_536_000) * 1e18),
@@ -356,7 +359,7 @@ describe("live protocol snapshot quote builders", () => {
     ).toBeCloseTo(1.35, 5);
   });
 
-  it("selects the highest safe borrow Morpho isolated market snapshot", () => {
+  it("aggregates independent Morpho markets without reusing collateral", () => {
     const quote = quoteMorphoLiveSnapshot({
       ...baseSnapshot,
       protocolId: "morpho-blue",
@@ -365,8 +368,8 @@ describe("live protocol snapshot quote builders", () => {
       familyLabel: "Morpho Blue",
       source: "Morpho official GraphQL test snapshot",
       safetyProfile: "balanced",
-      existingDebtUsd: 10_000,
-      existingDebtExact: usd(10_000),
+      existingDebtUsd: 0,
+      existingDebtExact: usd(0),
       markets: [
         morphoMarket(
           "0x0000000000000000000000000000000000000001",
@@ -389,20 +392,74 @@ describe("live protocol snapshot quote builders", () => {
       ],
     });
 
-    expect(quote.safeBorrowUsd).toBe(37_315);
-    expect(quote.collateralUsed[0]?.marketId).toBe("WBTC-USDC-77");
+    expect(quote.safeBorrowUsd).toBe(62_815);
+    expect(quote.exactMaximum).toEqual(usd(73_900));
+    expect(quote.collateralUsed.map((item) => item.marketId)).toEqual([
+      "WETH-USDC-86",
+      "WBTC-USDC-77",
+    ]);
     expect(quote.annualRate).toMatchObject({
       convention: "apy",
       rateType: "variable",
-      sourceId: "morpho-blue:WBTC-USDC-77",
+      sourceId: "morpho-blue:weighted-current-route",
     });
-    expect(quote.annualRate?.value).toBeCloseTo(0.052, 10);
+    expect(quote.annualRate?.value).toBeGreaterThan(0.04);
+    expect(quote.annualRate?.value).toBeLessThan(0.0521);
     expect(quote.indicativeApr).toBeNull();
-    expect(quote.availableLiquidityUsd).toBe(500_000);
+    expect(quote.availableLiquidityUsd).toBe(1_000_000);
     expect(quote.assumptions).toContain(
-      "Selected isolated market WBTC-USDC-77.",
+      "Aggregate capacity allocates each collateral family once across independent markets.",
     );
     expect(quote.liquidationRisk).toBe("ltv-threshold");
+  });
+
+  it("allocates one collateral balance across several LLTVs only once", () => {
+    const token = "0x0000000000000000000000000000000000000001";
+    const route = buildMorphoBorrowRoute(
+      [
+        isolatedMarket("high-lltv", token, 100, 0.9, 30, 0.05),
+        isolatedMarket("lower-lltv", token, 100, 0.8, 100, 0.04),
+      ],
+      1_000n * 10n ** 6n,
+      "capacity",
+    );
+
+    expect(route.legs.map((leg) => leg.marketId)).toEqual([
+      "high-lltv",
+      "lower-lltv",
+    ]);
+    expect(
+      route.legs.reduce(
+        (sum, leg) => sum + BigInt(leg.collateralAssigned.raw),
+        0n,
+      ),
+    ).toBeLessThanOrEqual(100n * 10n ** 6n);
+    expect(
+      route.legs.reduce((sum, leg) => sum + BigInt(leg.borrowAmount.raw), 0n),
+    ).toBe(83_333_332n);
+  });
+
+  it("uses the cheapest rate only while preserving enough remaining capacity", () => {
+    const token = "0x0000000000000000000000000000000000000001";
+    const route = buildMorphoBorrowRoute(
+      [
+        isolatedMarket("cheap-low-lltv", token, 100, 0.5, 100, 0.01),
+        isolatedMarket("costly-high-lltv", token, 100, 0.9, 100, 0.1),
+      ],
+      80n * 10n ** 6n,
+    );
+
+    expect(route.feasible).toBe(true);
+    expect(route.legs).toHaveLength(2);
+    expect(route.legs[0]?.marketId).toBe("cheap-low-lltv");
+    expect(BigInt(route.legs[0]!.borrowAmount.raw)).toBeLessThanOrEqual(
+      12_500_000n,
+    );
+    expect(
+      route.legs.reduce((sum, leg) => sum + BigInt(leg.borrowAmount.raw), 0n),
+    ).toBe(80n * 10n ** 6n);
+    expect(route.weightedCurrentApy).toBeGreaterThan(0.08);
+    expect(route.weightedCurrentApy).toBeLessThan(0.1);
   });
 
   it("quotes Compound III source snapshots from borrow and liquidation factors", () => {
@@ -558,3 +615,23 @@ describe("live protocol snapshot quote builders", () => {
     ]);
   });
 });
+
+function isolatedMarket(
+  marketId: string,
+  collateralToken: `0x${string}`,
+  collateralUsd: number,
+  lltv: number,
+  liquidityUsd: number,
+  apy: number,
+): IsolatedMarketCapacity {
+  return {
+    marketId,
+    collateralToken,
+    collateralSymbol: "TEST",
+    collateralAvailable: usd(collateralUsd),
+    oraclePrice: { numerator: "1", denominator: "1" },
+    lltv: ratio(lltv),
+    availableLiquidity: usd(liquidityUsd),
+    currentBorrowApy: ratio(apy),
+  };
+}

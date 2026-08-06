@@ -1,4 +1,26 @@
 import { ethereumTop250Snapshot } from "./ethereum-top250.js";
+import {
+  ETHEREUM_MORPHO_USDC_MARKET_MANIFEST_VERSION,
+  ETHEREUM_MORPHO_USDC_MARKET_SOURCE_BLOCK,
+  ETHEREUM_MORPHO_USDC_MARKET_SOURCE_HASH,
+  ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT,
+  ethereumMorphoCollateralTokensV1,
+  ethereumMorphoUsdcMarketsV1,
+  type MorphoMarketRegistryEntry,
+} from "./ethereum-morpho-usdc-markets.js";
+
+export {
+  ETHEREUM_MORPHO_USDC_MARKET_MANIFEST_VERSION,
+  ETHEREUM_MORPHO_USDC_MARKET_SOURCE_BLOCK,
+  ETHEREUM_MORPHO_USDC_MARKET_SOURCE_HASH,
+  ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT,
+  ethereumMorphoCollateralTokensV1,
+  ethereumMorphoUsdcMarketsV1,
+} from "./ethereum-morpho-usdc-markets.js";
+export type {
+  MorphoCollateralRegistryEntry,
+  MorphoMarketRegistryEntry,
+} from "./ethereum-morpho-usdc-markets.js";
 
 export const supportedChains = [
   {
@@ -145,6 +167,22 @@ export const ethereumAssetRegistryV1: readonly EthereumAssetRegistryEntry[] = [
     address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
     decimals: 8,
     category: "bitcoin",
+  }),
+  asset({
+    symbol: "eBTC",
+    name: "ether.fi BTC",
+    address: "0x657e8C867D8B37dCC18fA4Caead9C45EB088C642",
+    decimals: 8,
+    category: "bitcoin",
+    candidateProviders: ["aave-v3"],
+  }),
+  asset({
+    symbol: "BTC.b",
+    name: "Bitcoin",
+    address: "0xB0F70C0bD6FD87dbEb7C10dC692a2a6106817072",
+    decimals: 8,
+    category: "bitcoin",
+    candidateProviders: ["aave-v3"],
   }),
   asset({
     symbol: "cbBTC",
@@ -313,6 +351,13 @@ export type OnchainPriceRoute =
       method: "getWeETHByeETH";
     }
   | {
+      kind: "morpho-oracle";
+      marketId: `0x${string}`;
+      oracle: `0x${string}`;
+      collateralDecimals: number;
+      loanDecimals: 6;
+    }
+  | {
       kind: "automatic-onchain";
     };
 
@@ -372,6 +417,7 @@ const reviewedTokens: readonly ReviewedToken[] = [
   ["0xBB0E17EF65F82Ab018d8EDd776e8DD940327B28b", "AXS", "Axie Infinity", 18],
   ["0x3472A5A71965499acd81997a54BBA8D852C6E53d", "BADGER", "Badger DAO", 18],
   ["0xba100000625a3754423978a60c9317c58a424e3D", "BAL", "Balancer", 18],
+  ["0xB0F70C0bD6FD87dbEb7C10dC692a2a6106817072", "BTC.b", "Bitcoin", 8],
   ["0xBA11D00c5f74255f56a5E366F4F77f5A186d7f55", "BAND", "Band Protocol", 18],
   [
     "0x0D8775F648430679A709E98d2b0Cb6250d2887EF",
@@ -420,6 +466,7 @@ const reviewedTokens: readonly ReviewedToken[] = [
   ["0xfB7B4564402E5500dB5bB6d63Ae671302777C75a", "DEXT", "DexTools", 18],
   ["0x84cA8bc7997272c7CfB4D0Cd3D55cd942B3c9419", "DIA", "DIA", 18],
   ["0x1494CA1F11D487c2bBe4543E90080AeBa4BA3C2b", "DPI", "DeFi Pulse Index", 18],
+  ["0x657e8C867D8B37dCC18fA4Caead9C45EB088C642", "eBTC", "ether.fi BTC", 8],
   ["0xec53bF9167f50cDEB3Ae105f56099aaaB9061F83", "EIGEN", "EigenLayer", 18],
   ["0x57e114B691Db790C35207b2e685D4A43181e6061", "ENA", "Ethena", 18],
   ["0xF629cBd94d3791C9250152BD8dfBDF380E2a3B9c", "ENJ", "Enjin Coin", 18],
@@ -494,13 +541,19 @@ const top250Tokens: readonly ReviewedToken[] = ethereumTop250Snapshot.map(
   ({ address, symbol, name, decimals }) => [address, symbol, name, decimals],
 );
 
-const reviewedRegistryAdditions = reviewedTokens.filter(([address]) =>
-  ethereumAssetRegistryV1.some(
-    (asset) =>
-      asset.assetKind !== "native" &&
-      asset.address.toLowerCase() === address.toLowerCase(),
+const reviewedRegistryAdditions: readonly ReviewedToken[] = [
+  ...reviewedTokens.filter(([address]) =>
+    ethereumAssetRegistryV1.some(
+      (asset) =>
+        asset.assetKind !== "native" &&
+        asset.address.toLowerCase() === address.toLowerCase(),
+    ),
   ),
-);
+  ...ethereumMorphoCollateralTokensV1.map(
+    (token) =>
+      [token.address, token.symbol, token.name, token.decimals] as const,
+  ),
+];
 
 const allReviewedTokens = [
   ...top250Tokens,
@@ -687,6 +740,9 @@ export const ethereumTokenRegistryV1: readonly EthereumTokenRegistryEntry[] =
     const contractRate = reviewedContractRatePriceRoutes[address.toLowerCase()];
     const conversionRate =
       reviewedConversionRatePriceRoutes[address.toLowerCase()];
+    const morphoCollateral = ethereumMorphoCollateralTokensV1.find(
+      (token) => token.address.toLowerCase() === address.toLowerCase(),
+    );
     return {
       chainId: 1,
       address,
@@ -697,8 +753,14 @@ export const ethereumTokenRegistryV1: readonly EthereumTokenRegistryEntry[] =
       ...(ranked
         ? { snapshotRank: ranked.snapshotRank, marketId: ranked.marketId }
         : {}),
-      rankingSource: ETHEREUM_TOKEN_REGISTRY_SOURCE,
-      snapshotDate: ETHEREUM_TOKEN_REGISTRY_SNAPSHOT_DATE,
+      rankingSource: ranked
+        ? ETHEREUM_TOKEN_REGISTRY_SOURCE
+        : morphoCollateral
+          ? `Morpho official listed Ethereum USDC markets verified at block ${ETHEREUM_MORPHO_USDC_MARKET_SOURCE_BLOCK}`
+          : ETHEREUM_TOKEN_REGISTRY_SOURCE,
+      snapshotDate: morphoCollateral
+        ? "2026-08-06"
+        : ETHEREUM_TOKEN_REGISTRY_SNAPSHOT_DATE,
       priceRoute:
         existing && existing.assetKind !== "convertible"
           ? {
@@ -726,9 +788,18 @@ export const ethereumTokenRegistryV1: readonly EthereumTokenRegistryEntry[] =
                       kind: "conversion-rate" as const,
                       ...conversionRate,
                     }
-                  : {
-                      kind: "automatic-onchain" as const,
-                    },
+                  : morphoCollateral?.priceOracle &&
+                      morphoCollateral.priceMarketId
+                    ? {
+                        kind: "morpho-oracle" as const,
+                        marketId: morphoCollateral.priceMarketId,
+                        oracle: morphoCollateral.priceOracle,
+                        collateralDecimals: morphoCollateral.decimals,
+                        loanDecimals: 6 as const,
+                      }
+                    : {
+                        kind: "automatic-onchain" as const,
+                      },
     };
   });
 
@@ -760,39 +831,4 @@ export function ethereumTokenByAddress(
   );
 }
 
-export type EthereumMorphoUsdcMarket = {
-  marketId: `0x${string}`;
-  loanToken: `0x${string}`;
-  loanSymbol: "USDC";
-  loanDecimals: 6;
-  collateralToken: `0x${string}`;
-  collateralSymbol: string;
-  collateralDecimals: number;
-  oracle: `0x${string}`;
-  irm: `0x${string}`;
-  lltv: bigint;
-};
-
-export const ETHEREUM_MORPHO_USDC_MARKET_MANIFEST_VERSION =
-  "ethereum-morpho-usdc-2026-07-21-v1";
-
-/**
- * Immutable Morpho Blue market parameters reviewed against the listed-market
- * registry. Runtime reads use only these IDs and the connected wallet provider.
- */
-export const ethereumMorphoUsdcMarketsV1: readonly EthereumMorphoUsdcMarket[] =
-  [
-    {
-      marketId:
-        "0x94b823e6bd8ea533b4e33fbc307faea0b307301bc48763acc4d4aa4def7636cd",
-      loanToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-      loanSymbol: "USDC",
-      loanDecimals: 6,
-      collateralToken: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-      collateralSymbol: "WETH",
-      collateralDecimals: 18,
-      oracle: "0x0F948CBa8231Db7898ef36A4212581Ad7b1B4580",
-      irm: "0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC",
-      lltv: 860_000_000_000_000_000n,
-    },
-  ];
+export type EthereumMorphoUsdcMarket = MorphoMarketRegistryEntry;

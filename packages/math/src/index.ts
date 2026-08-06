@@ -23,6 +23,20 @@ export function mulDivDown(
   return (multiplicand * multiplier) / denominator;
 }
 
+export function mulDivUp(
+  multiplicand: bigint,
+  multiplier: bigint,
+  denominator: bigint,
+): bigint {
+  if (multiplicand < 0n || multiplier < 0n || denominator <= 0n) {
+    throw new Error(
+      "mulDivUp expects non-negative values and a positive denominator",
+    );
+  }
+  const product = multiplicand * multiplier;
+  return product === 0n ? 0n : (product - 1n) / denominator + 1n;
+}
+
 export function minBigInt(...values: bigint[]): bigint {
   if (!values.length) return 0n;
   return values.reduce((minimum, value) => (value < minimum ? value : minimum));
