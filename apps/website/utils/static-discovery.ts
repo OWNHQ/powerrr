@@ -368,9 +368,13 @@ export async function scanConnectedWallet(input: {
   account: string;
   walletName: string;
   now?: Date;
+  signal?: AbortSignal;
   onProgress?: (progress: DiscoveryProgress) => void;
 }): Promise<StaticDiscoveryResult> {
-  const provider = createReadOnlyProvider(input.provider);
+  const provider = createAbortableProvider(
+    createReadOnlyProvider(input.provider),
+    input.signal,
+  );
   const account = getAddress(input.account) as HexAddress;
   const now = input.now ?? new Date();
   const chainIdHex = await provider.request<string>({ method: "eth_chainId" });
@@ -577,6 +581,14 @@ export async function scanConnectedWallet(input: {
   const succeeded = decodedBalances.filter(
     (item) => item.status === "success",
   ).length;
+  const metadataSucceeded = runtimeTokens.size;
+  const valuationCandidates = assets.filter(
+    (asset) =>
+      asset.balanceReadStatus === "success" && Number(asset.balance) > 0,
+  );
+  const valuationsSucceeded = valuationCandidates.filter(
+    (asset) => asset.valuationStatus === "available",
+  ).length;
   const priceSources = [
     ...new Set(
       assets.flatMap((asset) =>
@@ -612,11 +624,51 @@ export async function scanConnectedWallet(input: {
       callsAttempted: ethereumTokenRegistryV1.length,
       callsSucceeded: succeeded,
       callsFailed: ethereumTokenRegistryV1.length - succeeded,
+      readCoverage: {
+        balances: {
+          attempted: ethereumTokenRegistryV1.length,
+          succeeded,
+          failed: ethereumTokenRegistryV1.length - succeeded,
+        },
+        metadata: {
+          attempted: positive.length,
+          succeeded: metadataSucceeded,
+          failed: positive.length - metadataSucceeded,
+        },
+        valuations: {
+          attempted: valuationCandidates.length,
+          succeeded: valuationsSucceeded,
+          unavailable: valuationCandidates.length - valuationsSucceeded,
+        },
+      },
       chunkSizes,
       priceSources,
       postedToPowerrr: false,
     },
   };
+}
+
+function createAbortableProvider(
+  provider: Eip1193Provider,
+  signal?: AbortSignal,
+): Eip1193Provider {
+  if (!signal) return provider;
+  return {
+    ...provider,
+    async request<TResult>(request: Eip1193Request): Promise<TResult> {
+      throwIfAborted(signal);
+      const result = await provider.request<TResult>(request);
+      throwIfAborted(signal);
+      return result;
+    },
+  };
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (!signal.aborted) return;
+  const error = new Error("Wallet scan cancelled.");
+  error.name = "AbortError";
+  throw error;
 }
 
 async function loadPrices(

@@ -6,16 +6,13 @@ import {
   PhWarningCircle,
 } from "@phosphor-icons/vue";
 import { ETHEREUM_TOKEN_REGISTRY_TOTAL_COUNT } from "@powerrr/configs";
-import { decimalStringToRaw, USDC_DECIMALS } from "@powerrr/math";
+import { rawAmount, rawAmountToNumber, USDC_DECIMALS } from "@powerrr/math";
+import type { RawAmount } from "@powerrr/shared-types";
 import {
   formatUsdValue,
   summarizeCollateralCoverage,
-  summarizeEstimatorCapacity,
 } from "./utils/estimator-ux";
-import {
-  pooledBorrowAvailableRaw,
-  pooledBorrowAvailableUsd,
-} from "./utils/borrow-preview";
+import { pooledBorrowAvailableRaw } from "./utils/borrow-preview";
 import { formatLocalDateTime } from "./utils/date-time";
 import {
   groupWebsiteQuoteRows,
@@ -77,7 +74,14 @@ const {
 
 const currentStage = ref<EstimatorStage>("assets");
 const expandedProviderId = ref("");
-const borrowAmountUsd = ref(0);
+const borrowAmount = ref<RawAmount>(rawAmount(0n, USDC_DECIMALS));
+const borrowAmountError = ref("");
+const effectiveBorrowAmount = computed(() =>
+  borrowAmountError.value ? rawAmount(0n, USDC_DECIMALS) : borrowAmount.value,
+);
+const borrowAmountUsd = computed(() =>
+  rawAmountToNumber(effectiveBorrowAmount.value),
+);
 const borrowAmountIntent = ref<BorrowAmountIntent>({
   kind: "relative",
   utilizationPercent: 50,
@@ -143,13 +147,14 @@ const providerItems = computed<ProviderItem[]>(() =>
       return rightRaw < leftRaw ? -1 : rightRaw > leftRaw ? 1 : 0;
     }),
 );
-const capacitySummary = computed(() =>
-  summarizeEstimatorCapacity(
-    providerItems.value.map((provider) => providerCapacity(provider)),
-  ),
+const providerMaximumRaw = computed(() =>
+  providerItems.value.reduce((maximum, provider) => {
+    const candidate = providerCapacityRaw(provider);
+    return candidate > maximum ? candidate : maximum;
+  }, 0n),
 );
-const providerMaximumUsd = computed(
-  () => capacitySummary.value.providerMaximumUsd,
+const comparisonCeiling = computed(() =>
+  rawAmount(providerMaximumRaw.value, USDC_DECIMALS),
 );
 const providerPathCount = computed(
   () =>
@@ -157,10 +162,7 @@ const providerPathCount = computed(
       .length,
 );
 const coveringProviderCount = computed(() => {
-  const requestedRaw = decimalStringToRaw(
-    Math.max(0, borrowAmountUsd.value).toFixed(USDC_DECIMALS),
-    USDC_DECIMALS,
-  );
+  const requestedRaw = BigInt(effectiveBorrowAmount.value.raw);
   return providerItems.value.filter(
     (provider) =>
       providerCapacityRaw(provider) > 0n &&
@@ -189,7 +191,6 @@ const matchedCollateralUsd = computed(() =>
     0,
   ),
 );
-const comparisonCeilingUsd = computed(() => providerMaximumUsd.value);
 const positiveAssets = computed(() =>
   assets.value.filter(
     (asset) =>
@@ -208,7 +209,8 @@ watch(receipt, (next, previous) => {
   if (!next || previous) return;
   currentStage.value = "assets";
   expandedProviderId.value = "";
-  borrowAmountUsd.value = 0;
+  borrowAmount.value = rawAmount(0n, USDC_DECIMALS);
+  borrowAmountError.value = "";
   borrowAmountIntent.value = { kind: "relative", utilizationPercent: 50 };
   comparedCollateralSignature.value = "";
   stageError.value = "";
@@ -226,10 +228,10 @@ async function enterComparison(): Promise<void> {
     selectedCollateralTokens.value,
   );
   if (nextSignature !== comparedCollateralSignature.value) {
-    borrowAmountUsd.value = amountForBorrowIntent(
+    borrowAmount.value = amountForBorrowIntent(
       borrowAmountIntent.value,
-      providerMaximumUsd.value,
-      borrowAmountUsd.value,
+      comparisonCeiling.value,
+      borrowAmount.value,
     );
   }
   comparedCollateralSignature.value = nextSignature;
@@ -239,6 +241,10 @@ async function enterComparison(): Promise<void> {
 
 function setBorrowAmountIntent(intent: BorrowAmountIntent): void {
   borrowAmountIntent.value = intent;
+}
+
+function setBorrowAmountError(message: string): void {
+  borrowAmountError.value = message;
 }
 
 async function continueFromAssets(): Promise<void> {
@@ -271,12 +277,6 @@ function connectFromMenu(
   wallet: (typeof announcedProviders.value)[number],
 ): void {
   void connect(wallet);
-}
-
-function providerCapacity(provider: ProviderItem): number {
-  return provider.group
-    ? pooledBorrowAvailableUsd(provider.group.primaryQuote)
-    : 0;
 }
 
 function providerCapacityRaw(provider: ProviderItem): bigint {
@@ -416,7 +416,7 @@ function providerStatus(provider: ProviderItem) {
             {{ scanProgressPercent }}% · Read-only. No signature or transaction.
           </p>
           <button
-            v-if="isConnecting"
+            v-if="isConnecting || (isScanning && !receipt)"
             type="button"
             class="focus-ring mt-5 min-h-11 rounded-lg border border-line bg-surface px-5 text-sm font-semibold text-river hover:border-river"
             @click="cancelConnection"
@@ -624,7 +624,7 @@ function providerStatus(provider: ProviderItem) {
           <Transition name="workflow-stage" mode="out-in">
             <div v-if="currentStage === 'assets'" key="assets">
               <EstimatorAssets
-                :assets="positiveAssets"
+                :assets="assets"
                 :selected-tokens="selectedCollateralTokens"
                 :loading="isComparing"
                 @change-address="disconnect"
@@ -640,6 +640,7 @@ function providerStatus(provider: ProviderItem) {
                     :block-loaded-at-label="blockLoadedAtLabel"
                     :calls-succeeded="receipt.callsSucceeded"
                     :calls-attempted="receipt.callsAttempted"
+                    :read-coverage="receipt.readCoverage"
                   />
                 </template>
               </EstimatorAssets>
@@ -652,10 +653,11 @@ function providerStatus(provider: ProviderItem) {
             >
               <div class="xl:sticky xl:top-24" data-comparison-control>
                 <EstimatorTerms
-                  v-model:amount="borrowAmountUsd"
-                  :comparison-ceiling-usd="comparisonCeilingUsd"
-                  :error="stageError"
+                  v-model:amount="borrowAmount"
+                  :comparison-ceiling="comparisonCeiling"
+                  :error="borrowAmountError || stageError"
                   @intent-change="setBorrowAmountIntent"
+                  @validation-error="setBorrowAmountError"
                   @back="goToStage('assets')"
                 />
               </div>
@@ -673,7 +675,10 @@ function providerStatus(provider: ProviderItem) {
                       risk evidence.
                     </p>
                   </div>
-                  <p v-if="providerPathCount > 0" class="text-sm text-slate">
+                  <p
+                    v-if="providerPathCount > 0 && !borrowAmountError"
+                    class="text-sm text-slate"
+                  >
                     <strong class="font-semibold text-ink tabular-nums">
                       {{ coveringProviderCount }}/{{ providerPathCount }}
                     </strong>
@@ -703,7 +708,7 @@ function providerStatus(provider: ProviderItem) {
                     :destination-label="provider.destination?.label"
                     :quote="provider.group?.primaryQuote"
                     :status="providerStatus(provider)"
-                    :amount-usd="borrowAmountUsd"
+                    :amount="effectiveBorrowAmount"
                     :assets="positiveAssets"
                     :expanded="expandedProviderId === provider.id"
                     @toggle="toggleProvider"
@@ -724,6 +729,7 @@ function providerStatus(provider: ProviderItem) {
           :block-loaded-at-label="blockLoadedAtLabel"
           :calls-succeeded="receipt.callsSucceeded"
           :calls-attempted="receipt.callsAttempted"
+          :read-coverage="receipt.readCoverage"
         />
       </div>
     </Transition>

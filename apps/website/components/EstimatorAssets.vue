@@ -129,7 +129,22 @@ const smallAssets = computed(() =>
   ),
 );
 const unpricedAssets = computed(() =>
-  sortedAssets.value.filter((asset) => !isAssetSelectable(asset)),
+  sortedAssets.value.filter(
+    (asset) =>
+      asset.balanceReadStatus === "success" && !isAssetSelectable(asset),
+  ),
+);
+const failedBalanceAssets = computed(() =>
+  sortedAssets.value.filter(
+    (asset) =>
+      asset.balanceReadStatus === "failed" && BigInt(asset.balanceRaw) === 0n,
+  ),
+);
+const failedMetadataAssets = computed(() =>
+  sortedAssets.value.filter(
+    (asset) =>
+      asset.balanceReadStatus === "failed" && BigInt(asset.balanceRaw) > 0n,
+  ),
 );
 const pricedAssets = computed(() =>
   sortedAssets.value.filter((asset) => isAssetSelectable(asset)),
@@ -466,6 +481,55 @@ function formatBalance(asset: PortfolioAsset): string {
               </span>
             </button>
           </div>
+        </details>
+
+        <details
+          v-if="failedMetadataAssets.length"
+          class="border-t border-line"
+          open
+        >
+          <summary
+            class="focus-ring cursor-pointer px-5 py-4 text-sm font-semibold text-warning sm:px-6"
+          >
+            Token scale unknown ({{ failedMetadataAssets.length }})
+          </summary>
+          <ul class="grid gap-3 border-t border-line p-5 sm:grid-cols-2 sm:p-6">
+            <li
+              v-for="asset in failedMetadataAssets"
+              :key="asset.token"
+              class="rounded-xl border border-warning-border bg-warning-surface p-4"
+            >
+              <strong>{{ asset.symbol }}</strong>
+              <span class="mt-1 block text-xs leading-5 text-warning">
+                {{ asset.balanceReadReason }} Balance and value remain unknown.
+              </span>
+            </li>
+          </ul>
+        </details>
+
+        <details
+          v-if="failedBalanceAssets.length"
+          class="border-t border-line"
+          open
+        >
+          <summary
+            class="focus-ring cursor-pointer px-5 py-4 text-sm font-semibold text-warning sm:px-6"
+          >
+            Balance unknown ({{ failedBalanceAssets.length }})
+          </summary>
+          <ul class="grid gap-3 border-t border-line p-5 sm:grid-cols-2 sm:p-6">
+            <li
+              v-for="asset in failedBalanceAssets"
+              :key="asset.token"
+              class="rounded-xl border border-warning-border bg-warning-surface p-4"
+            >
+              <strong>{{ asset.symbol }}</strong>
+              <span class="mt-1 block text-xs leading-5 text-warning">
+                {{ asset.balanceReadReason }} A positive balance cannot be ruled
+                out.
+              </span>
+            </li>
+          </ul>
         </details>
       </div>
 

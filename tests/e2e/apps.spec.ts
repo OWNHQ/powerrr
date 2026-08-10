@@ -143,6 +143,19 @@ const balanceResponse = encodeFunctionResult({
           : zeroBalance,
   })),
 });
+const failedBalanceResponse = encodeFunctionResult({
+  abi: multicall3Abi,
+  functionName: "aggregate3",
+  result: ethereumTokenRegistryV1.map((_, index) => ({
+    success: index !== wethIndex,
+    returnData:
+      index === wethIndex
+        ? "0x"
+        : index === unpricedIndex
+          ? unpricedBalance
+          : zeroBalance,
+  })),
+});
 const decimalsResponse = encodeFunctionResult({
   abi: multicall3Abi,
   functionName: "aggregate3",
@@ -210,6 +223,51 @@ const decimalsRequestData = encodeFunctionData({
       })),
   ],
 }).toLowerCase();
+const failedDecimalsRequestData = encodeFunctionData({
+  abi: multicall3Abi,
+  functionName: "aggregate3",
+  args: [
+    [unpricedIndex].map((index) => ({
+      target: ethereumTokenRegistryV1[index]!.address,
+      allowFailure: true,
+      callData: encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "decimals",
+      }),
+    })),
+  ],
+}).toLowerCase();
+const failedDecimalsResponse = encodeFunctionResult({
+  abi: multicall3Abi,
+  functionName: "aggregate3",
+  result: [
+    {
+      success: true,
+      returnData: encodeFunctionResult({
+        abi: erc20Abi,
+        functionName: "decimals",
+        result: ethereumTokenRegistryV1[unpricedIndex]!.decimals,
+      }),
+    },
+  ],
+});
+const failedMetadataResponse = encodeFunctionResult({
+  abi: multicall3Abi,
+  functionName: "aggregate3",
+  result: [wethIndex, unpricedIndex]
+    .sort((left, right) => left - right)
+    .map((index) => ({
+      success: index !== wethIndex,
+      returnData:
+        index === wethIndex
+          ? "0x"
+          : encodeFunctionResult({
+              abi: erc20Abi,
+              functionName: "decimals",
+              result: ethereumTokenRegistryV1[index]!.decimals,
+            }),
+    })),
+});
 const wethPriceRoute = ethereumTokenRegistryV1[wethIndex]!.priceRoute;
 if (wethPriceRoute.kind !== "aave-oracle") {
   throw new Error("The E2E WETH fixture requires its reviewed oracle route.");
@@ -363,17 +421,26 @@ async function installWallet(
     nameDelayMs?: number;
     namesAvailable?: boolean;
     nativeBalanceHex?: string;
+    hangMethod?: string;
+    failWethBalance?: boolean;
+    failWethMetadata?: boolean;
   } = {},
 ): Promise<void> {
   const connectDelayMs = options.connectDelayMs ?? 0;
   const nameDelayMs = options.nameDelayMs ?? 0;
   const namesAvailable = options.namesAvailable ?? true;
   const nativeBalanceHex = options.nativeBalanceHex ?? "0x0";
+  const hangMethod = options.hangMethod ?? "";
+  const failWethBalance = options.failWethBalance ?? false;
+  const failWethMetadata = options.failWethMetadata ?? false;
   await page.addInitScript(
     ({
       account,
       balanceResponse,
+      failedBalanceResponse,
       decimalsResponse,
+      failedDecimalsResponse,
+      failedMetadataResponse,
       priceResponse,
       ensNameResponse,
       gweiNameResponse,
@@ -383,10 +450,14 @@ async function installWallet(
       nameDelayMs,
       namesAvailable,
       nativeBalanceHex,
+      hangMethod,
+      failWethBalance,
+      failWethMetadata,
       directRpcResponses,
       multicall3,
       balanceRequestData,
       decimalsRequestData,
+      failedDecimalsRequestData,
       priceRequestData,
     }) => {
       const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
@@ -404,6 +475,9 @@ async function installWallet(
           };
           state.__rpcMethods ??= [];
           state.__rpcMethods.push(method);
+          if (method === hangMethod) {
+            await new Promise<never>(() => undefined);
+          }
           if (method === "eth_requestAccounts") {
             if (connectDelayMs > 0) {
               await new Promise((resolve) =>
@@ -452,8 +526,19 @@ async function installWallet(
               return directRpcResponses[data];
             }
             if (to === multicall3.toLowerCase()) {
-              if (data === balanceRequestData) return balanceResponse;
-              if (data === decimalsRequestData) return decimalsResponse;
+              if (data === balanceRequestData) {
+                return failWethBalance
+                  ? failedBalanceResponse
+                  : balanceResponse;
+              }
+              if (data === failedDecimalsRequestData) {
+                return failedDecimalsResponse;
+              }
+              if (data === decimalsRequestData) {
+                return failWethMetadata
+                  ? failedMetadataResponse
+                  : decimalsResponse;
+              }
               if (data === priceRequestData) return priceResponse;
               return "0x";
             }
@@ -498,7 +583,10 @@ async function installWallet(
     {
       account,
       balanceResponse,
+      failedBalanceResponse,
       decimalsResponse,
+      failedDecimalsResponse,
+      failedMetadataResponse,
       priceResponse,
       ensNameResponse,
       gweiNameResponse,
@@ -508,10 +596,14 @@ async function installWallet(
       nameDelayMs,
       namesAvailable,
       nativeBalanceHex,
+      hangMethod,
+      failWethBalance,
+      failWethMetadata,
       directRpcResponses,
       multicall3,
       balanceRequestData,
       decimalsRequestData,
+      failedDecimalsRequestData,
       priceRequestData,
     },
   );
@@ -746,6 +838,66 @@ test("wallet read disclosure opens without shifting the landing layout", async (
   const after = await hero.boundingBox();
   expect(after?.y).toBe(before?.y);
   expect(after?.height).toBe(before?.height);
+});
+
+test("a wallet scan can be cancelled after account permission", async ({
+  page,
+}) => {
+  await installWallet(page, { hangMethod: "eth_blockNumber" });
+  await page.goto("/");
+  await chooseTestWallet(page);
+  await expect(
+    page.getByRole("heading", { name: "Checking your wallet" }),
+  ).toBeVisible();
+  const cancel = page.getByRole("button", { name: "Cancel" });
+  await expect(cancel).toBeVisible();
+  await cancel.click();
+  await expect(
+    page.getByRole("button", { name: "Connect wallet" }).first(),
+  ).toBeVisible();
+  await expect(page.getByText("Connection cancelled.")).toBeVisible();
+});
+
+test("failed balance reads remain visible and prevent a definitive empty state", async ({
+  page,
+}) => {
+  await installWallet(page, { failWethBalance: true });
+  await page.goto("/");
+  await chooseTestWallet(page);
+  await expect(
+    page.getByRole("heading", {
+      name: "Wallet snapshot for powerrr.eth · powerrr.gwei",
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("Balance unknown (1)")).toBeVisible();
+  await expect(
+    page.getByText(/A positive balance cannot be ruled out/),
+  ).toBeVisible();
+  await expect(page.getByText("No tracked assets found")).toHaveCount(0);
+  await page.getByText("About this estimate").click();
+  await expect(
+    page.getByText(
+      `${ethereumTokenRegistryV1.length - 1}/${ethereumTokenRegistryV1.length} succeeded`,
+    ),
+  ).toBeVisible();
+});
+
+test("failed metadata reads remain visible with an unknown token scale", async ({
+  page,
+}) => {
+  await installWallet(page, { failWethMetadata: true });
+  await page.goto("/");
+  await chooseTestWallet(page);
+  await expect(
+    page.getByRole("heading", {
+      name: "Wallet snapshot for powerrr.eth · powerrr.gwei",
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("Token scale unknown (1)")).toBeVisible();
+  await expect(
+    page.getByText(/Balance and value remain unknown/),
+  ).toBeVisible();
+  await expect(page.getByText("No tracked assets found")).toHaveCount(0);
 });
 
 test("wallet identity resolves before its final label is published", async ({
@@ -1054,28 +1206,51 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
       "Some provider sources were unavailable, so pooled coverage may be understated.",
     ),
   ).toBeVisible();
-  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("2,400");
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("2400.00");
   await expect(page.getByText("$4,800 ceiling", { exact: true })).toBeVisible();
   await expect(
     page.getByText(
-      "Ceiling and projected LTV use the highest pooled estimate ($4,800).",
+      "Ceiling and capacity utilization use the highest pooled estimate ($4,800).",
       { exact: true },
     ),
   ).toHaveCount(0);
-  const fiftyPercentLtv = page.getByRole("button", {
-    name: /50% projected LTV/,
+  const fiftyPercentUtilization = page.getByRole("button", {
+    name: /50% capacity utilization/,
   });
-  await expect(fiftyPercentLtv).toHaveAccessibleName("50% projected LTV");
+  await expect(fiftyPercentUtilization).toHaveAccessibleName(
+    "50% capacity utilization",
+  );
   await expect(page.getByText("Morpho reference", { exact: true })).toHaveCount(
     0,
   );
   await expect(page.getByText("current", { exact: true })).toHaveCount(0);
-  await expect(fiftyPercentLtv).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: /25% projected LTV/ }).click();
-  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("1,200");
-  await fiftyPercentLtv.click();
-  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("2,400");
+  await expect(fiftyPercentUtilization).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: /25% capacity utilization/ }).click();
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("1200.00");
+  await fiftyPercentUtilization.click();
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("2400.00");
   await expect(page.locator('input[type="range"]')).toHaveCount(1);
+  await expect(
+    page.getByText("5.00% variable APR", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(page.getByText("Projected LTV", { exact: true })).toHaveCount(3);
+  for (const protocolId of ["aave", "sparklend"]) {
+    const card = page.locator(`[data-protocol-id="${protocolId}"]`);
+    await expect(
+      card.getByText("Projected LTV", { exact: true }),
+    ).toBeVisible();
+    await expect(card.getByText("40.0%", { exact: true })).toBeVisible();
+  }
+  const borrowAmount = page.getByLabel("Borrow amount in USDC");
+  await borrowAmount.fill("6649.28129");
+  await page
+    .getByRole("heading", { name: "Borrowing paths", exact: true })
+    .click();
+  await expect(borrowAmount).toHaveValue("6649.28");
+  await page.getByLabel("Borrow amount in USDC").fill("1e21");
+  await expect(page.getByText(/plain non-negative USDC amount/i)).toBeVisible();
+  await page.getByLabel("Borrow amount in USDC").fill("0.0000001");
+  await expect(page.getByText(/at most 6 decimal places/i)).toBeVisible();
   await page.getByLabel("Borrow amount in USDC").fill("1000");
   await expect(
     page.getByText(/eligible providers? covers? \$1,000/),
@@ -1092,7 +1267,7 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
     page.getByRole("heading", { name: "Compare borrowing paths" }),
   ).toBeVisible();
   await expect(refreshButton).toBeEnabled();
-  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("1,000");
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("1000.00");
   const callsAfterRefresh = await page.evaluate(
     () =>
       (window as typeof window & { __ethCallCount?: number }).__ethCallCount ??
@@ -1199,7 +1374,7 @@ test("native ETH and WETH both contribute to a WETH collateral path", async ({
   await expect(contributionRows.nth(1)).toContainText("$3,000");
   await expect(contributionRows.nth(1)).toContainText("Wrap required");
 
-  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("3,600");
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("3600.00");
   const callsAfterSnapshot = await page.evaluate(
     () =>
       (window as typeof window & { __ethCallCount?: number }).__ethCallCount ??
@@ -1211,14 +1386,14 @@ test("native ETH and WETH both contribute to a WETH collateral path", async ({
     .getByRole("button", { name: "Remove ETH from collateral selection" })
     .click({ position: { x: 16, y: 16 } });
   await page.getByRole("button", { name: "Compare 1 selected asset" }).click();
-  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("2,400");
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("2400.00");
 
   await page.getByRole("button", { name: "Back to assets" }).click();
   await page
     .getByRole("button", { name: "Add ETH to collateral selection" })
     .click({ position: { x: 16, y: 16 } });
   await page.getByRole("button", { name: "Compare 2 selected assets" }).click();
-  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("3,600");
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("3600.00");
 
   await page.getByLabel("Borrow amount in USDC").fill("7000");
   await page.getByRole("button", { name: "Back to assets" }).click();
@@ -1226,7 +1401,7 @@ test("native ETH and WETH both contribute to a WETH collateral path", async ({
     .getByRole("button", { name: "Remove ETH from collateral selection" })
     .click({ position: { x: 16, y: 16 } });
   await page.getByRole("button", { name: "Compare 1 selected asset" }).click();
-  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("7,000");
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("7000.00");
   await expect(
     page.getByText(/0\/\d+ eligible providers? covers? \$7,000/),
   ).toBeVisible();
@@ -1243,6 +1418,34 @@ test("native ETH and WETH both contribute to a WETH collateral path", async ({
       0,
   );
   expect(callsAfterInteractions).toBe(callsAfterSnapshot);
+});
+
+test("refresh preserves collateral edits made while reads are in flight", async ({
+  page,
+}) => {
+  await installWallet(page, {
+    nativeBalanceHex: "0xde0b6b3a7640000",
+    nameDelayMs: 1_000,
+  });
+  await page.goto("/");
+  await chooseTestWallet(page);
+  await page.getByRole("button", { name: "Compare 2 selected assets" }).click();
+  const refresh = page.getByRole("button", { name: "Refresh" });
+  await refresh.click();
+  await page.getByRole("button", { name: "Back to assets" }).click();
+  await page
+    .getByRole("button", { name: "Remove ETH from collateral selection" })
+    .click({ position: { x: 16, y: 16 } });
+  await expect(
+    page.getByRole("button", { name: "Compare 1 selected asset" }),
+  ).toBeVisible();
+  await expect(refresh).toBeEnabled({ timeout: 15_000 });
+  await expect(
+    page.getByRole("button", { name: "Add ETH to collateral selection" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Compare 1 selected asset" }),
+  ).toBeVisible();
 });
 
 test("provider detail disclosure uses bounded motion and respects reduced motion", async ({

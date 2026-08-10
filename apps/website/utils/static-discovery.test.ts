@@ -107,6 +107,15 @@ describe("static connected-wallet discovery", () => {
       callsFailed: 0,
       postedToPowerrr: false,
       multicallAddress: MULTICALL3_ADDRESS,
+      readCoverage: {
+        balances: {
+          attempted: ethereumTokenRegistryV1.length,
+          succeeded: ethereumTokenRegistryV1.length,
+          failed: 0,
+        },
+        metadata: { attempted: 1, succeeded: 1, failed: 0 },
+        valuations: { attempted: 1, succeeded: 1, unavailable: 0 },
+      },
     });
     expect(result.assets).toHaveLength(1);
     expect(result.assets[0]).toMatchObject({
@@ -177,6 +186,46 @@ describe("static connected-wallet discovery", () => {
     );
   });
 
+  it("keeps a positive balance visible when token scale verification fails", async () => {
+    const mock = createMockProvider({
+      positiveWeth: true,
+      failedDecimalsToken: weth,
+    });
+    const result = await scanConnectedWallet({
+      provider: mock.provider,
+      account,
+      walletName: "Partial metadata RPC",
+      now: new Date(timestamp * 1_000 + 30_000),
+    });
+
+    expect(result.receipt.readCoverage.metadata).toEqual({
+      attempted: 1,
+      succeeded: 0,
+      failed: 1,
+    });
+    expect(result.assets).toContainEqual(
+      expect.objectContaining({
+        symbol: "WETH",
+        balanceRaw: "2000000000000000000",
+        balanceReadStatus: "failed",
+        valuationStatus: "failed",
+      }),
+    );
+  });
+
+  it("stops a scan before wallet reads when its signal is cancelled", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      scanConnectedWallet({
+        provider: createMockProvider({}).provider,
+        account,
+        walletName: "Cancelled wallet",
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("fails closed when the wallet RPC serves a stale block", async () => {
     const mock = createMockProvider({});
     await expect(
@@ -207,6 +256,7 @@ function createMockProvider(options: {
   nativeBalance?: bigint;
   rejectAbove?: number;
   failedToken?: string;
+  failedDecimalsToken?: string;
 }): {
   provider: Eip1193Provider;
   methods: string[];
@@ -241,7 +291,15 @@ function createMockProvider(options: {
       }
       const results = calls.map((call) => {
         const failed =
-          options.failedToken?.toLowerCase() === call.target.toLowerCase();
+          (options.failedToken?.toLowerCase() === call.target.toLowerCase() &&
+            call.callData.startsWith("0x70a08231")) ||
+          (options.failedDecimalsToken?.toLowerCase() ===
+            call.target.toLowerCase() &&
+            call.callData ===
+              encodeFunctionData({
+                abi: erc20Abi,
+                functionName: "decimals",
+              }));
         return {
           success: !failed,
           returnData: failed

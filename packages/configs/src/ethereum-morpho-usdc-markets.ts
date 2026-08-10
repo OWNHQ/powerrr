@@ -25,11 +25,133 @@ export type MorphoCollateralRegistryEntry = {
 };
 
 export const ETHEREUM_MORPHO_USDC_MARKET_MANIFEST_VERSION =
-  "ethereum-morpho-usdc-25694451-v1";
-export const ETHEREUM_MORPHO_USDC_MARKET_SOURCE_BLOCK = "25694451";
+  "ethereum-morpho-usdc-25724749-v1";
+export const ETHEREUM_MORPHO_USDC_MARKET_SOURCE_BLOCK = "25724749";
 export const ETHEREUM_MORPHO_USDC_MARKET_SOURCE_HASH =
-  "0xec9a73ed89cbfa506d3fa8eb01812c751bcd15ada825d65d86158e7d863ee310";
-export const ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT = 120;
+  "0xfc0bbd530560e994b9bc62de8f65757cc1500f88770aa0e8d5943b6b8bb1a18d";
+export const ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT = 118;
+export const ETHEREUM_MORPHO_USDC_EXECUTABLE_COUNT = 117;
+
+export const ethereumMorphoUsdcOfficialMarketIdsV1 = [
+  "0x002278ea242ec722813b4fe3c8eeaa07dbc331c731cc0b4248a1bf0771f933ea",
+  "0x008bed852cd124791f0c8f4ca81893d6ad06e0eed39143ea4cfb874a88f70bec",
+  "0x031c7333014af51e4fd18031d14e4eaada58348cde3f6dc6ea8cca16f7387fb2",
+  "0x09dc9e7eb5d8fc54b2bc41d1135fd4e99057a580f680321faeb90c7a21e631c1",
+  "0x0a15460ad263c2186fe0b5df20a8cf71d55f3cfa06de15edcf6138f6b8edd8bf",
+  "0x0a834fe24f42cf9cbf0644926c5637a9da42dbfae8c4c4ca0c2f2d9c712896d3",
+  "0x1590cb22d797e226df92ebc6e0153427e207299916e7e4e53461389ad68272fb",
+  "0x1a9ccaca2dba9469cd9cba3d077466761b05f465c412d2bf2c71614c4963dd84",
+  "0x1d09bf979a167075f5608686642fd3cdb458de742a234175892fa03f23693f6b",
+  "0x1e9d614631a7df0ec07fb05b2c8cb2491575fd1a63a33bf187a6afb295a4fc64",
+  "0x22fe4c688161863c73571a2b8db65cc11a4a6bceee4f0dea4aa83e4b784f1bd9",
+  "0x2412afc9614939a5d994397fe0b94a4f6fb8bc02bfc139e1a5956a865e2efe26",
+  "0x245859412ff82dabcea25ddab15fe5ee5650e20b1af05f65ea1bd8db96416522",
+  "0x24852d8d7464402ddcd717415e009d42bf7427d6a8893487f83c75ee0f4a0ea6",
+  "0x278ca5513e54e0718a93515d453442f8ecc9a3640dfaf3a88db69f4c8a4880d9",
+  "0x27b9a0a5bfee98a31eb51e3850250d103a9f8e41673c782defc66aa943af0e65",
+  "0x2a0b893471c785a1f0fda00df7fca578b703eef7ae7186d2429c2824b5212467",
+  "0x2fb3713487c7812e7309935b034f40228841666f6b048faf31fd2110ae674f20",
+  "0x31a277fde40c1bd37dd00cb2167fe1d5831b450efecc63323679228a101e9979",
+  "0x32e253d33f1594a67fc6ef51bf7a39cc4bf2d14904998dee769706fcde489ed9",
+  "0x34377fc4f617c51818e92c79df31ff270c6a91bc94ad32e367fdf59b9f4ac5dd",
+  "0x38fa7d75c15a0f11cc46e2d1987a05c26a836d0da6b4430657ec5ece38a25a45",
+  "0x3a85e619751152991742810df6ec69ce473daef99e28a64ab2340d7b7ccfee49",
+  "0x3b2e7f3b7e5c7392110542b754ba8523c358f25a2b88c586f2f1cd97d54196cc",
+  "0x3b47d7baa81e340c5b12fbde5acae5e5d9087be57afd648bb4a07034d9b4f0de",
+  "0x3c2ce083d3ac6329ae69fd68bf23d4fada5587271860d987788dfd4f0ac3b5f0",
+  "0x3c4a46caa1a56d375228b3bac4c744ff858e387c78e59c54ccfb32e251d00320",
+  "0x3c80fd8318295fff3b1540eb915abff4fce991e8c55af3a8e263e47118185fde",
+  "0x41b12bac98fdc74ffeb513771b0bd341a14733f57072f7236cf3730af06d7fa2",
+  "0x42c2b592fc759fad461fb5c80d5ea214a496f70d8594398d69af68c2f3798de6",
+  "0x43e925e52d7873fa8acac90dd5f246087d55b3a34c344b71884a6352491ff459",
+  "0x4483b864209c50da2be8fc75371db0e92fdc6bc8920d86fc9b56ea7383f8c9d1",
+  "0x4565ac05d38b19374ccbb04c17cca60ca9353cd41824f0803d0fc7704f60eaed",
+  "0x4abde0597e71acc6d4dacd3d3edb2929e7289a40754a20eaeccaa66ff717be99",
+  "0x4bb22a5f6313fc9d7b5e1438967bfcd0a513a839d26662dd8d235629942400e2",
+  "0x51c6fa2e3ab990af15e95a8c91e93482d7a87068c60133e1c7e8000f91ec7618",
+  "0x526d6d2e334afcb8ffc183eba1bdb1ed58e5a71fa9bd1a75a95eb71c6808081f",
+  "0x54efdee08e272e929034a8f26f7ca34b1ebe364b275391169b28c6d7db24dbc8",
+  "0x5cebfae10f5e88d33df2421923f3d9f32359429fda2f78edacc9b4fdb09b0553",
+  "0x5d41b8d23ccf6d9e9f7e2b1b357d92bba6ef0367d6ef8ceda965f73e52108461",
+  "0x61765602144e91e5ac9f9e98b8584eae308f9951596fd7f5e0f59f21cd2bf664",
+  "0x62878115c6ee109c256237eb6daef589d006258202682d2e210cad3bb19e0f09",
+  "0x64d65c9a2d91c36d56fbc42d69e979335320169b3df63bf92789e2c8883fcc64",
+  "0x68d35b050f930a801087aa0aca91da1bc32f84783277813b619e3e1d0bf00a2f",
+  "0x69ef7fd17b42cd7df6d885aee1b11380837afbc1664b25587041cf193b31617b",
+  "0x6d1dae6238f6f296abb77d9e17a8429132458146bc89d1d2b20516b87a40dee7",
+  "0x6d2fba32b8649d92432d036c16aa80779034b7469b63abc259b17678857f31c2",
+  "0x6d95bf5fad1b0427205ee2b595f80b52e22394173de0832efa79fde88abb8525",
+  "0x6df56abb95e9f3f96049448e1c98d208deb1add8a3d0c7a23e5e5466dba4edbd",
+  "0x702b7ec7628de2622e51e1bb34a7e6ad9e95f3a25a2ed361e4ce621f23f5e642",
+  "0x729badf297ee9f2f6b3f717b96fd355fc6ec00422284ce1968e76647b258cf44",
+  "0x755f954513d31d5f24aaf3d0cdc5e913a28383f8ea8ff85be9ffffa7371fb64d",
+  "0x7dea3baf843210ce0a4a9e6374cea47dcd55384fb36d2d701e69b221867b39e5",
+  "0x7e585a933ffe8443c371b4f8cfeb4430f5f6a14c2f32a898c26662c67a1cb8b8",
+  "0x7e66ce6d3e2a27db0dab1d9c16dd313a4658eb6317a75d3bf8de8fe8a5880f96",
+  "0x7f1224a8598b97a8455d298bd58b0f720f1b4f19a815198b8cdecc9feedada93",
+  "0x85252bb8485c99bba46fe149c7dd2aad83672640f53c630890673cf1848ba16e",
+  "0x85c7f4374f3a403b36d54cc284983b2b02bbd8581ee0f3c36494447b87d9fcab",
+  "0x87753839ac836a59dd13f66ea6ea5481ba2374ae76dfdfbe8c4861e835833646",
+  "0x88ab06d43b089e574bbe312deee6cdb292702c3a2e765059492c34b1cd298acf",
+  "0x8924445a76b678c536df977ed9222fb0b23ee5311497dd0223fe6270bb20b4e6",
+  "0x908b037029b5c0671ba3b362eaf289c3199560d1d4632e6cb527cc7240fa006e",
+  "0x94b823e6bd8ea533b4e33fbc307faea0b307301bc48763acc4d4aa4def7636cd",
+  "0x95c28d447950ca6c8bbfd25fc05b80b1fd7a1cdd17a3610b4b3f1ffc8dc2e2ed",
+  "0x96905763efe6da2cee9553fa567ef4daa8c4d057ce8d2973c26d424d5a59eb8a",
+  "0x973e9dd45799efe8775417bcc420a3ab84a583587b2108985746e2fe201d0c83",
+  "0x975c6e8b71073a82216ae464bc44f67d71988450d2542d635d88bc78fca344b1",
+  "0x9972be1fc530a3f5a34db25ee8ab4962cc4099cb65b2db22897c92cc9d22f59f",
+  "0x9b966d26e14749cdf3be6fcf44ef404f1428b3c2f8c9e9a5172437e440597715",
+  "0x9bc98c2f20ac58287ef2c860eea53a2fdc27c17a7817ff1206c0b7840cc7cd79",
+  "0x9c28c8fa039a8df548a7f27adf062d751b0f2e9b9131931810535543adb23291",
+  "0x9de73bf59b4b09f9b974081c30a2570174f212ea62de8da777c7770a4832ae72",
+  "0xa0c6499787a7d046f91f2687558c021e2baae5a378885280a448183a926ef5f7",
+  "0xa5f6b409e74e34a0aa8b75642db4c954c533cf537ee48e04d4bae1888869bd3f",
+  "0xa67cfcdf2a2637c78fd6e1879e27448be7abe90c6ef1be4a1ca4337db886c8e3",
+  "0xa94d7d784ecd1194f23f82f6b1c1acbf1d5982bab63362d094710638d2b770dc",
+  "0xaa805b43e61bba8a44e225057b4f1749e2fdd8c3c77abb4ef868c8c19d668281",
+  "0xacc49fbf58feb1ac971acce68f8adc177c43682d6a7087bbd4991a05cb7a2c67",
+  "0xad656d430bb3d8c1469bf45c8ad4ebae1b04be04757c69fa424eec78d7b3f4dc",
+  "0xad73d5e139a939a0c7dc7b821e5a103a3a9cf45c4352b373b1dabc421c7f3d59",
+  "0xaf53761f4931911877474ab8c7ff856987207ee7ec15e8513ff9cf86939229a0",
+  "0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc",
+  "0xb37c30f34bff11c81ee8400133965f450a5f7c5d81ba2cf5740076f49eabc95c",
+  "0xb55c0ebe12c4af149ce74ba4d83ca847c3be6787921b36b51a4d98bd105163e2",
+  "0xb5984309423c6816e422bec5fb98afa3854581f010f430e238bb1800373a15f9",
+  "0xb8fef900b383db2dbbf4458c7f46acf5b140f26d603a6d1829963f241b82510e",
+  "0xba3ba077d9c838696b76e29a394ae9f0d1517a372e30fd9a0fc19c516fb4c5a7",
+  "0xbbf7ce1b40d32d3e3048f5cf27eeaa6de8cb27b80194690aab191a63381d8c99",
+  "0xbc99de6a88904cd0e69042ad6f266e63182801f030c636507c3caf590ffd84fe",
+  "0xbd2deecb78d6ea40e22644153ec293e33774ad451a76eb2a8a4052731abf4676",
+  "0xbf02d6c6852fa0b8247d5514d0c91e6c1fbde9a168ac3fd2033028b5ee5ce6d0",
+  "0xc498f4bfdda99e60ea8eb04c1e145654a70bc59da76ef9c6ed54a1314d78e5b5",
+  "0xc4df202d87a359d4c91d7d499b6b7522602df7f7f1d92998a6050f4f8826b551",
+  "0xca8d00403e4abd941d991e2410dc8b990c04ccf5d7bb20e8cd284959c851d0aa",
+  "0xcac5902b997725b46ff9cc1eecc7607d566f591d88904daf6b4491f060495308",
+  "0xcb0f31c185ad82b6d2bdbe87f73b6889cfbbf5b1890e94d8e411005611674daa",
+  "0xd21bbc238918855461d943753ac4c90d103888e5661fd78f3378294c45f7d8df",
+  "0xd3c7b3668b91b90f7571817009503826025159111743b95f542730b42c94d3ea",
+  "0xd570c19c0dc0fbe4ab7faf4a37c4150e1c141c8aada8ca3e1b4b6c1b712af93d",
+  "0xd8849a4724965af31cba10bf8fe7a28008235716ed8000c375e64e53addf339a",
+  "0xde2bb82278de27e7851625e2d7c25280adc6d499c000cc6904eb0ab29124a481",
+  "0xdf034d0351a4c0af947e1a37ecd5ccbce60d72eac90de6fcad48c74e2869d14c",
+  "0xe07d416323a1afbfe0bf2fe27ffb549ff565cf5c86d21b79fc60664038e597c9",
+  "0xe3df58f9d3011b7481ff36b939fa5f8da642f34ea5792d25d3958dbf1efa26d7",
+  "0xe4cfbee9af4ad713b41bf79f009ca02b17c001a0c0e7bd2e6a89b1111b3d3f08",
+  "0xe5d0934660512b15411ebcbb6d03ab8eb5ffd761c4e95c4e7d26632003b4fbf6",
+  "0xe83d72fa5b00dcd46d9e0e860d95aa540d5ec106da5833108a9f826f21f36f52",
+  "0xeb17955ea422baeddbfb0b8d8c9086c5be7a9cfdefb292119a102e981a30062e",
+  "0xef2c308b5abecf5c8750a1aa82b47c558005feb7a03f4f8e1ad682d71ac8d0ba",
+  "0xeffa583f87a425f68b8ba0c62408b2afe5c30dac436c680fbd2ee3836f037e1d",
+  "0xf02d2e8f427a2b91785b3d09690ef9d3811bf674ba97b00bafc7665004a6dd97",
+  "0xf062a110320da27e0e7e7d9e1bdf458dd51e2d2089e55f63ff9fd54f415ce35d",
+  "0xf4e9fb49e95a34320aea8b5e0ef515391a72368c39bdcf8ad8910645fd6eab97",
+  "0xf57808b9489bcbe7e7c67fd5227b0a4267a384ebb80301a097e4fa1f3fcb3234",
+  "0xf5b23a40974bcc0092cefc5c1d8031f74721ea092e73a5e6c86b2d63e509d449",
+  "0xf8c5aa31ea6b2a068a9eddb46dd110cae57bf0f12be9583a3f9a818effecba89",
+  "0xfb7d54e0ce71efc8fffd3f4e1db0afa9265882da5cc76604b62adfac64501e80",
+  "0xfb8d92086861bae6fb778917afd1de5dbbc4ec70edfb636fed48238e225e7e3d",
+] as const satisfies readonly `0x${string}`[];
 
 export const ethereumMorphoUsdcMarketsV1 = [
   {
@@ -589,21 +711,6 @@ export const ethereumMorphoUsdcMarketsV1 = [
   },
   {
     marketId:
-      "0x54efdee08e272e929034a8f26f7ca34b1ebe364b275391169b28c6d7db24dbc8",
-    createdAtBlock: "18919858",
-    loanToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    loanSymbol: "USDC",
-    loanDecimals: 6,
-    collateralToken: "0x0000000000000000000000000000000000000000",
-    collateralSymbol: "UNKNOWN",
-    collateralName: "Unknown token",
-    collateralDecimals: 0,
-    oracle: "0x0000000000000000000000000000000000000000",
-    irm: "0x0000000000000000000000000000000000000000",
-    lltv: "0",
-  },
-  {
-    marketId:
       "0x5cebfae10f5e88d33df2421923f3d9f32359429fda2f78edacc9b4fdb09b0553",
     createdAtBlock: "24599482",
     loanToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -1099,21 +1206,6 @@ export const ethereumMorphoUsdcMarketsV1 = [
   },
   {
     marketId:
-      "0x9cec2948ed0bc7dd5b137859c6bde69776a9ae9d2e0e667e11a574279dfbe941",
-    createdAtBlock: "25593060",
-    loanToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    loanSymbol: "USDC",
-    loanDecimals: 6,
-    collateralToken: "0x0ee083964C815bAED1A2d7F5E3Cec851eC394E7d",
-    collateralSymbol: "PT-SIERRA-6AUG2026",
-    collateralName: "PT Sierra 6AUG2026",
-    collateralDecimals: 6,
-    oracle: "0x92ccdf945BE4A123F8C10F06B940F346897123E3",
-    irm: "0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC",
-    lltv: "915000000000000000",
-  },
-  {
-    marketId:
       "0x9de73bf59b4b09f9b974081c30a2570174f212ea62de8da777c7770a4832ae72",
     createdAtBlock: "24367199",
     loanToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -1141,6 +1233,21 @@ export const ethereumMorphoUsdcMarketsV1 = [
     oracle: "0xf2c9EE3Fdc5D1e360d51b4840B4096F63913dF93",
     irm: "0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC",
     lltv: "915000000000000000",
+  },
+  {
+    marketId:
+      "0xa5f6b409e74e34a0aa8b75642db4c954c533cf537ee48e04d4bae1888869bd3f",
+    createdAtBlock: "25330559",
+    loanToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    loanSymbol: "USDC",
+    loanDecimals: 6,
+    collateralToken: "0x2bf11d2E04Bc40daa95c24B8b90EC4F5c57Dd326",
+    collateralSymbol: "CarryTradeUSDTRYLeverage",
+    collateralName: "Morini CarryTradeUSDTRYLeverage Vault",
+    collateralDecimals: 18,
+    oracle: "0xb5eff91f3937fDf4250A680016EF2331b3930BaB",
+    irm: "0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC",
+    lltv: "625000000000000000",
   },
   {
     marketId:
@@ -1229,21 +1336,6 @@ export const ethereumMorphoUsdcMarketsV1 = [
     collateralName: "Savings Usdd",
     collateralDecimals: 18,
     oracle: "0x7be435DA1e3287Ad0ACb62c2a16e0B2D4643719f",
-    irm: "0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC",
-    lltv: "915000000000000000",
-  },
-  {
-    marketId:
-      "0xae60b71b407e0517ead445b7113a7ffa07ea4a9379d526ade541a3e9ec777cb4",
-    createdAtBlock: "24268529",
-    loanToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    loanSymbol: "USDC",
-    loanDecimals: 6,
-    collateralToken: "0x08EFCC2F3e61185D0EA7F8830B3FEc9Bfa2EE313",
-    collateralSymbol: "sNUSD",
-    collateralName: "Staked NUSD",
-    collateralDecimals: 18,
-    oracle: "0x28E82e7f25DbcD487af27C80DE4F62553260fecA",
     irm: "0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC",
     lltv: "915000000000000000",
   },
@@ -1817,21 +1909,6 @@ export const ethereumMorphoUsdcMarketsV1 = [
     irm: "0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC",
     lltv: "860000000000000000",
   },
-  {
-    marketId:
-      "0xfd0d72a4f0469598b566b1bc5fe64835f828f90b1fb7d746148c086164cd4cc2",
-    createdAtBlock: "24690978",
-    loanToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    loanSymbol: "USDC",
-    loanDecimals: 6,
-    collateralToken: "0x52c66B5E7f8Fde20843De900C5C8B4b0F23708A0",
-    collateralSymbol: "AZND",
-    collateralName: "Asian Dollar",
-    collateralDecimals: 18,
-    oracle: "0x270B2bD4CC6d935aa08b70eAC518E2907EB5588b",
-    irm: "0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC",
-    lltv: "860000000000000000",
-  },
 ] as const satisfies readonly MorphoMarketRegistryEntry[];
 
 export const ethereumMorphoCollateralTokensV1 = [
@@ -1843,15 +1920,6 @@ export const ethereumMorphoCollateralTokensV1 = [
     priceMarketId:
       "0xe3df58f9d3011b7481ff36b939fa5f8da642f34ea5792d25d3958dbf1efa26d7",
     priceOracle: "0x68b4c2B2b2e245AB54a3bD55DfD5A9d84f029C06",
-  },
-  {
-    address: "0x08EFCC2F3e61185D0EA7F8830B3FEc9Bfa2EE313",
-    symbol: "sNUSD",
-    name: "Staked NUSD",
-    decimals: 18,
-    priceMarketId:
-      "0xae60b71b407e0517ead445b7113a7ffa07ea4a9379d526ade541a3e9ec777cb4",
-    priceOracle: "0x28E82e7f25DbcD487af27C80DE4F62553260fecA",
   },
   {
     address: "0x098697bA3Fee4eA76294C5d6A466a4e3b3E95FE6",
@@ -1879,15 +1947,6 @@ export const ethereumMorphoCollateralTokensV1 = [
     priceMarketId:
       "0xd3c7b3668b91b90f7571817009503826025159111743b95f542730b42c94d3ea",
     priceOracle: "0x78a9d9BCae51Da68e8A706020B2e895a935Da52C",
-  },
-  {
-    address: "0x0ee083964C815bAED1A2d7F5E3Cec851eC394E7d",
-    symbol: "PT-SIERRA-6AUG2026",
-    name: "PT Sierra 6AUG2026",
-    decimals: 6,
-    priceMarketId:
-      "0x9cec2948ed0bc7dd5b137859c6bde69776a9ae9d2e0e667e11a574279dfbe941",
-    priceOracle: "0x92ccdf945BE4A123F8C10F06B940F346897123E3",
   },
   {
     address: "0x12b004719fb632f1E7c010c6F5D6009Fb4258442",
@@ -1969,6 +2028,15 @@ export const ethereumMorphoCollateralTokensV1 = [
     priceMarketId:
       "0x975c6e8b71073a82216ae464bc44f67d71988450d2542d635d88bc78fca344b1",
     priceOracle: "0x1506c98cE61aC63c8438B710C054a51c5dD9A6A4",
+  },
+  {
+    address: "0x2bf11d2E04Bc40daa95c24B8b90EC4F5c57Dd326",
+    symbol: "CarryTradeUSDTRYLeverage",
+    name: "Morini CarryTradeUSDTRYLeverage Vault",
+    decimals: 18,
+    priceMarketId:
+      "0xa5f6b409e74e34a0aa8b75642db4c954c533cf537ee48e04d4bae1888869bd3f",
+    priceOracle: "0xb5eff91f3937fDf4250A680016EF2331b3930BaB",
   },
   {
     address: "0x2d3C279E5FcDF5b793c0a75ed90738D7369B0b83",
@@ -2059,15 +2127,6 @@ export const ethereumMorphoCollateralTokensV1 = [
     priceMarketId:
       "0x4565ac05d38b19374ccbb04c17cca60ca9353cd41824f0803d0fc7704f60eaed",
     priceOracle: "0xA66a4F03Fd8031973f8C7718904ce32385f54E70",
-  },
-  {
-    address: "0x52c66B5E7f8Fde20843De900C5C8B4b0F23708A0",
-    symbol: "AZND",
-    name: "Asian Dollar",
-    decimals: 18,
-    priceMarketId:
-      "0xfd0d72a4f0469598b566b1bc5fe64835f828f90b1fb7d746148c086164cd4cc2",
-    priceOracle: "0x270B2bD4CC6d935aa08b70eAC518E2907EB5588b",
   },
   {
     address: "0x546329A16DcEdC46e93F7b03A65F49A84700bca1",

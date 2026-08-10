@@ -5,6 +5,7 @@ import {
   ETHEREUM_ASSET_REGISTRY_VERSION,
   ETHEREUM_NATIVE_TOKEN,
   ETHEREUM_MORPHO_USDC_MARKET_MANIFEST_VERSION,
+  ETHEREUM_MORPHO_USDC_EXECUTABLE_COUNT,
   ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT,
   ETHEREUM_TOKEN_REGISTRY_VERSION,
   ETHEREUM_TOKEN_REGISTRY_RANKED_COUNT,
@@ -14,6 +15,7 @@ import {
   SPARK_ORACLE,
   ethereumAssetRegistryV1,
   ethereumMorphoUsdcMarketsV1,
+  ethereumMorphoUsdcOfficialMarketIdsV1,
   ethereumMorphoCollateralTokensV1,
   ethereumTokenRegistryV1,
   ethereumTokenRegistryAdditionsV1,
@@ -154,9 +156,9 @@ describe("static token registry", () => {
       "ethereum-top250-2026-07-29-v1",
     );
     expect(ETHEREUM_TOKEN_REGISTRY_RANKED_COUNT).toBe(250);
-    expect(ETHEREUM_TOKEN_REGISTRY_ADDITION_COUNT).toBe(80);
-    expect(ETHEREUM_TOKEN_REGISTRY_TOTAL_COUNT).toBe(330);
-    expect(ethereumTokenRegistryV1).toHaveLength(330);
+    expect(ETHEREUM_TOKEN_REGISTRY_ADDITION_COUNT).toBe(78);
+    expect(ETHEREUM_TOKEN_REGISTRY_TOTAL_COUNT).toBe(328);
+    expect(ethereumTokenRegistryV1).toHaveLength(328);
     expect(
       ethereumTokenRegistryAdditionsV1.map((token) => token.symbol),
     ).toEqual(expect.arrayContaining(["BTC.b", "eBTC", "LINK", "MKR"]));
@@ -249,13 +251,15 @@ describe("static token registry", () => {
 });
 
 describe("static Morpho USDC market manifest", () => {
-  it("pins the complete executable official set with immutable parameters", () => {
+  it("pins the complete official set and a structurally executable runtime subset", () => {
     expect(ETHEREUM_MORPHO_USDC_MARKET_MANIFEST_VERSION).toBe(
-      "ethereum-morpho-usdc-25694451-v1",
+      "ethereum-morpho-usdc-25724749-v1",
     );
-    expect(ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT).toBe(120);
-    expect(ethereumMorphoUsdcMarketsV1).toHaveLength(120);
-    expect(ethereumMorphoCollateralTokensV1).toHaveLength(108);
+    expect(ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT).toBe(118);
+    expect(ethereumMorphoUsdcOfficialMarketIdsV1).toHaveLength(118);
+    expect(ETHEREUM_MORPHO_USDC_EXECUTABLE_COUNT).toBe(117);
+    expect(ethereumMorphoUsdcMarketsV1).toHaveLength(117);
+    expect(ethereumMorphoCollateralTokensV1).toHaveLength(106);
     expect(
       new Set(ethereumMorphoUsdcMarketsV1.map((market) => market.marketId))
         .size,
@@ -264,9 +268,31 @@ describe("static Morpho USDC market manifest", () => {
       ethereumMorphoUsdcMarketsV1.some(
         (market) =>
           market.collateralToken.toLowerCase() ===
+            "0x0000000000000000000000000000000000000000" ||
+          market.oracle.toLowerCase() ===
+            "0x0000000000000000000000000000000000000000" ||
+          market.irm.toLowerCase() ===
+            "0x0000000000000000000000000000000000000000",
+      ),
+    ).toBe(false);
+    for (const market of ethereumMorphoUsdcMarketsV1) {
+      expect(market.collateralDecimals).toBeGreaterThan(0);
+      expect(market.collateralDecimals).toBeLessThanOrEqual(36);
+      expect(BigInt(market.lltv)).toBeGreaterThan(0n);
+      expect(BigInt(market.lltv)).toBeLessThanOrEqual(10n ** 18n);
+    }
+    expect(
+      ethereumMorphoUsdcMarketsV1.some(
+        (market) =>
+          market.collateralToken.toLowerCase() ===
           "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
       ),
     ).toBe(false);
+    expect(
+      ethereumMorphoUsdcMarketsV1.map((market) => String(market.marketId)),
+    ).not.toContain(
+      "0x54efdee08e272e929034a8f26f7ca34b1ebe364b275391169b28c6d7db24dbc8",
+    );
     expect(ethereumMorphoUsdcMarketsV1).toContainEqual(
       expect.objectContaining({
         marketId:

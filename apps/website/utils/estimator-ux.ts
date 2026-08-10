@@ -83,7 +83,7 @@ export function summarizeCollateralCoverage(
     };
   }
 
-  const modeledTokens = new Set<string>();
+  const modeledValues = new Map<string, number>();
   for (const quote of quotes) {
     if (quote.assetEvaluations) {
       for (const evaluation of quote.assetEvaluations) {
@@ -92,21 +92,36 @@ export function summarizeCollateralCoverage(
           Number.isFinite(evaluation.contributionUsd) &&
           (evaluation.contributionUsd ?? 0) > 0
         ) {
-          modeledTokens.add(evaluation.token.toLowerCase());
+          const token = evaluation.token.toLowerCase();
+          modeledValues.set(
+            token,
+            Math.max(
+              modeledValues.get(token) ?? 0,
+              Math.min(
+                selectedValues.get(token) ?? 0,
+                evaluation.contributionUsd ?? 0,
+              ),
+            ),
+          );
         }
       }
       continue;
     }
     for (const collateral of quote.collateralUsed) {
       if (Number.isFinite(collateral.valueUsd) && collateral.valueUsd > 0) {
-        modeledTokens.add(collateral.token.toLowerCase());
+        const token = collateral.token.toLowerCase();
+        modeledValues.set(
+          token,
+          Math.max(
+            modeledValues.get(token) ?? 0,
+            Math.min(selectedValues.get(token) ?? 0, collateral.valueUsd),
+          ),
+        );
       }
     }
   }
 
-  const modeledValueUsd = sumValues(
-    [...modeledTokens].map((token) => selectedValues.get(token) ?? 0),
-  );
+  const modeledValueUsd = sumValues(modeledValues.values());
   return {
     selectedValueUsd,
     modeledValueUsd,
@@ -124,14 +139,20 @@ export function providerRateLabel(
 ): string {
   const rate = quote.annualRate;
   const value = rate?.value ?? quote.indicativeApr;
-  const formatted =
-    value === null || value === undefined || !Number.isFinite(value)
-      ? "—"
-      : new Intl.NumberFormat("en-US", {
-          style: "percent",
-          maximumFractionDigits: 1,
-        }).format(value);
+  const formatted = formatAnnualRatePercent(value);
   return `${formatted} ${quote.rateType} ${(rate?.convention ?? "apr").toUpperCase()}`;
+}
+
+export function formatAnnualRatePercent(
+  value: number | null | undefined,
+): string {
+  return value === null || value === undefined || !Number.isFinite(value)
+    ? "—"
+    : new Intl.NumberFormat("en-US", {
+        style: "percent",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(value);
 }
 
 export function amountForUtilization(

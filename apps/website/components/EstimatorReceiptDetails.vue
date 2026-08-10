@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { PhCaretDown, PhInfo } from "@phosphor-icons/vue";
+import type { ReadReceipt } from "@powerrr/shared-types";
 
 defineProps<{
   walletName: string;
@@ -9,6 +10,7 @@ defineProps<{
   blockLoadedAtLabel: string;
   callsSucceeded: number;
   callsAttempted: number;
+  readCoverage: ReadReceipt["readCoverage"];
 }>();
 </script>
 
@@ -46,6 +48,24 @@ defineProps<{
         <p class="text-slate">Balance calls</p>
         <p class="mt-1 font-semibold">
           {{ callsSucceeded }}/{{ callsAttempted }} succeeded
+        </p>
+      </div>
+      <div>
+        <p class="text-slate">Token metadata</p>
+        <p class="mt-1 font-semibold">
+          {{ readCoverage.metadata.succeeded }}/{{
+            readCoverage.metadata.attempted
+          }}
+          verified
+        </p>
+      </div>
+      <div>
+        <p class="text-slate">Valuations</p>
+        <p class="mt-1 font-semibold">
+          {{ readCoverage.valuations.succeeded }}/{{
+            readCoverage.valuations.attempted
+          }}
+          available
         </p>
       </div>
       <div>

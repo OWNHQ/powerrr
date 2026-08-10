@@ -5,6 +5,7 @@ import type {
   ProtocolAvailability,
   ProtocolBorrowQuote,
   ProtocolAssetEvaluation,
+  RawAmount,
 } from "@powerrr/shared-types";
 import { rawAmountToNumber } from "@powerrr/math";
 import {
@@ -13,7 +14,11 @@ import {
   pooledBorrowAvailableUsd,
   pooledRiskTitleForPreview,
 } from "../utils/borrow-preview";
-import { formatUsdValue, providerRateLabel } from "../utils/estimator-ux";
+import {
+  formatAnnualRatePercent,
+  formatUsdValue,
+  providerRateLabel,
+} from "../utils/estimator-ux";
 import { morphoMarketDestination } from "../utils/provider-destination";
 
 const props = defineProps<{
@@ -23,7 +28,7 @@ const props = defineProps<{
   destinationLabel?: string;
   quote?: ProtocolBorrowQuote;
   status?: ProtocolAvailability;
-  amountUsd: number;
+  amount: RawAmount;
   assets: PortfolioAsset[];
   expanded: boolean;
 }>();
@@ -34,10 +39,9 @@ const capacity = computed(() =>
   props.quote ? pooledBorrowAvailableUsd(props.quote) : 0,
 );
 const preview = computed(() =>
-  props.quote
-    ? calculatePooledBorrowPreview(props.quote, props.amountUsd)
-    : null,
+  props.quote ? calculatePooledBorrowPreview(props.quote, props.amount) : null,
 );
+const amountUsd = computed(() => rawAmountToNumber(props.amount));
 const assetEvaluations = computed<ProtocolAssetEvaluation[]>(() => {
   const sourceUnavailable = props.status?.status === "unavailable";
   const evaluations: ProtocolAssetEvaluation[] =
@@ -68,21 +72,26 @@ const assetEvaluations = computed<ProtocolAssetEvaluation[]>(() => {
 const statusTone = computed(() => {
   if (props.status?.status === "unavailable") return "warning";
   if (capacity.value <= 0) return "muted";
-  if (props.amountUsd <= 0) return "muted";
+  if (amountUsd.value <= 0) return "muted";
   if (preview.value?.actionable) return "available";
   return "warning";
 });
 const statusLabel = computed(() => {
   if (props.status?.status === "unavailable") return "Data unavailable";
   if (capacity.value <= 0) return "No eligible collateral";
-  if (props.amountUsd <= 0) return "Enter an amount to compare";
+  if (amountUsd.value <= 0) return "Enter an amount to compare";
   if (preview.value?.reasonCodes.includes("below-protocol-minimum")) {
     return `Below ${formatUsdValue(preview.value.minimumBorrowUsd)} minimum`;
   }
   if (preview.value?.actionable) return "Covers request";
-  return `Below request by ${formatUsdValue(props.amountUsd - capacity.value)}`;
+  return `Below request by ${formatUsdValue(amountUsd.value - capacity.value)}`;
 });
 const weightedLtv = computed(() => weightedFactor("ltv"));
+const displayedLtv = computed(() =>
+  isMorpho.value
+    ? weightedLtv.value
+    : formatPercent(preview.value?.projectedLtv),
+);
 const weightedLiquidation = computed(() =>
   weightedFactor("liquidationThreshold"),
 );
@@ -119,10 +128,7 @@ const rateLabel = computed(() => {
   if (rate === null || rate === undefined) {
     return props.quote ? providerRateLabel(props.quote) : "—";
   }
-  return `${new Intl.NumberFormat("en-US", {
-    style: "percent",
-    maximumFractionDigits: 1,
-  }).format(rate)} current APY`;
+  return `${formatAnnualRatePercent(rate)} current APY`;
 });
 const isolatedLltvRange = computed(() => {
   const lltvs = (props.quote?.maximumBorrowRoute ?? []).map(
@@ -177,6 +183,15 @@ function formatPercent(value: number | undefined): string {
 
 function formatRawPercent(value: { numerator: string; denominator: string }) {
   return formatPercent(Number(value.numerator) / Number(value.denominator));
+}
+
+function formatRawAnnualRate(value: {
+  numerator: string;
+  denominator: string;
+}) {
+  return formatAnnualRatePercent(
+    Number(value.numerator) / Number(value.denominator),
+  );
 }
 
 function formatTokenAmount(value: { raw: string; decimals: number }): string {
@@ -241,9 +256,9 @@ function evaluationLabel(item: ProtocolAssetEvaluation): string {
         </span>
         <span>
           <span class="type-metric-label block text-slate">{{
-            isMorpho ? "Effective LLTV" : "Borrow LTV"
+            isMorpho ? "Effective LLTV" : "Projected LTV"
           }}</span>
-          <strong class="type-data mt-0.5 block">{{ weightedLtv }}</strong>
+          <strong class="type-data mt-0.5 block">{{ displayedLtv }}</strong>
         </span>
         <span>
           <span class="type-metric-label block text-slate">{{
@@ -391,7 +406,7 @@ function evaluationLabel(item: ProtocolAssetEvaluation): string {
                   <span>
                     <span class="block text-xs text-slate">Current APY</span>
                     <strong class="tabular-nums">{{
-                      formatRawPercent(leg.currentBorrowApy)
+                      formatRawAnnualRate(leg.currentBorrowApy)
                     }}</strong>
                   </span>
                   <span>

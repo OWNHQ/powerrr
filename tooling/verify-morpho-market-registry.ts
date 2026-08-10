@@ -1,7 +1,11 @@
 import {
+  ETHEREUM_MORPHO_USDC_EXECUTABLE_COUNT,
   ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT,
+  ethereumMorphoUsdcOfficialMarketIdsV1,
   ethereumMorphoUsdcMarketsV1,
 } from "../packages/configs/src/ethereum-morpho-usdc-markets.ts";
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 const response = await fetch("https://blue-api.morpho.org/graphql", {
   method: "POST",
@@ -49,8 +53,8 @@ if (official.length !== ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT) {
 const officialMarketIds = official
   .map((market) => market.marketId.toLowerCase())
   .sort();
-const checkedInIds = ethereumMorphoUsdcMarketsV1
-  .map((market) => market.marketId.toLowerCase())
+const checkedInIds = ethereumMorphoUsdcOfficialMarketIdsV1
+  .map((marketId) => marketId.toLowerCase())
   .sort();
 if (JSON.stringify(officialMarketIds) !== JSON.stringify(checkedInIds)) {
   const checkedIn = new Set(checkedInIds);
@@ -62,10 +66,34 @@ if (JSON.stringify(officialMarketIds) !== JSON.stringify(checkedInIds)) {
   );
 }
 
+if (
+  ethereumMorphoUsdcMarketsV1.length !== ETHEREUM_MORPHO_USDC_EXECUTABLE_COUNT
+) {
+  throw new Error(
+    "Morpho executable market count does not match its manifest.",
+  );
+}
+for (const market of ethereumMorphoUsdcMarketsV1) {
+  if (
+    market.collateralToken.toLowerCase() === ZERO_ADDRESS ||
+    market.oracle.toLowerCase() === ZERO_ADDRESS ||
+    market.irm.toLowerCase() === ZERO_ADDRESS ||
+    !Number.isInteger(market.collateralDecimals) ||
+    market.collateralDecimals <= 0 ||
+    market.collateralDecimals > 36 ||
+    BigInt(market.lltv) <= 0n ||
+    BigInt(market.lltv) > 10n ** 18n
+  ) {
+    throw new Error(
+      `Morpho executable market ${market.marketId} has invalid parameters.`,
+    );
+  }
+}
+
 console.log(
   JSON.stringify({
     status: "current",
     officialListed: official.length,
-    checkedIn: checkedInIds.length,
+    executable: ethereumMorphoUsdcMarketsV1.length,
   }),
 );

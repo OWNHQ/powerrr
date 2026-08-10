@@ -208,8 +208,8 @@ function formatHealth(value: number | null | undefined): string {
       </template>
       Borrow and liquidation limits are value-weighted across that collateral;
       some protocols use the same factor for both. Powerrr’s estimated path
-      limit includes a safety buffer and available liquidity, so it can be lower
-      than the protocol borrow limit. Rates, oracle prices, factors, and
+      limit is the modeled protocol maximum constrained by available liquidity
+      and applicable minimum-borrow rules. Rates, oracle prices, factors, and
       liquidity can change before execution. The wide, reduced, and thin labels
       describe proximity to the current 1.00 boundary; they are not a
       probability or personalized safety advice.

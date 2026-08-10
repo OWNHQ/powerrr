@@ -302,6 +302,11 @@ function receiptFixture(): ReadReceipt {
     callsAttempted: 100,
     callsSucceeded: 100,
     callsFailed: 0,
+    readCoverage: {
+      balances: { attempted: 100, succeeded: 100, failed: 0 },
+      metadata: { attempted: 1, succeeded: 1, failed: 0 },
+      valuations: { attempted: 1, succeeded: 1, unavailable: 0 },
+    },
     chunkSizes: [100],
     priceSources: [],
     postedToPowerrr: false,

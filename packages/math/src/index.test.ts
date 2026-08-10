@@ -5,9 +5,12 @@ import {
   calculateMorphoMarket,
   compareRawAmounts,
   decimalStringToRaw,
+  formatRawAmountFixed,
   mulDivDown,
+  parseUsdcAmount,
   riskLevelFromHealthFactor,
   roundUsd,
+  UINT256_MAX,
 } from "./index.js";
 
 describe("borrow-capacity math", () => {
@@ -33,6 +36,56 @@ describe("borrow-capacity math", () => {
         { raw: "1000000000000000000", decimals: 18 },
       ),
     ).toBe(1);
+  });
+
+  it("strictly parses canonical USDC amounts without silent coercion", () => {
+    expect(parseUsdcAmount("0")).toEqual({
+      ok: true,
+      amount: { raw: "0", decimals: 6 },
+    });
+    expect(parseUsdcAmount("12.345678")).toEqual({
+      ok: true,
+      amount: { raw: "12345678", decimals: 6 },
+    });
+    expect(parseUsdcAmount("12.3456789")).toMatchObject({
+      ok: false,
+      code: "excess-precision",
+    });
+    for (const invalid of ["-1", "1e3", "$1", "1,000", "1.", "", "abc"]) {
+      expect(parseUsdcAmount(invalid), invalid).toMatchObject({
+        ok: false,
+        code: "invalid-format",
+      });
+    }
+  });
+
+  it("accepts the uint256 boundary and rejects values above it", () => {
+    const scale = 1_000_000n;
+    const whole = UINT256_MAX / scale;
+    const fraction = (UINT256_MAX % scale).toString().padStart(6, "0");
+    expect(parseUsdcAmount(`${whole}.${fraction}`)).toEqual({
+      ok: true,
+      amount: { raw: UINT256_MAX.toString(), decimals: 6 },
+    });
+    expect(
+      parseUsdcAmount(`${whole}.${(UINT256_MAX % scale) + 1n}`),
+    ).toMatchObject({ ok: false, code: "out-of-range" });
+    expect(parseUsdcAmount("9".repeat(10_000))).toMatchObject({
+      ok: false,
+      code: "out-of-range",
+    });
+  });
+
+  it("rounds raw USDC display values to exactly two decimal places", () => {
+    expect(formatRawAmountFixed({ raw: "6649281290", decimals: 6 }, 2)).toBe(
+      "6649.28",
+    );
+    expect(formatRawAmountFixed({ raw: "1999999", decimals: 6 }, 2)).toBe(
+      "2.00",
+    );
+    expect(formatRawAmountFixed({ raw: "1000000", decimals: 6 }, 2)).toBe(
+      "1.00",
+    );
   });
 
   it("never rounds a positive sub-dollar value down to zero", () => {

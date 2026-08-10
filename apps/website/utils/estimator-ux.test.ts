@@ -91,12 +91,12 @@ describe("estimator UX helpers", () => {
     {
       convention: "apr" as const,
       value: 0.05,
-      expected: "5% variable APR",
+      expected: "5.00% variable APR",
     },
     {
       convention: "apy" as const,
       value: 0.05127,
-      expected: "5.1% variable APY",
+      expected: "5.13% variable APY",
     },
   ])("preserves the $convention rate convention in provider copy", (input) => {
     expect(
@@ -120,7 +120,7 @@ describe("estimator UX helpers", () => {
         indicativeApr: 0.065,
         rateType: "fixed",
       }),
-    ).toBe("6.5% fixed APR");
+    ).toBe("6.50% fixed APR");
   });
 
   it.each([
@@ -203,6 +203,28 @@ describe("estimator UX helpers", () => {
     });
   });
 
+  it("uses the largest actual per-token contribution without double-counting paths", () => {
+    const assets: CoverageAsset[] = [
+      { token: tokenA, balance: "100", marketPriceUsd: 100 },
+    ];
+    expect(
+      summarizeCollateralCoverage(
+        assets,
+        [
+          selectedEvaluationQuote(tokenA, 1_000),
+          selectedEvaluationQuote(tokenA, 2_500),
+          selectedEvaluationQuote(tokenA, 2_000),
+        ],
+        availableStatuses(),
+      ),
+    ).toEqual({
+      selectedValueUsd: 10_000,
+      modeledValueUsd: 2_500,
+      gapValueUsd: 7_500,
+      sourceStatus: "complete",
+    });
+  });
+
   it("uses a selected converted asset evaluation with a positive contribution", () => {
     const assets: CoverageAsset[] = [
       { token: tokenA, balance: "1", marketPriceUsd: 2_000 },
@@ -214,7 +236,7 @@ describe("estimator UX helpers", () => {
 
     expect(
       summarizeCollateralCoverage(assets, [quote], availableStatuses()),
-    ).toMatchObject({ modeledValueUsd: 2_000, gapValueUsd: 0 });
+    ).toMatchObject({ modeledValueUsd: 1_950, gapValueUsd: 50 });
   });
 
   it("falls back to collateral used when asset evaluations are absent", () => {

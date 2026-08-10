@@ -26,7 +26,7 @@ import { filterSmallBalances, isAssetSelectable } from "../utils/estimator-ux";
 import { loadStaticMorphoSnapshot } from "../utils/static-morpho";
 import { resolveWalletNames, type WalletNames } from "../utils/static-names";
 import { formatCompactWalletAddress } from "../utils/wallet-identity";
-import { withDeadline } from "../utils/promise-deadline";
+import { DeadlineExceededError, withDeadline } from "../utils/promise-deadline";
 
 type AnnouncedProvider = {
   descriptor: WalletProviderDescriptor;
@@ -48,6 +48,7 @@ type EstimatorSnapshot = {
 const LAST_WALLET_RDNS_KEY = "powerrr:last-wallet-rdns";
 const WALLET_NAME_READ_TIMEOUT_MS = 8_000;
 const PROTOCOL_SOURCE_TIMEOUT_MS = 20_000;
+const WALLET_DISCOVERY_TIMEOUT_MS = 45_000;
 
 export function useStaticEstimator() {
   const announcedProviders = shallowRef<AnnouncedProvider[]>([]);
@@ -89,6 +90,8 @@ export function useStaticEstimator() {
   let connectionTimeoutTimer: number | null = null;
   let connectionAttempt = 0;
   let scanAttempt = 0;
+  let selectionRevision = 0;
+  let scanAbortController: AbortController | null = null;
   let reconnecting = false;
 
   const orderedProviders = computed(() =>
@@ -213,9 +216,14 @@ export function useStaticEstimator() {
   }
 
   function cancelConnection(): void {
-    if (!isConnecting.value) return;
+    if (!isConnecting.value && !isScanning.value) return;
     connectionAttempt += 1;
+    scanAttempt += 1;
+    scanAbortController?.abort();
+    scanAbortController = null;
     stopConnectionTimers();
+    removeConnectedListeners?.();
+    removeConnectedListeners = null;
     isConnecting.value = false;
     isScanning.value = false;
     connectedProvider = null;
@@ -235,18 +243,28 @@ export function useStaticEstimator() {
     const wallet = selectedWallet.value;
     const scanAccount = account.value;
     const refreshing = Boolean(receipt.value);
+    const startingSelectionRevision = selectionRevision;
+    scanAbortController?.abort();
+    const abortController = new AbortController();
+    scanAbortController = abortController;
     error.value = "";
     if (refreshing) isRefreshing.value = true;
     else isScanning.value = true;
     try {
-      const result = await scanConnectedWallet({
-        provider,
-        account: scanAccount,
-        walletName: wallet.descriptor.name,
-        onProgress: (next) => {
-          if (attempt === scanAttempt) progress.value = next;
-        },
-      });
+      const result = await withDeadline(
+        scanConnectedWallet({
+          provider,
+          account: scanAccount,
+          walletName: wallet.descriptor.name,
+          signal: abortController.signal,
+          onProgress: (next) => {
+            if (attempt === scanAttempt) progress.value = next;
+          },
+        }),
+        WALLET_DISCOVERY_TIMEOUT_MS,
+        "Wallet reads did not settle before the 45-second scan deadline.",
+        { onDeadline: () => abortController.abort() },
+      );
       if (attempt !== scanAttempt) return;
       const defaultCollateralTokens = filterSmallBalances(
         result.assets.filter(
@@ -267,14 +285,6 @@ export function useStaticEstimator() {
           .filter((asset) => isAssetSelectable(asset))
           .map((asset) => asset.token.toLowerCase()),
       );
-      const preservedTokens = options.preserveSelection
-        ? selectedCollateralTokens.value.filter((token) =>
-            availableTokens.has(token.toLowerCase()),
-          )
-        : [];
-      const nextSelectedTokens = options.preserveSelection
-        ? preservedTokens
-        : defaultCollateralTokens;
       progress.value = {
         phase: "providers",
         completed: 0,
@@ -321,6 +331,14 @@ export function useStaticEstimator() {
       }
       // Publish the complete wallet and protocol snapshot atomically. Nothing
       // after this point needs the wallet provider until an explicit refresh.
+      const selectionSource = options.preserveSelection
+        ? selectedCollateralTokens.value
+        : selectionRevision !== startingSelectionRevision
+          ? selectedCollateralTokens.value
+          : defaultCollateralTokens;
+      const nextSelectedTokens = selectionSource.filter((token) =>
+        availableTokens.has(token.toLowerCase()),
+      );
       selectedCollateralTokens.value = nextSelectedTokens;
       estimatorSnapshot.value = Object.freeze({
         block: result.block,
@@ -343,6 +361,9 @@ export function useStaticEstimator() {
       progress.value = null;
     } finally {
       if (attempt === scanAttempt) {
+        if (scanAbortController === abortController) {
+          scanAbortController = null;
+        }
         if (refreshing) isRefreshing.value = false;
         else isScanning.value = false;
       }
@@ -370,6 +391,8 @@ export function useStaticEstimator() {
   function disconnect(): void {
     connectionAttempt += 1;
     scanAttempt += 1;
+    scanAbortController?.abort();
+    scanAbortController = null;
     stopConnectionTimers();
     removeConnectedListeners?.();
     removeConnectedListeners = null;
@@ -397,6 +420,7 @@ export function useStaticEstimator() {
     if (selected && asset && isAssetSelectable(asset)) next.add(asset.token);
     else next.delete(token);
     selectedCollateralTokens.value = [...next];
+    selectionRevision += 1;
   }
 
   function compareSelectedAssets(): void {
@@ -710,7 +734,10 @@ async function loadProviderSnapshots(
         protocolId: result.loader.id,
         label: result.loader.label,
         status: "unavailable",
-        code: "SOURCE_READ_FAILED",
+        code:
+          result.cause instanceof DeadlineExceededError
+            ? "DEADLINE_EXCEEDED"
+            : "SOURCE_READ_FAILED",
         reason: friendlyError(result.cause),
       });
     }

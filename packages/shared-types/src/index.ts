@@ -60,6 +60,11 @@ export type ReadReceipt = {
   callsAttempted: number;
   callsSucceeded: number;
   callsFailed: number;
+  readCoverage: {
+    balances: { attempted: number; succeeded: number; failed: number };
+    metadata: { attempted: number; succeeded: number; failed: number };
+    valuations: { attempted: number; succeeded: number; unavailable: number };
+  };
   chunkSizes: number[];
   priceSources: string[];
   postedToPowerrr: false;

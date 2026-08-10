@@ -1,4 +1,10 @@
-import { amountForUtilization } from "./estimator-ux";
+import type { RawAmount } from "@powerrr/shared-types";
+import {
+  mulDivDown,
+  rawAmount,
+  scaleRawAmount,
+  USDC_DECIMALS,
+} from "@powerrr/math";
 
 export type BorrowAmountIntent =
   { kind: "relative"; utilizationPercent: number } | { kind: "absolute" };
@@ -11,26 +17,40 @@ export function selectedCollateralSignature(tokens: string[]): string {
 
 export function amountForBorrowIntent(
   intent: BorrowAmountIntent,
-  comparisonCeilingUsd: number,
-  currentAmountUsd: number,
-): number {
-  return intent.kind === "relative"
-    ? amountForUtilization(
-        comparisonCeilingUsd,
-        clampPercent(intent.utilizationPercent),
-      )
-    : currentAmountUsd;
+  comparisonCeiling: RawAmount,
+  currentAmount: RawAmount,
+): RawAmount {
+  if (intent.kind === "absolute") return currentAmount;
+  const ceilingRaw = scaleRawAmount(
+    BigInt(comparisonCeiling.raw),
+    comparisonCeiling.decimals,
+    USDC_DECIMALS,
+  );
+  const basisPoints = BigInt(
+    Math.round(clampPercent(intent.utilizationPercent) * 100),
+  );
+  return rawAmount(mulDivDown(ceilingRaw, basisPoints, 10_000n), USDC_DECIMALS);
 }
 
 export function relativeIntentForAmount(
-  amountUsd: number,
-  comparisonCeilingUsd: number,
+  amount: RawAmount,
+  comparisonCeiling: RawAmount,
 ): BorrowAmountIntent {
+  const amountRaw = scaleRawAmount(
+    BigInt(amount.raw),
+    amount.decimals,
+    USDC_DECIMALS,
+  );
+  const ceilingRaw = scaleRawAmount(
+    BigInt(comparisonCeiling.raw),
+    comparisonCeiling.decimals,
+    USDC_DECIMALS,
+  );
   return {
     kind: "relative",
     utilizationPercent:
-      comparisonCeilingUsd > 0
-        ? clampPercent((Math.max(0, amountUsd) / comparisonCeilingUsd) * 100)
+      ceilingRaw > 0n
+        ? clampPercent(Number((amountRaw * 10_000n) / ceilingRaw) / 100)
         : 0,
   };
 }

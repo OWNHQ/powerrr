@@ -2,6 +2,7 @@ import type {
   IsolatedBorrowRoute,
   ProtocolAssetEvaluation,
   ProtocolBorrowQuote,
+  RawAmount,
 } from "@powerrr/shared-types";
 import { buildMorphoBorrowRoute } from "@powerrr/protocol-adapters";
 import {
@@ -181,12 +182,17 @@ export function pooledRiskDescription(riskBand: PooledRiskBand): string {
 
 export function calculatePooledBorrowPreview(
   quote: ProtocolBorrowQuote,
-  borrowAmountUsd: number,
+  borrowAmount: RawAmount,
 ): PooledBorrowPreview {
-  const requestedRaw = decimalStringToRaw(
-    Math.max(0, borrowAmountUsd).toFixed(USDC_DECIMALS),
+  const requestedRaw = scaleRawAmount(
+    BigInt(borrowAmount.raw),
+    borrowAmount.decimals,
     USDC_DECIMALS,
   );
+  const borrowAmountUsd = rawAmountToNumber({
+    raw: requestedRaw.toString(),
+    decimals: USDC_DECIMALS,
+  });
   const isolatedRoute = quote.isolatedMarketCapacities
     ? buildMorphoBorrowRoute(
         quote.isolatedMarketCapacities,

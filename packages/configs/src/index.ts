@@ -4,7 +4,9 @@ import {
   ETHEREUM_MORPHO_USDC_MARKET_SOURCE_BLOCK,
   ETHEREUM_MORPHO_USDC_MARKET_SOURCE_HASH,
   ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT,
+  ETHEREUM_MORPHO_USDC_EXECUTABLE_COUNT,
   ethereumMorphoCollateralTokensV1,
+  ethereumMorphoUsdcOfficialMarketIdsV1,
   ethereumMorphoUsdcMarketsV1,
   type MorphoMarketRegistryEntry,
 } from "./ethereum-morpho-usdc-markets.js";
@@ -14,7 +16,9 @@ export {
   ETHEREUM_MORPHO_USDC_MARKET_SOURCE_BLOCK,
   ETHEREUM_MORPHO_USDC_MARKET_SOURCE_HASH,
   ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT,
+  ETHEREUM_MORPHO_USDC_EXECUTABLE_COUNT,
   ethereumMorphoCollateralTokensV1,
+  ethereumMorphoUsdcOfficialMarketIdsV1,
   ethereumMorphoUsdcMarketsV1,
 } from "./ethereum-morpho-usdc-markets.js";
 export type {

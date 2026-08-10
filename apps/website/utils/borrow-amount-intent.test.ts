@@ -5,34 +5,52 @@ import {
   selectedCollateralSignature,
 } from "./borrow-amount-intent.js";
 
+function usd(value: number) {
+  return { raw: BigInt(Math.round(value * 1_000_000)).toString(), decimals: 6 };
+}
+
+function usdValue(value: { raw: string; decimals: number }): number {
+  return Number(value.raw) / 10 ** value.decimals;
+}
+
 describe("borrow amount intent", () => {
   it("recalculates a relative scenario against a changed provider maximum", () => {
     expect(
-      amountForBorrowIntent(
-        { kind: "relative", utilizationPercent: 50 },
-        27.89,
-        6_680,
+      usdValue(
+        amountForBorrowIntent(
+          { kind: "relative", utilizationPercent: 50 },
+          usd(27.89),
+          usd(6_680),
+        ),
       ),
-    ).toBe(13.95);
+    ).toBe(13.945);
   });
 
   it("preserves a manually entered absolute amount", () => {
-    expect(amountForBorrowIntent({ kind: "absolute" }, 27.89, 6_680)).toBe(
-      6_680,
-    );
+    expect(
+      usdValue(
+        amountForBorrowIntent({ kind: "absolute" }, usd(27.89), usd(6_680)),
+      ),
+    ).toBe(6_680);
   });
 
   it.each([25, 50, 75])(
     "retains a %s%% scenario when the ceiling changes",
     (utilizationPercent) => {
       expect(
-        amountForBorrowIntent({ kind: "relative", utilizationPercent }, 200, 1),
+        usdValue(
+          amountForBorrowIntent(
+            { kind: "relative", utilizationPercent },
+            usd(200),
+            usd(1),
+          ),
+        ),
       ).toBe((200 * utilizationPercent) / 100);
     },
   );
 
   it("records a slider value as a relative percentage", () => {
-    expect(relativeIntentForAmount(30, 120)).toEqual({
+    expect(relativeIntentForAmount(usd(30), usd(120))).toEqual({
       kind: "relative",
       utilizationPercent: 25,
     });

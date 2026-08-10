@@ -2,6 +2,14 @@ import type { Confidence, RiskLevel } from "@powerrr/shared-types";
 import type { RawAmount, RawRatio } from "@powerrr/shared-types";
 
 export const USDC_DECIMALS = 6;
+export const UINT256_MAX = 2n ** 256n - 1n;
+
+export type UsdcAmountParseErrorCode =
+  "invalid-format" | "excess-precision" | "out-of-range";
+
+export type UsdcAmountParseResult =
+  | { ok: true; amount: RawAmount }
+  | { ok: false; code: UsdcAmountParseErrorCode; message: string };
 
 export function pow10(decimals: number): bigint {
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
@@ -87,6 +95,81 @@ export function decimalStringToRaw(value: string, decimals: number): bigint {
   const [whole = "0", fraction = ""] = normalized.split(".");
   const padded = `${fraction}${"0".repeat(decimals)}`.slice(0, decimals);
   return BigInt(whole || "0") * pow10(decimals) + BigInt(padded || "0");
+}
+
+export function parseUsdcAmount(value: string): UsdcAmountParseResult {
+  const normalized = value.trim();
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) {
+    return {
+      ok: false,
+      code: "invalid-format",
+      message:
+        "Enter a plain non-negative USDC amount without commas, currency symbols, or exponent notation.",
+    };
+  }
+  const [whole = "0", fraction = ""] = normalized.split(".");
+  if (fraction.length > USDC_DECIMALS) {
+    return {
+      ok: false,
+      code: "excess-precision",
+      message: "USDC amounts can have at most 6 decimal places.",
+    };
+  }
+  const significantWhole = whole.replace(/^0+/, "") || "0";
+  if (
+    significantWhole.length >
+    (UINT256_MAX / pow10(USDC_DECIMALS)).toString().length
+  ) {
+    return {
+      ok: false,
+      code: "out-of-range",
+      message: "This USDC amount is too large.",
+    };
+  }
+  const raw =
+    BigInt(significantWhole) * pow10(USDC_DECIMALS) +
+    BigInt(fraction.padEnd(USDC_DECIMALS, "0") || "0");
+  if (raw > UINT256_MAX) {
+    return {
+      ok: false,
+      code: "out-of-range",
+      message: "This USDC amount is too large.",
+    };
+  }
+  return { ok: true, amount: rawAmount(raw, USDC_DECIMALS) };
+}
+
+export function formatRawAmountDecimal(value: RawAmount): string {
+  const raw = BigInt(value.raw);
+  const scale = pow10(value.decimals);
+  const whole = raw / scale;
+  const fraction = (raw % scale).toString().padStart(value.decimals, "0");
+  const trimmedFraction = fraction.replace(/0+$/, "");
+  return trimmedFraction ? `${whole}.${trimmedFraction}` : whole.toString();
+}
+
+export function formatRawAmountFixed(
+  value: RawAmount,
+  fractionDigits: number,
+): string {
+  if (
+    !Number.isInteger(fractionDigits) ||
+    fractionDigits < 0 ||
+    fractionDigits > 255
+  ) {
+    throw new Error(`Invalid fraction digits: ${fractionDigits}`);
+  }
+  const raw = BigInt(value.raw);
+  const rounded =
+    value.decimals > fractionDigits
+      ? (raw + pow10(value.decimals - fractionDigits) / 2n) /
+        pow10(value.decimals - fractionDigits)
+      : raw * pow10(fractionDigits - value.decimals);
+  if (fractionDigits === 0) return rounded.toString();
+  const scale = pow10(fractionDigits);
+  return `${rounded / scale}.${(rounded % scale)
+    .toString()
+    .padStart(fractionDigits, "0")}`;
 }
 
 export type AaveLikeCollateralInput = {

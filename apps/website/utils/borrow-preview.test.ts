@@ -1,7 +1,7 @@
 import type { ProtocolBorrowQuote } from "@powerrr/shared-types";
 import { describe, expect, it } from "vitest";
 import {
-  calculatePooledBorrowPreview,
+  calculatePooledBorrowPreview as calculateRawPooledBorrowPreview,
   morphoRouteAssetEvaluations,
   pooledBorrowAvailableUsd,
   pooledRiskDescription,
@@ -52,6 +52,13 @@ const quote: ProtocolBorrowQuote = {
 
 function usd(value: number) {
   return { raw: BigInt(Math.round(value * 1_000_000)).toString(), decimals: 6 };
+}
+
+function calculatePooledBorrowPreview(
+  inputQuote: ProtocolBorrowQuote,
+  value: number,
+) {
+  return calculateRawPooledBorrowPreview(inputQuote, usd(value));
 }
 
 function ratio(value: number) {
@@ -236,7 +243,7 @@ describe("pooled borrowing risk preview", () => {
       safeBorrowUsd,
     );
 
-    expect(result.liquidationSafetyRatio).toBeCloseTo(1.35, 10);
+    expect(result.liquidationSafetyRatio).toBeCloseTo(1.35, 5);
     expect(result.riskBand).toBe("reduced");
   });
 

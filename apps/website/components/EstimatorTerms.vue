@@ -1,87 +1,99 @@
 <script setup lang="ts">
 import { PhArrowLeft } from "@phosphor-icons/vue";
+import type { RawAmount } from "@powerrr/shared-types";
 import {
-  amountForUtilization,
-  amountInputStep,
-  formatUsdValue,
-} from "../utils/estimator-ux";
+  formatRawAmountFixed,
+  parseUsdcAmount,
+  rawAmountToNumber,
+} from "@powerrr/math";
+import { amountInputStep, formatUsdValue } from "../utils/estimator-ux";
 import {
+  amountForBorrowIntent,
   relativeIntentForAmount,
   type BorrowAmountIntent,
 } from "../utils/borrow-amount-intent";
 
 const props = defineProps<{
-  comparisonCeilingUsd: number;
+  comparisonCeiling: RawAmount;
   error: string;
 }>();
 
 const emit = defineEmits<{
   back: [];
   "intent-change": [intent: BorrowAmountIntent];
+  "validation-error": [message: string];
 }>();
-const amount = defineModel<number>("amount", { required: true });
+const amount = defineModel<RawAmount>("amount", { required: true });
 const editing = ref(false);
-const ltvTargets = [25, 50, 75] as const;
+const inputValid = ref(true);
+const utilizationTargets = [25, 50, 75] as const;
 const amountText = ref(formatAmount(amount.value));
+const amountUsd = computed(() => rawAmountToNumber(amount.value));
+const comparisonCeilingUsd = computed(() =>
+  rawAmountToNumber(props.comparisonCeiling),
+);
 const progress = computed(() =>
-  props.comparisonCeilingUsd > 0
-    ? Math.min(100, (amount.value / props.comparisonCeilingUsd) * 100)
+  comparisonCeilingUsd.value > 0
+    ? Math.min(100, (amountUsd.value / comparisonCeilingUsd.value) * 100)
     : 0,
 );
-const projectedLtvPercent = computed(() => {
-  if (props.comparisonCeilingUsd <= 0) return null;
-  return (amount.value / props.comparisonCeilingUsd) * 100;
+const capacityUtilizationPercent = computed(() => {
+  if (comparisonCeilingUsd.value <= 0) return null;
+  return (amountUsd.value / comparisonCeilingUsd.value) * 100;
 });
 
 watch(amount, (value) => {
+  inputValid.value = true;
+  emit("validation-error", "");
   if (!editing.value) amountText.value = formatAmount(value);
 });
 
-function formatAmount(value: number): string {
-  if (value <= 0) return "0";
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits:
-      props.comparisonCeilingUsd < 1
-        ? 6
-        : props.comparisonCeilingUsd < 100
-          ? 2
-          : 0,
-  }).format(value);
+function formatAmount(value: RawAmount): string {
+  return formatRawAmountFixed(value, 2);
 }
 
 function onTextInput(event: Event): void {
   amountText.value = (event.target as HTMLInputElement).value;
-  const value = Number(amountText.value.replaceAll(",", "").replace("$", ""));
   emit("intent-change", { kind: "absolute" });
-  amount.value = Number.isFinite(value) ? Math.max(0, value) : 0;
+  const parsed = parseUsdcAmount(amountText.value);
+  inputValid.value = parsed.ok;
+  emit("validation-error", parsed.ok ? "" : parsed.message);
+  if (parsed.ok) amount.value = parsed.amount;
 }
 
 function onRangeInput(event: Event): void {
-  const value = Number((event.target as HTMLInputElement).value);
-  if (Number.isFinite(value)) {
-    amount.value = Math.max(0, value);
+  const parsed = parseUsdcAmount((event.target as HTMLInputElement).value);
+  if (parsed.ok) {
+    amount.value = parsed.amount;
     emit(
       "intent-change",
-      relativeIntentForAmount(amount.value, props.comparisonCeilingUsd),
+      relativeIntentForAmount(amount.value, props.comparisonCeiling),
     );
   }
 }
 
-function selectLtv(targetPercent: number): void {
-  emit("intent-change", {
+function onBlur(): void {
+  editing.value = false;
+  if (inputValid.value) amountText.value = formatAmount(amount.value);
+}
+
+function selectUtilization(targetPercent: number): void {
+  const intent: BorrowAmountIntent = {
     kind: "relative",
     utilizationPercent: targetPercent,
-  });
-  amount.value = amountForUtilization(
-    props.comparisonCeilingUsd,
-    targetPercent,
+  };
+  emit("intent-change", intent);
+  amount.value = amountForBorrowIntent(
+    intent,
+    props.comparisonCeiling,
+    amount.value,
   );
 }
 
-function isSelectedLtv(targetPercent: number): boolean {
+function isSelectedUtilization(targetPercent: number): boolean {
   return (
-    projectedLtvPercent.value !== null &&
-    Math.abs(projectedLtvPercent.value - targetPercent) < 0.05
+    capacityUtilizationPercent.value !== null &&
+    Math.abs(capacityUtilizationPercent.value - targetPercent) < 0.05
   );
 }
 </script>
@@ -98,33 +110,33 @@ function isSelectedLtv(targetPercent: number): boolean {
     <div class="p-5 sm:p-6">
       <div>
         <div class="flex items-center justify-between gap-4">
-          <h3 class="text-sm font-semibold">Projected LTV</h3>
+          <h3 class="text-sm font-semibold">Capacity utilization</h3>
           <strong
-            v-if="projectedLtvPercent !== null"
+            v-if="capacityUtilizationPercent !== null"
             class="type-data shrink-0 text-base text-ink"
           >
-            {{ projectedLtvPercent.toFixed(1) }}%
+            {{ capacityUtilizationPercent.toFixed(1) }}%
           </strong>
         </div>
         <div
           class="mt-3 grid grid-cols-3 gap-1 rounded-lg border border-line bg-mist/55 p-1"
           role="group"
-          aria-label="Set borrow amount by projected LTV"
+          aria-label="Set borrow amount by capacity utilization"
         >
           <button
-            v-for="target in ltvTargets"
+            v-for="target in utilizationTargets"
             :key="target"
             type="button"
             class="focus-ring min-h-10 rounded-md px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45"
             :class="
-              isSelectedLtv(target)
+              isSelectedUtilization(target)
                 ? 'bg-river text-accent-contrast'
                 : 'text-slate hover:bg-surface hover:text-river'
             "
-            :aria-pressed="isSelectedLtv(target)"
+            :aria-pressed="isSelectedUtilization(target)"
             :disabled="comparisonCeilingUsd <= 0"
-            :aria-label="`${target}% projected LTV`"
-            @click="selectLtv(target)"
+            :aria-label="`${target}% capacity utilization`"
+            @click="selectUtilization(target)"
           >
             {{ target }}%
           </button>
@@ -152,13 +164,11 @@ function isSelectedLtv(targetPercent: number): boolean {
               inputmode="decimal"
               class="type-data min-w-0 flex-1 bg-transparent text-3xl leading-9 outline-none"
               aria-label="Borrow amount in USDC"
+              :aria-invalid="!inputValid"
               :aria-describedby="error ? 'amount-error' : undefined"
               @input="onTextInput"
               @focus="editing = true"
-              @blur="
-                editing = false;
-                amountText = formatAmount(amount);
-              "
+              @blur="onBlur"
             />
           </span>
         </label>
@@ -173,7 +183,7 @@ function isSelectedLtv(targetPercent: number): boolean {
             >
           </div>
           <input
-            :value="Math.min(amount, comparisonCeilingUsd)"
+            :value="Math.min(amountUsd, comparisonCeilingUsd)"
             type="range"
             min="0"
             :max="comparisonCeilingUsd > 0 ? comparisonCeilingUsd : 1"
@@ -182,7 +192,7 @@ function isSelectedLtv(targetPercent: number): boolean {
             class="amount-range mt-3 block w-full max-w-full"
             :style="{ '--range-progress': `${progress}%` }"
             aria-label="Borrow amount comparison range"
-            :aria-valuetext="`${formatUsdValue(amount)} requested; ${formatUsdValue(comparisonCeilingUsd)} comparison ceiling`"
+            :aria-valuetext="`${formatUsdValue(amountUsd)} requested; ${formatUsdValue(comparisonCeilingUsd)} comparison ceiling`"
             @input="onRangeInput"
           />
           <div class="mt-2 flex justify-between text-xs text-slate">
@@ -199,7 +209,7 @@ function isSelectedLtv(targetPercent: number): boolean {
         {{ error }}
       </p>
       <p class="sr-only" aria-live="polite">
-        Borrow amount {{ formatUsdValue(amount) }}.
+        Borrow amount {{ formatUsdValue(amountUsd) }}.
       </p>
     </div>
 
