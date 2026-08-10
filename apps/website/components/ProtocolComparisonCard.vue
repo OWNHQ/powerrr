@@ -9,8 +9,9 @@ import type {
 import { rawAmountToNumber } from "@powerrr/math";
 import {
   calculatePooledBorrowPreview,
+  morphoRouteAssetEvaluations,
   pooledBorrowAvailableUsd,
-  pooledRiskTitle,
+  pooledRiskTitleForPreview,
 } from "../utils/borrow-preview";
 import { formatUsdValue, providerRateLabel } from "../utils/estimator-ux";
 import { morphoMarketDestination } from "../utils/provider-destination";
@@ -40,18 +41,22 @@ const preview = computed(() =>
 const assetEvaluations = computed<ProtocolAssetEvaluation[]>(() => {
   const sourceUnavailable = props.status?.status === "unavailable";
   const evaluations: ProtocolAssetEvaluation[] =
-    props.quote?.assetEvaluations ??
-    props.assets.map((asset): ProtocolAssetEvaluation => ({
-      token: asset.token,
-      symbol: asset.symbol,
-      balanceUsd: assetUsd(asset),
-      selectionStatus: "not-selected",
-      eligibilityStatus: sourceUnavailable ? "unknown" : "unsupported",
-      reasonCodes: [sourceUnavailable ? "SOURCE_UNAVAILABLE" : "NOT_LISTED"],
-      reason: sourceUnavailable
-        ? "Support could not be checked because the protocol source was unavailable."
-        : "This asset is not supported by the reviewed market.",
-    }));
+    props.quote?.isolatedMarketCapacities && preview.value?.isolatedRoute
+      ? morphoRouteAssetEvaluations(props.quote, preview.value.isolatedRoute)
+      : (props.quote?.assetEvaluations ??
+        props.assets.map((asset): ProtocolAssetEvaluation => ({
+          token: asset.token,
+          symbol: asset.symbol,
+          balanceUsd: assetUsd(asset),
+          selectionStatus: "not-selected",
+          eligibilityStatus: sourceUnavailable ? "unknown" : "unsupported",
+          reasonCodes: [
+            sourceUnavailable ? "SOURCE_UNAVAILABLE" : "NOT_LISTED",
+          ],
+          reason: sourceUnavailable
+            ? "Support could not be checked because the protocol source was unavailable."
+            : "This asset is not supported by the reviewed market.",
+        })));
 
   return [...evaluations]
     .filter((asset) => (asset.contributionUsd ?? 0) > 0)
@@ -77,12 +82,7 @@ const statusLabel = computed(() => {
   if (preview.value?.actionable) return "Covers request";
   return `Below request by ${formatUsdValue(props.amountUsd - capacity.value)}`;
 });
-const weightedLtv = computed(() => {
-  const routeLltv = preview.value?.isolatedRoute?.effectiveLltv;
-  return routeLltv === null || routeLltv === undefined
-    ? weightedFactor("ltv")
-    : `${(routeLltv * 100).toFixed(1)}%`;
-});
+const weightedLtv = computed(() => weightedFactor("ltv"));
 const weightedLiquidation = computed(() =>
   weightedFactor("liquidationThreshold"),
 );
@@ -93,7 +93,7 @@ const healthFactorLabel = computed(() => {
   return health.toFixed(2);
 });
 const healthFactorStatusLabel = computed(() =>
-  preview.value ? pooledRiskTitle(preview.value.riskBand) : "Not available",
+  preview.value ? pooledRiskTitleForPreview(preview.value) : "Not available",
 );
 const healthFactorToneClass = computed(() => {
   switch (preview.value?.riskBand) {
@@ -113,7 +113,9 @@ const breakdown = computed(() => props.quote?.capacityBreakdown);
 const isolatedRoute = computed(() => preview.value?.isolatedRoute);
 const isMorpho = computed(() => Boolean(props.quote?.isolatedMarketCapacities));
 const rateLabel = computed(() => {
-  const rate = isolatedRoute.value?.weightedCurrentApy;
+  const rate =
+    isolatedRoute.value?.weightedCurrentApy ??
+    (isMorpho.value ? props.quote?.annualRate?.value : null);
   if (rate === null || rate === undefined) {
     return props.quote ? providerRateLabel(props.quote) : "—";
   }
@@ -123,12 +125,12 @@ const rateLabel = computed(() => {
   }).format(rate)} current APY`;
 });
 const isolatedLltvRange = computed(() => {
-  const route = isolatedRoute.value;
-  if (route?.lltvMinimum === null || route?.lltvMaximum === null) return "—";
-  if (route?.lltvMinimum === undefined || route.lltvMaximum === undefined)
-    return "—";
-  const minimum = `${(route.lltvMinimum * 100).toFixed(1)}%`;
-  const maximum = `${(route.lltvMaximum * 100).toFixed(1)}%`;
+  const lltvs = (props.quote?.maximumBorrowRoute ?? []).map(
+    (leg) => Number(leg.lltv.numerator) / Number(leg.lltv.denominator),
+  );
+  if (!lltvs.length) return "—";
+  const minimum = `${(Math.min(...lltvs) * 100).toFixed(1)}%`;
+  const maximum = `${(Math.max(...lltvs) * 100).toFixed(1)}%`;
   return minimum === maximum ? minimum : `${minimum}–${maximum}`;
 });
 const singleMarketDestination = computed(() => {
@@ -253,7 +255,7 @@ function evaluationLabel(item: ProtocolAssetEvaluation): string {
         </span>
         <span>
           <span class="type-metric-label block text-slate">{{
-            isMorpho ? "Worst health factor" : "Health factor"
+            isMorpho ? "Route health factor" : "Health factor"
           }}</span>
           <span
             class="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5"
@@ -321,13 +323,13 @@ function evaluationLabel(item: ProtocolAssetEvaluation): string {
               }}
             </div>
 
-            <section aria-labelledby="limit-title">
-              <h3 id="limit-title" class="font-semibold">
+            <section :aria-labelledby="`${id}-limit-title`">
+              <h3 :id="`${id}-limit-title`" class="font-semibold">
                 How this path is calculated
               </h3>
               <div class="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                 <div class="rounded-lg bg-mist/55 p-3">
-                  <span class="block text-xs text-slate"
+                  <span class="block text-xs text-ink"
                     >Eligible collateral</span
                   >
                   <strong class="mt-1 block tabular-nums">{{
@@ -335,13 +337,13 @@ function evaluationLabel(item: ProtocolAssetEvaluation): string {
                   }}</strong>
                 </div>
                 <div class="rounded-lg bg-mist/55 p-3">
-                  <span class="block text-xs text-slate">Protocol limit</span>
+                  <span class="block text-xs text-ink">Protocol limit</span>
                   <strong class="mt-1 block tabular-nums">{{
                     formatUsdValue(breakdown?.protocolBorrowLimitUsd ?? 0)
                   }}</strong>
                 </div>
                 <div class="rounded-lg bg-mist/55 p-3">
-                  <span class="block text-xs text-slate">Liquidity</span>
+                  <span class="block text-xs text-ink">Liquidity</span>
                   <strong class="mt-1 block tabular-nums">{{
                     formatUsdValue(breakdown?.liquidityLimitUsd ?? 0)
                   }}</strong>
@@ -359,7 +361,9 @@ function evaluationLabel(item: ProtocolAssetEvaluation): string {
               </h3>
               <p class="mt-1 text-xs leading-5 text-slate">
                 Independent Morpho positions for the requested amount. The
-                displayed rate is weighted by USDC borrowed in each leg.
+                displayed rate is weighted by USDC borrowed in each leg, and
+                collateral is assigned to keep the same health factor across
+                active legs.
               </p>
               <ul
                 class="mt-3 divide-y divide-line rounded-lg border border-line"
@@ -372,7 +376,10 @@ function evaluationLabel(item: ProtocolAssetEvaluation): string {
                   <span>
                     <strong class="block">{{ leg.collateralSymbol }}</strong>
                     <span class="block text-xs tabular-nums text-slate">
-                      {{ formatTokenAmount(leg.collateralAssigned) }} assigned
+                      {{ formatTokenAmount(leg.collateralAssigned) }} assigned ·
+                      {{
+                        formatUsdValue(rawAmountToNumber(leg.collateralValue))
+                      }}
                     </span>
                   </span>
                   <span>
@@ -423,8 +430,11 @@ function evaluationLabel(item: ProtocolAssetEvaluation): string {
                 Contributing assets
               </h3>
               <p class="mt-1 text-xs leading-5 text-slate">
-                Only assets included in this provider’s modeled collateral are
-                shown, ordered by USD contribution.
+                {{
+                  isMorpho
+                    ? "Only assets assigned to the displayed market route are shown, ordered by USD contribution."
+                    : "Only assets included in this provider’s modeled collateral are shown, ordered by USD contribution."
+                }}
               </p>
               <ul
                 v-if="assetEvaluations.length"
@@ -433,7 +443,12 @@ function evaluationLabel(item: ProtocolAssetEvaluation): string {
                 <li
                   v-for="asset in assetEvaluations"
                   :key="asset.token"
-                  class="grid gap-3 px-3 py-3 text-sm sm:grid-cols-[minmax(9rem,1fr)_minmax(10rem,1.2fr)_repeat(3,minmax(5rem,0.7fr))] sm:items-center"
+                  class="grid gap-3 px-3 py-3 text-sm sm:items-center"
+                  :class="
+                    isMorpho
+                      ? 'sm:grid-cols-[minmax(9rem,1fr)_minmax(10rem,1.2fr)_repeat(2,minmax(5rem,0.7fr))]'
+                      : 'sm:grid-cols-[minmax(9rem,1fr)_minmax(10rem,1.2fr)_repeat(3,minmax(5rem,0.7fr))]'
+                  "
                 >
                   <span class="flex min-w-0 items-center gap-2">
                     <span
@@ -469,12 +484,14 @@ function evaluationLabel(item: ProtocolAssetEvaluation): string {
                     }}</span>
                   </span>
                   <span
-                    ><span class="block text-xs text-slate">LTV</span
+                    ><span class="block text-xs text-slate">{{
+                      isMorpho ? "Max market LLTV" : "LTV"
+                    }}</span
                     ><strong class="tabular-nums">{{
                       formatPercent(asset.ltv)
                     }}</strong></span
                   >
-                  <span
+                  <span v-if="!isMorpho"
                     ><span class="block text-xs text-slate">Liquidation</span
                     ><strong class="tabular-nums">{{
                       formatPercent(asset.liquidationThreshold)

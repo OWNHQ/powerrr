@@ -8,7 +8,6 @@ import {
 import { ETHEREUM_TOKEN_REGISTRY_TOTAL_COUNT } from "@powerrr/configs";
 import { decimalStringToRaw, USDC_DECIMALS } from "@powerrr/math";
 import {
-  amountForUtilization,
   formatUsdValue,
   summarizeCollateralCoverage,
   summarizeEstimatorCapacity,
@@ -28,6 +27,11 @@ import {
 } from "./utils/provider-destination";
 import WalletConnectDialog from "./components/WalletConnectDialog.vue";
 import { formatWalletIdentityLabel } from "./utils/wallet-identity";
+import {
+  amountForBorrowIntent,
+  selectedCollateralSignature,
+  type BorrowAmountIntent,
+} from "./utils/borrow-amount-intent";
 
 type EstimatorStage = "assets" | "comparison";
 type ProviderItem = {
@@ -51,7 +55,6 @@ const {
   selectedAssets,
   selectedCollateralTokens,
   receipt,
-  registrySource,
   quotes,
   providerStatuses,
   error,
@@ -75,6 +78,11 @@ const {
 const currentStage = ref<EstimatorStage>("assets");
 const expandedProviderId = ref("");
 const borrowAmountUsd = ref(0);
+const borrowAmountIntent = ref<BorrowAmountIntent>({
+  kind: "relative",
+  utilizationPercent: 50,
+});
+const comparedCollateralSignature = ref("");
 const stageError = ref("");
 const showWalletReadInfo = ref(false);
 const walletDialog = ref<InstanceType<typeof WalletConnectDialog> | null>(null);
@@ -201,6 +209,8 @@ watch(receipt, (next, previous) => {
   currentStage.value = "assets";
   expandedProviderId.value = "";
   borrowAmountUsd.value = 0;
+  borrowAmountIntent.value = { kind: "relative", utilizationPercent: 50 };
+  comparedCollateralSignature.value = "";
   stageError.value = "";
 });
 
@@ -212,11 +222,23 @@ async function enterComparison(): Promise<void> {
   stageError.value = "";
   await compareSelectedAssets();
   if (error.value) return;
+  const nextSignature = selectedCollateralSignature(
+    selectedCollateralTokens.value,
+  );
+  if (nextSignature !== comparedCollateralSignature.value) {
+    borrowAmountUsd.value = amountForBorrowIntent(
+      borrowAmountIntent.value,
+      providerMaximumUsd.value,
+      borrowAmountUsd.value,
+    );
+  }
+  comparedCollateralSignature.value = nextSignature;
   currentStage.value = "comparison";
   expandedProviderId.value = "";
-  if (borrowAmountUsd.value <= 0) {
-    borrowAmountUsd.value = amountForUtilization(providerMaximumUsd.value, 50);
-  }
+}
+
+function setBorrowAmountIntent(intent: BorrowAmountIntent): void {
+  borrowAmountIntent.value = intent;
 }
 
 async function continueFromAssets(): Promise<void> {
@@ -618,8 +640,6 @@ function providerStatus(provider: ProviderItem) {
                     :block-loaded-at-label="blockLoadedAtLabel"
                     :calls-succeeded="receipt.callsSucceeded"
                     :calls-attempted="receipt.callsAttempted"
-                    :registry-version="receipt.registryVersion"
-                    :registry-source="registrySource"
                   />
                 </template>
               </EstimatorAssets>
@@ -635,6 +655,7 @@ function providerStatus(provider: ProviderItem) {
                   v-model:amount="borrowAmountUsd"
                   :comparison-ceiling-usd="comparisonCeilingUsd"
                   :error="stageError"
+                  @intent-change="setBorrowAmountIntent"
                   @back="goToStage('assets')"
                 />
               </div>
@@ -652,12 +673,18 @@ function providerStatus(provider: ProviderItem) {
                       risk evidence.
                     </p>
                   </div>
-                  <p class="text-sm text-slate">
+                  <p v-if="providerPathCount > 0" class="text-sm text-slate">
                     <strong class="font-semibold text-ink tabular-nums">
-                      {{ coveringProviderCount }}/{{ providerItems.length }}
+                      {{ coveringProviderCount }}/{{ providerPathCount }}
                     </strong>
-                    pooled providers cover
+                    eligible
+                    {{ providerPathCount === 1 ? "provider" : "providers" }}
+                    {{ providerPathCount === 1 ? "covers" : "cover" }}
                     {{ formatUsdValue(borrowAmountUsd) }}
+                  </p>
+                  <p v-else class="text-sm text-slate">
+                    <strong class="font-semibold text-ink">0</strong>
+                    eligible providers for selected collateral
                   </p>
                 </div>
 
@@ -697,8 +724,6 @@ function providerStatus(provider: ProviderItem) {
           :block-loaded-at-label="blockLoadedAtLabel"
           :calls-succeeded="receipt.callsSucceeded"
           :calls-attempted="receipt.callsAttempted"
-          :registry-version="receipt.registryVersion"
-          :registry-source="registrySource"
         />
       </div>
     </Transition>
@@ -711,17 +736,15 @@ function providerStatus(provider: ProviderItem) {
       @select="connectFromMenu"
     />
 
-    <p
-      class="mt-auto flex items-center gap-1 self-end px-4 pb-4 pt-8 text-xs text-slate sm:px-6 lg:px-8"
-    >
-      <span>built by</span>
+    <p class="relative z-40 mt-auto self-end px-4 pb-4 pt-8 sm:px-6 lg:px-8">
       <a
         href="https://own.casa"
         target="_blank"
         rel="noopener noreferrer"
-        class="focus-ring inline-flex min-h-8 items-center rounded-md px-0.5 opacity-80 transition-opacity hover:opacity-100"
+        class="focus-ring inline-flex min-h-8 items-center gap-1 rounded-md px-1 text-xs text-slate transition-colors hover:text-ink"
         aria-label="OWN"
       >
+        <span>built by</span>
         <img
           src="/brands/own.svg"
           alt=""

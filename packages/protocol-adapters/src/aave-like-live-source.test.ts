@@ -11,7 +11,7 @@ import {
   loadAaveLikeSnapshot,
 } from "./aave-like-live-source.js";
 import type { CompoundLiveRpcClient } from "./compound-live-source.js";
-import { projectLiveSnapshots } from "./live-snapshots.js";
+import { projectLiveSnapshots, quoteLiveSnapshots } from "./live-snapshots.js";
 
 const abi = parseAbi([
   "function getAllReservesTokens() view returns ((string symbol,address tokenAddress)[])",
@@ -214,6 +214,59 @@ describe("Aave-like live source", () => {
     expect(snapshot.availableLiquidityUsd).toBe(1_000);
   });
 
+  it("calculates native USDC collateral capacity from exact oracle value and live LTV", async () => {
+    const balanceRaw = 37_192_124n;
+    const priceRaw = 99_984_664n;
+    const snapshot = await loadAaveLikeSnapshot({
+      address: account,
+      chainId: 1,
+      mode: "wallet-estimate",
+      safetyProfile: "balanced",
+      targetBorrowAssets: ["USDC"],
+      selectedCollateralTokens: [usdc],
+      portfolio: [
+        {
+          chainId: 1,
+          token: usdc,
+          symbol: "USDC",
+          name: "USD Coin",
+          decimals: 6,
+          balance: "37.192124",
+          balanceRaw: balanceRaw.toString(),
+          protocolEligible: { "aave-v3": true },
+        },
+      ],
+      rpc: createRpcMock({
+        usdcCollateralEnabled: true,
+        usdcLtv: 7_500n,
+        usdcLiquidationThreshold: 7_800n,
+        usdcPriceRaw: priceRaw,
+      }),
+      deployment: AAVE_V3_ETHEREUM,
+    });
+    const quote = quoteLiveSnapshots({
+      snapshots: projectLiveSnapshots([snapshot], [usdc]),
+    })[0]!;
+    const oracleValueRaw = (balanceRaw * priceRaw) / 100_000_000n;
+    const expectedMaximumRaw = (oracleValueRaw * 7_500n) / 10_000n;
+
+    expect(quote.exactMaximum).toEqual({
+      raw: expectedMaximumRaw.toString(),
+      decimals: 6,
+    });
+    expect(quote.collateralUsed[0]).toMatchObject({
+      symbol: "USDC",
+      ltv: 0.75,
+      liquidationThreshold: 0.78,
+    });
+    expect(quote.assetEvaluations).toContainEqual(
+      expect.objectContaining({
+        symbol: "USDC",
+        reasonCodes: ["INCLUDED"],
+      }),
+    );
+  });
+
   it("excludes isolation-mode collateral until its transaction constraints are modeled", async () => {
     const snapshot = await loadAaveLikeSnapshot({
       address: account,
@@ -247,6 +300,10 @@ function createRpcMock(
     isolatedWeth?: boolean;
     targetBorrowCap?: bigint;
     targetDebtRaw?: bigint;
+    usdcCollateralEnabled?: boolean;
+    usdcLtv?: bigint;
+    usdcLiquidationThreshold?: bigint;
+    usdcPriceRaw?: bigint;
   } = {},
 ): CompoundLiveRpcClient & { blockTags: string[] } {
   const blockTags: string[] = [];
@@ -277,7 +334,18 @@ function createRpcMock(
         return result(
           "getReserveConfigurationData",
           asset === usdc.toLowerCase()
-            ? [6n, 0n, 0n, 0n, 1000n, false, true, false, true, false]
+            ? [
+                6n,
+                input.usdcLtv ?? 0n,
+                input.usdcLiquidationThreshold ?? 0n,
+                0n,
+                1000n,
+                input.usdcCollateralEnabled ?? false,
+                true,
+                false,
+                true,
+                false,
+              ]
             : [
                 18n,
                 8000n,
@@ -335,7 +403,9 @@ function createRpcMock(
       if (decoded.functionName === "getAssetPrice") {
         const asset = (decoded.args?.[0] as string).toLowerCase();
         return result("getAssetPrice", [
-          asset === usdc.toLowerCase() ? 100_000_000n : 300_000_000_000n,
+          asset === usdc.toLowerCase()
+            ? (input.usdcPriceRaw ?? 100_000_000n)
+            : 300_000_000_000n,
         ]) as TResult;
       }
       if (decoded.functionName === "balanceOf")

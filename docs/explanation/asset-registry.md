@@ -3,8 +3,10 @@
 The static application uses the checked-in registry
 `ethereum-top250-2026-07-29-v1`. It contains a dated CoinGecko market-cap
 snapshot joined to a chain-1 token metadata list: 250 ranked Ethereum ERC-20
-contracts plus four reviewed registry additions—BTC.b, eBTC, LINK and MKR—for
-254 runtime contracts. BTC.b and eBTC were added after the live provider-path
+contracts plus 80 reviewed registry additions for 330 runtime contracts. Four
+of those additions are BTC.b, eBTC, LINK and MKR; the remainder are collateral
+contracts required by the checked-in official-listed Ethereum Morpho USDC
+market registry. BTC.b and eBTC were added after the live provider-path
 audit found that Aave Ethereum Core accepts both as standard-mode collateral
 with positive new-position supply capacity. Balances are read through the connected wallet's
 EIP-1193 provider using chunked Multicall3 calls.
@@ -27,7 +29,10 @@ and investigated every failure against contract state, recent transfers, and
 broader direct V2 liquidity. It found no high-confidence dead Ethereum contract,
 so the audit did not remove any registry entry. The later
 [provider collateral audit](../audits/ethereum-provider-collateral-coverage-2026-08-05.md)
-added BTC.b and eBTC.
+added BTC.b and eBTC. The later Morpho coverage update checked in all 120
+official market identities, including 119 executable nonzero-collateral
+markets covering 108 unique collateral contracts. The remaining zero-collateral
+listing is retained for registry completeness but cannot enter wallet discovery.
 
 Live wallet discovery is deliberately finite and never enumerates arbitrary
 wallet tokens. The browser uses reviewed Aave and Spark oracles, fresh
@@ -66,8 +71,8 @@ an asset-specific reason.
 | Governance     | ENS    | `0xC18360217D8F7Ab5e7c516566761ea12Ce7F9D72` |
 
 Each code entry also pins decimals, category, candidate providers, an icon key,
-and an approved Aave-compatible on-chain oracle/asset pair. Candidate provider
-metadata is only a discovery hint: live adapters still verify active/frozen
+and an approved onchain pricing route. Candidate provider metadata is only a
+discovery hint: live adapters still verify active/frozen
 state, collateral enablement, nonzero LTV and oracle price, caps, and liquidity
 before including collateral.
 

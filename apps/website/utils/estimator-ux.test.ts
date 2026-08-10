@@ -11,6 +11,7 @@ import {
   filterSmallBalances,
   formatUsdValue,
   friendlyEstimatorError,
+  isAssetSelectable,
   providerRateLabel,
   sortAssetsByUsdValue,
   summarizeCollateralCoverage,
@@ -62,6 +63,30 @@ function selectedEvaluationQuote(
 }
 
 describe("estimator UX helpers", () => {
+  it("only allows assets with a verified positive price to be selected", () => {
+    expect(
+      isAssetSelectable({
+        marketPriceUsd: 2_000,
+        priceStatus: "available",
+        valuationStatus: "available",
+      }),
+    ).toBe(true);
+    expect(
+      isAssetSelectable({
+        marketPriceUsd: undefined,
+        priceStatus: "unavailable",
+        valuationStatus: "manual-review",
+      }),
+    ).toBe(false);
+    expect(
+      isAssetSelectable({
+        marketPriceUsd: 2_000,
+        priceStatus: "unavailable",
+        valuationStatus: "available",
+      }),
+    ).toBe(false);
+  });
+
   it.each([
     {
       convention: "apr" as const,

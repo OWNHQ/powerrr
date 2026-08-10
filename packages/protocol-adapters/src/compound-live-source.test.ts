@@ -16,6 +16,7 @@ import {
 import {
   projectLiveSnapshots,
   quoteCompoundLiveSnapshot,
+  quoteLiveSnapshots,
 } from "./live-snapshots.js";
 
 const cometAbi = parseAbi([
@@ -175,6 +176,46 @@ describe("Compound III live Comet snapshot source", () => {
           reasonCodes: ["INCLUDED"],
         }),
       ]),
+    );
+  });
+
+  it("does not treat Comet's native USDC base token as collateral", async () => {
+    const snapshot = await loadCompoundUsdcCometSnapshot({
+      rpc: createCompoundRpcMock({
+        mode: "wallet-estimate",
+        borrowBalanceRaw: 0n,
+        collateralBalances: {},
+      }),
+      address: account,
+      chainId: 1,
+      mode: "wallet-estimate",
+      portfolio: [
+        {
+          chainId: 1,
+          token: usdc,
+          symbol: "USDC",
+          name: "USD Coin",
+          decimals: 6,
+          balance: "37.192124",
+          balanceRaw: "37192124",
+          protocolEligible: { "compound-iii": false },
+        },
+      ],
+      selectedCollateralTokens: [usdc],
+      targetBorrowAssets: ["USDC"],
+      safetyProfile: "balanced",
+    });
+    const quote = quoteLiveSnapshots({
+      snapshots: projectLiveSnapshots([snapshot], [usdc]),
+    })[0]!;
+
+    expect(quote.exactMaximum.raw).toBe("0");
+    expect(quote.collateralUsed).toEqual([]);
+    expect(quote.assetEvaluations).toContainEqual(
+      expect.objectContaining({
+        symbol: "USDC",
+        reasonCodes: ["NOT_LISTED"],
+      }),
     );
   });
 

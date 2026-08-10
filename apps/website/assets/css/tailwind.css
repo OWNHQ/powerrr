@@ -386,7 +386,6 @@
   transition:
     clip-path 460ms var(--ease-instrument),
     filter 380ms var(--ease-instrument),
-    opacity 320ms var(--ease-instrument),
     transform 460ms var(--ease-instrument);
 }
 
@@ -401,7 +400,6 @@
 .instrument-state-enter-from {
   clip-path: inset(7% 6% round 20px);
   filter: blur(5px);
-  opacity: 0.42;
   transform: scale(0.992);
 }
 

@@ -2,7 +2,6 @@ import { MORPHO_BLUE, ethereumMorphoUsdcMarketsV1 } from "@powerrr/configs";
 import type { PortfolioAsset, ReadReceipt } from "@powerrr/shared-types";
 import {
   decodeFunctionData,
-  encodeFunctionData,
   encodeFunctionResult,
   type Address,
   type Hex,
@@ -283,6 +282,7 @@ describe("static Morpho market reader", () => {
       ]),
     );
     expect(snapshot.markets[0]?.borrowApy).toBeCloseTo(0.05127, 4);
+    expect(snapshot.markets).toHaveLength(1);
     expect(borrowAssetsSeenByIrm).toHaveLength(2);
     expect(borrowAssetsSeenByIrm[1]).toBeGreaterThan(borrowAssetsSeenByIrm[0]!);
     expect(new Set(blockTags)).toEqual(new Set(["0x1234"]));

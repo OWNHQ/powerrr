@@ -110,6 +110,11 @@ describe("Ethereum blue-chip registry", () => {
           `${token.symbol} direct Chainlink feed`,
           token.priceRoute.feed,
         ]);
+      } else if (token.priceRoute.kind === "morpho-oracle") {
+        addresses.push([
+          `${token.symbol} Morpho price oracle`,
+          token.priceRoute.oracle,
+        ]);
       } else if (
         token.priceRoute.kind === "erc4626-rate" ||
         token.priceRoute.kind === "contract-rate" ||
@@ -249,12 +254,19 @@ describe("static Morpho USDC market manifest", () => {
       "ethereum-morpho-usdc-25694451-v1",
     );
     expect(ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT).toBe(120);
-    expect(ethereumMorphoUsdcMarketsV1).toHaveLength(119);
+    expect(ethereumMorphoUsdcMarketsV1).toHaveLength(120);
     expect(ethereumMorphoCollateralTokensV1).toHaveLength(108);
     expect(
       new Set(ethereumMorphoUsdcMarketsV1.map((market) => market.marketId))
         .size,
     ).toBe(ethereumMorphoUsdcMarketsV1.length);
+    expect(
+      ethereumMorphoUsdcMarketsV1.some(
+        (market) =>
+          market.collateralToken.toLowerCase() ===
+          "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      ),
+    ).toBe(false);
     expect(ethereumMorphoUsdcMarketsV1).toContainEqual(
       expect.objectContaining({
         marketId:
@@ -264,5 +276,18 @@ describe("static Morpho USDC market manifest", () => {
         lltv: "860000000000000000",
       }),
     );
+    for (const collateral of ethereumMorphoCollateralTokensV1) {
+      const discovery = ethereumTokenRegistryV1.find(
+        (token) =>
+          token.address.toLowerCase() === collateral.address.toLowerCase(),
+      );
+      expect(discovery, collateral.symbol).toBeDefined();
+      expect(discovery?.decimals).toBe(collateral.decimals);
+      if (collateral.priceOracle && collateral.priceMarketId) {
+        expect(discovery?.priceRoute.kind, collateral.symbol).not.toBe(
+          "automatic-onchain",
+        );
+      }
+    }
   });
 });

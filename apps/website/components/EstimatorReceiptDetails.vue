@@ -9,8 +9,6 @@ defineProps<{
   blockLoadedAtLabel: string;
   callsSucceeded: number;
   callsAttempted: number;
-  registryVersion: string;
-  registrySource: string;
 }>();
 </script>
 
@@ -24,7 +22,7 @@ defineProps<{
       <PhCaretDown :size="14" class="ml-auto" aria-hidden="true" />
     </summary>
     <div
-      class="grid gap-5 border-t border-line px-5 py-5 text-sm sm:grid-cols-2 sm:px-6 lg:grid-cols-5"
+      class="grid gap-5 border-t border-line px-5 py-5 text-sm sm:grid-cols-2 sm:px-6 lg:grid-cols-4"
     >
       <div class="min-w-0">
         <p class="text-slate">Wallet</p>
@@ -48,12 +46,6 @@ defineProps<{
         <p class="text-slate">Balance calls</p>
         <p class="mt-1 font-semibold">
           {{ callsSucceeded }}/{{ callsAttempted }} succeeded
-        </p>
-      </div>
-      <div>
-        <p class="text-slate">Asset registry</p>
-        <p class="mt-1 font-semibold" :title="registrySource">
-          {{ registryVersion }}
         </p>
       </div>
       <div>

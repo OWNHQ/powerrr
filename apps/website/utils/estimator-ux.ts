@@ -26,6 +26,21 @@ type CoverageQuote = Pick<
 >;
 type CoverageStatus = Pick<ProtocolAvailability, "status">;
 
+export function isAssetSelectable(
+  asset: Pick<
+    PortfolioAsset,
+    "marketPriceUsd" | "priceStatus" | "valuationStatus"
+  >,
+): boolean {
+  return (
+    asset.valuationStatus === "available" &&
+    asset.priceStatus !== "unavailable" &&
+    typeof asset.marketPriceUsd === "number" &&
+    Number.isFinite(asset.marketPriceUsd) &&
+    asset.marketPriceUsd > 0
+  );
+}
+
 export function summarizeEstimatorCapacity(
   providerCapacities: number[],
 ): EstimatorCapacitySummary {

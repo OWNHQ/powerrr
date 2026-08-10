@@ -589,6 +589,21 @@ export const ethereumMorphoUsdcMarketsV1 = [
   },
   {
     marketId:
+      "0x54efdee08e272e929034a8f26f7ca34b1ebe364b275391169b28c6d7db24dbc8",
+    createdAtBlock: "18919858",
+    loanToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    loanSymbol: "USDC",
+    loanDecimals: 6,
+    collateralToken: "0x0000000000000000000000000000000000000000",
+    collateralSymbol: "UNKNOWN",
+    collateralName: "Unknown token",
+    collateralDecimals: 0,
+    oracle: "0x0000000000000000000000000000000000000000",
+    irm: "0x0000000000000000000000000000000000000000",
+    lltv: "0",
+  },
+  {
+    marketId:
       "0x5cebfae10f5e88d33df2421923f3d9f32359429fda2f78edacc9b4fdb09b0553",
     createdAtBlock: "24599482",
     loanToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",

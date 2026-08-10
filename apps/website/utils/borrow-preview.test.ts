@@ -2,9 +2,11 @@ import type { ProtocolBorrowQuote } from "@powerrr/shared-types";
 import { describe, expect, it } from "vitest";
 import {
   calculatePooledBorrowPreview,
+  morphoRouteAssetEvaluations,
   pooledBorrowAvailableUsd,
   pooledRiskDescription,
   pooledRiskTitle,
+  pooledRiskTitleForPreview,
   riskBandFromHealthFactor,
 } from "./borrow-preview.js";
 
@@ -166,7 +168,7 @@ describe("pooled borrowing risk preview", () => {
     expect(result.liquidationSafetyRatio).toBe(2.45);
   });
 
-  it("treats the exact liquidation boundary as at threshold", () => {
+  it("does not show liquidation metrics for an amount above protocol maximum", () => {
     const atThreshold = calculatePooledBorrowPreview(
       { ...quote, existingDebtUsd: 0 },
       85_000,
@@ -177,13 +179,18 @@ describe("pooled borrowing risk preview", () => {
     );
 
     expect(atThreshold.liquidationSafetyRatio).toBe(1);
-    expect(atThreshold.riskBand).toBe("at-boundary");
+    expect(atThreshold.healthFactor).toBeNull();
+    expect(atThreshold.riskBand).toBe("not-executable");
     expect(atThreshold.actionable).toBe(false);
     expect(atThreshold.reasonCodes).toContain("above-modeled-limit");
-    expect(atThreshold.reasonCodes).toContain("at-liquidation-boundary");
-    expect(atThreshold.status).toBe("at-or-above-liquidation-threshold");
+    expect(atThreshold.reasonCodes).not.toContain("at-liquidation-boundary");
+    expect(atThreshold.status).toBe("not-executable");
+    expect(pooledRiskTitleForPreview(atThreshold)).toBe(
+      "Amount exceeds protocol maximum",
+    );
     expect(oneCentBelow.liquidationSafetyRatio).toBeGreaterThan(1);
-    expect(oneCentBelow.status).toBe("below-liquidation-threshold");
+    expect(oneCentBelow.healthFactor).toBeNull();
+    expect(oneCentBelow.status).toBe("not-executable");
   });
 
   it("keeps Morpho-style LLTV identical in both displayed limit fields", () => {
@@ -270,7 +277,12 @@ describe("pooled borrowing risk preview", () => {
     );
 
     expect(result.actionable).toBe(false);
+    expect(result.healthFactor).toBeNull();
+    expect(result.riskBand).toBe("not-executable");
     expect(result.reasonCodes).toContain("above-modeled-limit");
+    expect(pooledRiskTitleForPreview(result)).toBe(
+      "Amount exceeds protocol maximum",
+    );
   });
 
   it("accepts the exact USDC boundary and rejects one base unit above it", () => {
@@ -285,6 +297,8 @@ describe("pooled borrowing risk preview", () => {
 
     expect(atBoundary.actionable).toBe(true);
     expect(oneUnitOver.actionable).toBe(false);
+    expect(oneUnitOver.healthFactor).toBeNull();
+    expect(oneUnitOver.status).toBe("not-executable");
     expect(oneUnitOver.reasonCodes).toContain("above-modeled-limit");
   });
 
@@ -344,6 +358,170 @@ describe("pooled borrowing risk preview", () => {
 
     expect(result.minimumBorrowUsd).toBe(100);
     expect(result.actionable).toBe(false);
+    expect(result.healthFactor).toBeNull();
+    expect(result.riskBand).toBe("not-executable");
     expect(result.reasonCodes).toContain("below-protocol-minimum");
+    expect(pooledRiskTitleForPreview(result)).toBe("Below protocol minimum");
+  });
+
+  it("does not invent a health factor when no collateral is eligible", () => {
+    const result = calculatePooledBorrowPreview(
+      {
+        ...quote,
+        mode: "wallet-estimate",
+        existingDebtUsd: 0,
+        exactMaximum: usd(0),
+        collateralUsed: [],
+      },
+      1,
+    );
+
+    expect(result.actionable).toBe(false);
+    expect(result.healthFactor).toBeNull();
+    expect(result.riskBand).toBe("not-executable");
+    expect(result.reasonCodes).toContain("no-eligible-collateral");
+    expect(pooledRiskTitleForPreview(result)).toBe("Not available");
+  });
+
+  it("builds a local Morpho route with the maximum common health factor", () => {
+    const result = calculatePooledBorrowPreview(
+      {
+        ...quote,
+        protocolId: "morpho-blue",
+        familyId: "morpho-blue",
+        mode: "wallet-estimate",
+        existingDebtUsd: 0,
+        exactMaximum: usd(120),
+        isolatedMarketCapacities: [
+          {
+            marketId: "cheap-market",
+            collateralToken: "0x0000000000000000000000000000000000000001",
+            collateralSymbol: "WETH",
+            collateralAvailable: usd(100),
+            oraclePrice: { numerator: "1", denominator: "1" },
+            lltv: { numerator: "8", denominator: "10" },
+            availableLiquidity: usd(80),
+            currentBorrowApy: { numerator: "3", denominator: "100" },
+          },
+          {
+            marketId: "other-market",
+            collateralToken: "0x0000000000000000000000000000000000000002",
+            collateralSymbol: "WBTC",
+            collateralAvailable: usd(50),
+            oraclePrice: { numerator: "1", denominator: "1" },
+            lltv: { numerator: "8", denominator: "10" },
+            availableLiquidity: usd(40),
+            currentBorrowApy: { numerator: "5", denominator: "100" },
+          },
+        ],
+      },
+      40,
+    );
+
+    expect(result.actionable).toBe(true);
+    expect(result.isolatedRoute?.legs).toHaveLength(2);
+    expect(result.isolatedRoute?.weightedCurrentApy).toBeCloseTo(0.0366667, 6);
+    expect(result.isolatedRoute?.legs[0]!.healthFactor).toBeCloseTo(
+      result.isolatedRoute?.legs[1]!.healthFactor ?? 0,
+      6,
+    );
+    expect(result.isolatedRoute?.worstHealthFactor).toBeCloseTo(3, 6);
+    expect(result.healthFactor).toBeCloseTo(3, 6);
+  });
+
+  it("shows only source assets assigned to the displayed Morpho route", () => {
+    const eth = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" as const;
+    const weth = "0x0000000000000000000000000000000000000001" as const;
+    const weeth = "0x0000000000000000000000000000000000000002" as const;
+    const morphoQuote: ProtocolBorrowQuote = {
+      ...quote,
+      protocolId: "morpho-blue",
+      familyId: "morpho-blue",
+      assetEvaluations: [
+        includedAsset(eth, "ETH", 80),
+        includedAsset(weth, "WETH", 20),
+        includedAsset(weeth, "WEETH", 10),
+      ],
+      isolatedMarketCapacities: [
+        {
+          marketId: "weth-market",
+          collateralToken: weth,
+          collateralSymbol: "WETH",
+          collateralAvailable: usd(100),
+          collateralSources: [
+            { token: eth, symbol: "ETH", convertedBalance: usd(80) },
+            { token: weth, symbol: "WETH", convertedBalance: usd(20) },
+          ],
+          oraclePrice: { numerator: "1", denominator: "1" },
+          lltv: { numerator: "86", denominator: "100" },
+          availableLiquidity: usd(1_000),
+          currentBorrowApy: { numerator: "4", denominator: "100" },
+        },
+        {
+          marketId: "weeth-market",
+          collateralToken: weeth,
+          collateralSymbol: "WEETH",
+          collateralAvailable: usd(10),
+          collateralSources: [
+            { token: weeth, symbol: "WEETH", convertedBalance: usd(10) },
+          ],
+          oraclePrice: { numerator: "1", denominator: "1" },
+          lltv: { numerator: "86", denominator: "100" },
+          availableLiquidity: usd(1_000),
+          currentBorrowApy: { numerator: "4", denominator: "100" },
+        },
+      ],
+    };
+    const evaluations = morphoRouteAssetEvaluations(morphoQuote, {
+      requestedBorrow: usd(43),
+      legs: [
+        {
+          marketId: "weth-market",
+          collateralToken: weth,
+          collateralSymbol: "WETH",
+          collateralAssigned: usd(50),
+          collateralValue: usd(50),
+          borrowAmount: usd(43),
+          currentBorrowApy: { numerator: "4", denominator: "100" },
+          lltv: { numerator: "86", denominator: "100" },
+          availableLiquidity: usd(1_000),
+          healthFactor: 1,
+        },
+      ],
+      weightedCurrentApy: 0.04,
+      effectiveLltv: 0.86,
+      lltvMinimum: 0.86,
+      lltvMaximum: 0.86,
+      worstHealthFactor: 1,
+      feasible: true,
+    });
+
+    expect(evaluations.map((evaluation) => evaluation.symbol)).toEqual([
+      "ETH",
+      "WETH",
+    ]);
+    expect(
+      evaluations.reduce(
+        (sum, evaluation) => sum + (evaluation.contributionUsd ?? 0),
+        0,
+      ),
+    ).toBe(50);
   });
 });
+
+function includedAsset(
+  token: `0x${string}`,
+  symbol: string,
+  contributionUsd: number,
+) {
+  return {
+    token,
+    symbol,
+    balanceUsd: contributionUsd,
+    selectionStatus: "selected" as const,
+    eligibilityStatus: "included" as const,
+    reasonCodes: ["INCLUDED" as const],
+    reason: "Included in this market estimate.",
+    contributionUsd,
+  };
+}

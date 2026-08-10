@@ -5,13 +5,20 @@ import {
   amountInputStep,
   formatUsdValue,
 } from "../utils/estimator-ux";
+import {
+  relativeIntentForAmount,
+  type BorrowAmountIntent,
+} from "../utils/borrow-amount-intent";
 
 const props = defineProps<{
   comparisonCeilingUsd: number;
   error: string;
 }>();
 
-const emit = defineEmits<{ back: [] }>();
+const emit = defineEmits<{
+  back: [];
+  "intent-change": [intent: BorrowAmountIntent];
+}>();
 const amount = defineModel<number>("amount", { required: true });
 const editing = ref(false);
 const ltvTargets = [25, 50, 75] as const;
@@ -45,15 +52,26 @@ function formatAmount(value: number): string {
 function onTextInput(event: Event): void {
   amountText.value = (event.target as HTMLInputElement).value;
   const value = Number(amountText.value.replaceAll(",", "").replace("$", ""));
+  emit("intent-change", { kind: "absolute" });
   amount.value = Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
 function onRangeInput(event: Event): void {
   const value = Number((event.target as HTMLInputElement).value);
-  if (Number.isFinite(value)) amount.value = Math.max(0, value);
+  if (Number.isFinite(value)) {
+    amount.value = Math.max(0, value);
+    emit(
+      "intent-change",
+      relativeIntentForAmount(amount.value, props.comparisonCeilingUsd),
+    );
+  }
 }
 
 function selectLtv(targetPercent: number): void {
+  emit("intent-change", {
+    kind: "relative",
+    utilizationPercent: targetPercent,
+  });
   amount.value = amountForUtilization(
     props.comparisonCeilingUsd,
     targetPercent,

@@ -198,6 +198,44 @@ describe("live protocol snapshot quote builders", () => {
     expect(both.exactMaximum.raw).toBe(usd(12).raw);
   });
 
+  it("keeps weETH separate from the reviewed ETH/WETH conversion family", () => {
+    const eth = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" as const;
+    const weth = "0x0000000000000000000000000000000000000001" as const;
+    const weeth = "0xcd5fe23c85820f7b72d0926fc9b05b43e359b7ee" as const;
+    const wethGroup = rawGroup(weth, "WETH", 0, 0.8, 0.83);
+    wethGroup.sources = [
+      { token: eth, symbol: "ETH", convertedBalanceRaw: usd(10).raw },
+      { token: weth, symbol: "WETH", convertedBalanceRaw: usd(10).raw },
+    ];
+    const weethGroup = rawGroup(weeth, "weETH", 0, 0.775, 0.8);
+    weethGroup.sources = [
+      { token: weeth, symbol: "WEETH", convertedBalanceRaw: usd(7).raw },
+    ];
+    const source: LiveQuoteSnapshot = {
+      ...baseSnapshot,
+      kind: "aave-like",
+      mode: "wallet-estimate",
+      existingDebtUsd: 0,
+      existingDebtExact: usd(0),
+      safetyProfile: "max",
+      targetHealthFactor: 1,
+      collateral: [],
+      rawCollateral: [wethGroup, weethGroup],
+    };
+
+    const quote = quoteLiveSnapshots({
+      snapshots: projectLiveSnapshots([source], [weeth]),
+    })[0]!;
+
+    expect(quote.collateralUsed).toHaveLength(1);
+    expect(quote.collateralUsed[0]).toMatchObject({
+      token: weeth,
+      symbol: "WEETH",
+      valueExact: usd(7),
+    });
+    expect(quote.exactMaximum).toEqual(usd(5.425));
+  });
+
   it("combines stETH and wstETH only after a non-1:1 exact conversion", () => {
     const steth = "0x0000000000000000000000000000000000000011" as const;
     const wsteth = "0x0000000000000000000000000000000000000012" as const;
@@ -395,8 +433,8 @@ describe("live protocol snapshot quote builders", () => {
     expect(quote.safeBorrowUsd).toBe(62_815);
     expect(quote.exactMaximum).toEqual(usd(73_900));
     expect(quote.collateralUsed.map((item) => item.marketId)).toEqual([
-      "WETH-USDC-86",
       "WBTC-USDC-77",
+      "WETH-USDC-86",
     ]);
     expect(quote.annualRate).toMatchObject({
       convention: "apy",
@@ -425,8 +463,8 @@ describe("live protocol snapshot quote builders", () => {
     );
 
     expect(route.legs.map((leg) => leg.marketId)).toEqual([
-      "high-lltv",
       "lower-lltv",
+      "high-lltv",
     ]);
     expect(
       route.legs.reduce(
@@ -437,9 +475,13 @@ describe("live protocol snapshot quote builders", () => {
     expect(
       route.legs.reduce((sum, leg) => sum + BigInt(leg.borrowAmount.raw), 0n),
     ).toBe(83_333_332n);
+    expect(route.legs[0]!.healthFactor).toBeCloseTo(
+      route.legs[1]!.healthFactor!,
+      6,
+    );
   });
 
-  it("uses the cheapest rate only while preserving enough remaining capacity", () => {
+  it("maximizes the common health factor before considering rate", () => {
     const token = "0x0000000000000000000000000000000000000001";
     const route = buildMorphoBorrowRoute(
       [
@@ -450,16 +492,114 @@ describe("live protocol snapshot quote builders", () => {
     );
 
     expect(route.feasible).toBe(true);
-    expect(route.legs).toHaveLength(2);
-    expect(route.legs[0]?.marketId).toBe("cheap-low-lltv");
-    expect(BigInt(route.legs[0]!.borrowAmount.raw)).toBeLessThanOrEqual(
-      12_500_000n,
-    );
+    expect(route.legs).toHaveLength(1);
+    expect(route.legs[0]?.marketId).toBe("costly-high-lltv");
     expect(
       route.legs.reduce((sum, leg) => sum + BigInt(leg.borrowAmount.raw), 0n),
     ).toBe(80n * 10n ** 6n);
-    expect(route.weightedCurrentApy).toBeGreaterThan(0.08);
-    expect(route.weightedCurrentApy).toBeLessThan(0.1);
+    expect(route.weightedCurrentApy).toBeCloseTo(0.1, 8);
+    expect(route.worstHealthFactor).toBeCloseTo(1.125, 6);
+  });
+
+  it("does not max out tiny cheap markets and drag the whole route to HF 1", () => {
+    const route = buildMorphoBorrowRoute(
+      [
+        isolatedMarket(
+          "large-route",
+          "0x0000000000000000000000000000000000000001",
+          15_500,
+          0.86,
+          50_000_000,
+          0.04,
+        ),
+        isolatedMarket(
+          "tiny-cheap-route",
+          "0x0000000000000000000000000000000000000002",
+          6.5,
+          0.86,
+          5.59,
+          0.001,
+        ),
+      ],
+      6_667_795_000n,
+    );
+
+    expect(route.feasible).toBe(true);
+    expect(route.legs).toHaveLength(2);
+    expect(route.legs[0]!.healthFactor).toBeCloseTo(
+      route.legs[1]!.healthFactor!,
+      6,
+    );
+    expect(route.worstHealthFactor).toBeCloseTo(2, 3);
+    expect(BigInt(route.legs[1]!.borrowAmount.raw)).toBeLessThan(5_590_000n);
+  });
+
+  it("assigns collateral so every active Morpho route has the same health factor", () => {
+    const route = buildMorphoBorrowRoute(
+      [
+        isolatedMarket(
+          "small-cheap-route",
+          "0x0000000000000000000000000000000000000001",
+          100,
+          0.9,
+          30,
+          0.01,
+        ),
+        isolatedMarket(
+          "large-costly-route",
+          "0x0000000000000000000000000000000000000002",
+          200,
+          0.8,
+          160,
+          0.05,
+        ),
+      ],
+      100n * 10n ** 6n,
+    );
+
+    expect(route.feasible).toBe(true);
+    expect(route.legs.map((leg) => leg.marketId)).toEqual([
+      "large-costly-route",
+      "small-cheap-route",
+    ]);
+    expect(route.legs.map((leg) => BigInt(leg.borrowAmount.raw))).toEqual([
+      70n * 10n ** 6n,
+      30n * 10n ** 6n,
+    ]);
+    expect(route.legs[0]!.healthFactor).toBeCloseTo(
+      route.legs[1]!.healthFactor!,
+      6,
+    );
+    expect(route.worstHealthFactor).toBeCloseTo(16 / 7, 6);
+  });
+
+  it("equalizes an 18-decimal collateral route without unit-by-unit rounding work", () => {
+    const route = buildMorphoBorrowRoute(
+      [
+        {
+          marketId: "weth-usdc",
+          collateralToken: "0x0000000000000000000000000000000000000001",
+          collateralSymbol: "WETH",
+          collateralAvailable: {
+            raw: "1000000000000000000",
+            decimals: 18,
+          },
+          oraclePrice: {
+            numerator: "3000000000",
+            denominator: "1000000000000000000",
+          },
+          lltv: { numerator: "8", denominator: "10" },
+          availableLiquidity: usd(10_000),
+          currentBorrowApy: { numerator: "4", denominator: "100" },
+        },
+      ],
+      1_000n * 10n ** 6n,
+    );
+
+    expect(route.feasible).toBe(true);
+    expect(route.legs).toHaveLength(1);
+    expect(route.legs[0]!.collateralAssigned.raw).toBe("1000000000000000000");
+    expect(route.legs[0]!.healthFactor).toBeCloseTo(2.4, 6);
   });
 
   it("quotes Compound III source snapshots from borrow and liquidation factors", () => {

@@ -183,6 +183,11 @@ export type IsolatedMarketCapacity = {
   collateralToken: HexAddress;
   collateralSymbol: string;
   collateralAvailable: RawAmount;
+  collateralSources?: Array<{
+    token: HexAddress;
+    symbol: string;
+    convertedBalance: RawAmount;
+  }>;
   oraclePrice: RawRatio;
   lltv: RawRatio;
   availableLiquidity: RawAmount;

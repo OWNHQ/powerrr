@@ -10,6 +10,13 @@ const configSource = await readFile(
   new URL("../packages/configs/src/index.ts", import.meta.url),
   "utf8",
 );
+const morphoSource = await readFile(
+  new URL(
+    "../packages/configs/src/ethereum-morpho-usdc-markets.ts",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const tokens = [
   ...source.matchAll(
     /address: "([^"]+)",[\s\S]*?symbol: "([^"]+)",[\s\S]*?decimals: (\d+),[\s\S]*?snapshotRank: (\d+),/g,
@@ -51,7 +58,7 @@ const reviewedTokens = [
   ...reviewedSection.matchAll(/\["(0x[0-9a-fA-F]{40})", "([^"]+)"/g),
 ].map(([, address, symbol]) => ({ address, symbol }));
 const expectedAdditionSymbols = ["BTC.b", "eBTC", "LINK", "MKR"];
-const reviewedAdditions = expectedAdditionSymbols.map((symbol) => {
+const providerAdditions = expectedAdditionSymbols.map((symbol) => {
   const token = reviewedTokens.find((candidate) => candidate.symbol === symbol);
   if (!token) throw new Error(`Missing reviewed registry addition ${symbol}`);
   if (addresses.has(token.address.toLowerCase())) {
@@ -60,19 +67,40 @@ const reviewedAdditions = expectedAdditionSymbols.map((symbol) => {
   return token;
 });
 if (
-  reviewedAdditions.map((token) => token.symbol).join(",") !==
+  providerAdditions.map((token) => token.symbol).join(",") !==
   expectedAdditionSymbols.join(",")
 ) {
   throw new Error(
-    `Expected reviewed additions ${expectedAdditionSymbols.join(",")}; received ${reviewedAdditions.map((token) => token.symbol).join(",")}`,
+    `Expected reviewed additions ${expectedAdditionSymbols.join(",")}; received ${providerAdditions.map((token) => token.symbol).join(",")}`,
   );
 }
+const morphoCollateralSection = morphoSource.match(
+  /export const ethereumMorphoCollateralTokensV1 = \[([\s\S]*?)\] as const/,
+)?.[1];
+if (!morphoCollateralSection)
+  throw new Error("Could not parse Morpho collateral registry");
+const morphoCollateralTokens = [
+  ...morphoCollateralSection.matchAll(
+    /address: "(0x[0-9a-fA-F]{40})",[\s\S]*?symbol: "([^"]+)"/g,
+  ),
+].map(([, address, symbol]) => ({ address, symbol }));
+const reviewedAdditions = [...providerAdditions, ...morphoCollateralTokens]
+  .filter((token) => !addresses.has(token.address.toLowerCase()))
+  .filter(
+    (token, index, all) =>
+      all.findIndex(
+        (candidate) =>
+          candidate.address.toLowerCase() === token.address.toLowerCase(),
+      ) === index,
+  );
 
 const report = {
   registry: "ethereum-top250-2026-07-29-v1",
   snapshotDate: "2026-07-29",
   rankedTokens: tokens.length,
   reviewedAdditions,
+  providerRegistryAdditions: providerAdditions,
+  morphoOfficialCollateralContracts: morphoCollateralTokens.length,
   additionsCount: reviewedAdditions.length,
   runtimeContracts: addresses.size + reviewedAdditions.length,
   checksumValid: true,

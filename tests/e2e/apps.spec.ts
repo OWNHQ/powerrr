@@ -573,7 +573,7 @@ test("wallet choice is explicit, private, and keyboard accessible", async ({
     page.getByRole("heading", { name: /Wallet snapshot for/ }),
   ).toBeVisible();
   await expect(page.getByText("powerrr.eth", { exact: true })).toBeVisible();
-  await expect(page.getByText("0x0000…00A1", { exact: true })).toBeVisible();
+  await expect(page.getByText("0x0000…00A1", { exact: true })).toHaveCount(0);
   expect(
     await page.evaluate(() => localStorage.getItem("powerrr:last-wallet-rdns")),
   ).toBe("test.wallet");
@@ -610,7 +610,8 @@ test("wallet account, network, and disconnect events replace stale state", async
       }
     ).__emitWalletEvent?.("accountsChanged", [nextAccount]);
   }, changedAccount);
-  await expect(page.getByText("0x0000…00B2", { exact: true })).toBeVisible();
+  await expect(page.getByText("0x0000…00B2", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("powerrr.eth", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: /Wallet snapshot for/ }),
   ).toBeVisible();
@@ -681,6 +682,26 @@ test("wallet motion communicates active work and respects reduced motion", async
     "animation-name",
     "scan-dial-turn",
   );
+  const ownCredit = page.getByRole("link", { name: "OWN", exact: true });
+  await ownCredit.evaluate((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      (
+        window as typeof window & { __ownCreditClickedDuringScan?: boolean }
+      ).__ownCreditClickedDuringScan = true;
+    });
+  });
+  await ownCredit.click();
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as typeof window & {
+            __ownCreditClickedDuringScan?: boolean;
+          }
+        ).__ownCreditClickedDuringScan,
+    ),
+  ).toBe(true);
   await expect(
     page.getByRole("heading", { name: /Wallet snapshot for/ }),
   ).toBeVisible();
@@ -914,6 +935,15 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
   });
   await expect(unavailablePrices).toBeVisible();
   await expect(unavailablePrices.locator("..")).not.toHaveAttribute("open");
+  await unavailablePrices.click();
+  const unpricedAsset = ethereumTokenRegistryV1[unpricedIndex]!;
+  const unavailableAssetButton = page.getByRole("button", {
+    name: `${unpricedAsset.symbol} cannot be selected because its price is unavailable`,
+  });
+  await expect(unavailableAssetButton).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Compare 1 selected asset" }),
+  ).toBeVisible();
   const estimateDetails = page.locator("[data-estimate-details]");
   await expect(page.locator("#workflow").locator("..")).toHaveCSS(
     "transform",
@@ -923,6 +953,9 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
     (element) => element.getBoundingClientRect().top + window.scrollY,
   );
   await page.getByText("About this estimate").click();
+  await expect(page.getByText("Asset registry", { exact: true })).toHaveCount(
+    0,
+  );
   await expect(
     page.getByText(
       `${ethereumTokenRegistryV1.length}/${ethereumTokenRegistryV1.length} succeeded`,
@@ -1044,7 +1077,9 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
   await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("2,400");
   await expect(page.locator('input[type="range"]')).toHaveCount(1);
   await page.getByLabel("Borrow amount in USDC").fill("1000");
-  await expect(page.getByText(/pooled providers cover \$1,000/)).toBeVisible();
+  await expect(
+    page.getByText(/eligible providers? covers? \$1,000/),
+  ).toBeVisible();
   const callsAfterInteractions = await page.evaluate(
     () =>
       (window as typeof window & { __ethCallCount?: number }).__ethCallCount ??
@@ -1163,6 +1198,51 @@ test("native ETH and WETH both contribute to a WETH collateral path", async ({
   await expect(contributionRows.nth(1)).toContainText("ETH");
   await expect(contributionRows.nth(1)).toContainText("$3,000");
   await expect(contributionRows.nth(1)).toContainText("Wrap required");
+
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("3,600");
+  const callsAfterSnapshot = await page.evaluate(
+    () =>
+      (window as typeof window & { __ethCallCount?: number }).__ethCallCount ??
+      0,
+  );
+
+  await page.getByRole("button", { name: "Back to assets" }).click();
+  await page
+    .getByRole("button", { name: "Remove ETH from collateral selection" })
+    .click({ position: { x: 16, y: 16 } });
+  await page.getByRole("button", { name: "Compare 1 selected asset" }).click();
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("2,400");
+
+  await page.getByRole("button", { name: "Back to assets" }).click();
+  await page
+    .getByRole("button", { name: "Add ETH to collateral selection" })
+    .click({ position: { x: 16, y: 16 } });
+  await page.getByRole("button", { name: "Compare 2 selected assets" }).click();
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("3,600");
+
+  await page.getByLabel("Borrow amount in USDC").fill("7000");
+  await page.getByRole("button", { name: "Back to assets" }).click();
+  await page
+    .getByRole("button", { name: "Remove ETH from collateral selection" })
+    .click({ position: { x: 16, y: 16 } });
+  await page.getByRole("button", { name: "Compare 1 selected asset" }).click();
+  await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("7,000");
+  await expect(
+    page.getByText(/0\/\d+ eligible providers? covers? \$7,000/),
+  ).toBeVisible();
+  await expect(
+    page.locator('[data-protocol-id="aave"] [data-health-factor]'),
+  ).toContainText("—");
+  await expect(
+    page.locator('[data-protocol-id="aave"] [data-health-factor]'),
+  ).toContainText("Amount exceeds protocol maximum");
+
+  const callsAfterInteractions = await page.evaluate(
+    () =>
+      (window as typeof window & { __ethCallCount?: number }).__ethCallCount ??
+      0,
+  );
+  expect(callsAfterInteractions).toBe(callsAfterSnapshot);
 });
 
 test("provider detail disclosure uses bounded motion and respects reduced motion", async ({

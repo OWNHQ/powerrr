@@ -251,6 +251,12 @@ export function projectLiveSnapshots(
                       ),
                     market.rawCollateral.protocolDecimals,
                   ),
+                  rawCollateral: {
+                    ...market.rawCollateral,
+                    sources: market.rawCollateral.sources.filter((source) =>
+                      selected.has(source.token.toLowerCase()),
+                    ),
+                  },
                 },
               ]
             : [];
@@ -487,6 +493,7 @@ export function buildMorphoBorrowRoute(
       BigInt(candidate.availableLiquidity.raw),
     );
   }
+  const totalCollateral = new Map(remainingCollateral);
 
   const maximum = maximumMorphoAllocation(
     usable,
@@ -508,57 +515,27 @@ export function buildMorphoBorrowRoute(
   if (objective === "capacity") {
     legs = maximum;
   } else {
-    legs = [];
-    let outstanding = targetRaw;
-    const ordered = [...usable].sort(compareMarketRateThenCapacity);
-    for (const [candidateIndex, candidate] of ordered.entries()) {
-      if (outstanding <= 0n) break;
-      const collateralKey = candidate.collateralToken.toLowerCase();
-      const collateralRaw = remainingCollateral.get(collateralKey) ?? 0n;
-      const liquidityRaw = remainingLiquidity.get(candidate.marketId) ?? 0n;
-      const candidateMaximum = marketBorrowCapacity(
-        candidate,
-        collateralRaw,
-        liquidityRaw,
-      );
-      let low = 0n;
-      let high = minBigInt(candidateMaximum, outstanding);
-      if (candidateMaximum >= outstanding) low = outstanding;
-      while (low < high) {
-        const midpoint = (low + high + 1n) / 2n;
-        const assigned = collateralForBorrow(candidate, midpoint);
-        const nextCollateral = new Map(remainingCollateral);
-        const nextLiquidity = new Map(remainingLiquidity);
-        nextCollateral.set(
-          collateralKey,
-          collateralRaw > assigned ? collateralRaw - assigned : 0n,
-        );
-        nextLiquidity.set(
-          candidate.marketId,
-          liquidityRaw > midpoint ? liquidityRaw - midpoint : 0n,
-        );
-        const residualMaximum = maximumMorphoAllocation(
-          ordered.slice(candidateIndex + 1),
-          nextCollateral,
-          nextLiquidity,
-        ).reduce((sum, leg) => sum + BigInt(leg.borrowAmount.raw), 0n);
-        if (residualMaximum >= outstanding - midpoint) low = midpoint;
-        else high = midpoint - 1n;
-      }
-      if (low <= 0n) continue;
-      const assigned = collateralForBorrow(candidate, low);
-      legs.push(routeLeg(candidate, assigned, low));
-      remainingCollateral.set(
-        collateralKey,
-        collateralRaw > assigned ? collateralRaw - assigned : 0n,
-      );
-      remainingLiquidity.set(
-        candidate.marketId,
-        liquidityRaw > low ? liquidityRaw - low : 0n,
-      );
-      outstanding -= low;
-    }
+    const targetHealthRaw = maximumCommonRouteHealth(
+      usable,
+      totalCollateral,
+      remainingLiquidity,
+      targetRaw,
+    );
+    legs = trimAllocationToTarget(
+      usable,
+      maximumMorphoAllocationAtHealth(
+        usable,
+        totalCollateral,
+        remainingLiquidity,
+        targetHealthRaw,
+      ),
+      targetRaw,
+      targetHealthRaw,
+    );
   }
+
+  legs = equalizeRouteHealthFactors(legs, usable, totalCollateral);
+  legs.sort(compareRouteBorrowAmount);
 
   const routedRaw = legs.reduce(
     (sum, leg) => sum + BigInt(leg.borrowAmount.raw),
@@ -599,14 +576,152 @@ export function buildMorphoBorrowRoute(
   };
 }
 
+const ROUTE_HEALTH_SCALE = 10n ** 18n;
+
+function maximumCommonRouteHealth(
+  candidates: IsolatedMarketCapacity[],
+  collateral: Map<string, bigint>,
+  liquidity: Map<string, bigint>,
+  targetRaw: bigint,
+): bigint {
+  if (targetRaw <= 0n) return 0n;
+  const capacityAt = (healthRaw: bigint) =>
+    maximumMorphoAllocationAtHealth(
+      candidates,
+      collateral,
+      liquidity,
+      healthRaw,
+    ).reduce((sum, leg) => sum + BigInt(leg.borrowAmount.raw), 0n);
+
+  let low = ROUTE_HEALTH_SCALE;
+  let high = ROUTE_HEALTH_SCALE;
+  while (capacityAt(high) >= targetRaw) {
+    low = high;
+    high *= 2n;
+  }
+  while (low + 1n < high) {
+    const midpoint = (low + high) / 2n;
+    if (capacityAt(midpoint) >= targetRaw) low = midpoint;
+    else high = midpoint;
+  }
+  return low;
+}
+
+function trimAllocationToTarget(
+  candidates: IsolatedMarketCapacity[],
+  allocation: BorrowRouteLeg[],
+  targetRaw: bigint,
+  healthRaw: bigint,
+): BorrowRouteLeg[] {
+  if (targetRaw <= 0n || healthRaw <= 0n) return [];
+  const candidateByMarket = new Map(
+    candidates.map((candidate) => [candidate.marketId, candidate]),
+  );
+  let excess = allocation.reduce(
+    (sum, leg) => sum + BigInt(leg.borrowAmount.raw),
+    -targetRaw,
+  );
+  const trimmed = [...allocation].sort((left, right) => {
+    const leftCandidate = candidateByMarket.get(left.marketId);
+    const rightCandidate = candidateByMarket.get(right.marketId);
+    if (leftCandidate && rightCandidate) {
+      const rateComparison = compareRatios(
+        rightCandidate.currentBorrowApy,
+        leftCandidate.currentBorrowApy,
+      );
+      if (rateComparison !== 0) return rateComparison;
+    }
+    return right.marketId.localeCompare(left.marketId);
+  });
+
+  return trimmed
+    .map((leg) => {
+      const candidate = candidateByMarket.get(leg.marketId);
+      if (!candidate) return null;
+      const borrowRaw = BigInt(leg.borrowAmount.raw);
+      const reduction = minBigInt(excess > 0n ? excess : 0n, borrowRaw);
+      const nextBorrowRaw = borrowRaw - reduction;
+      excess -= reduction;
+      if (nextBorrowRaw <= 0n) return null;
+      return routeLeg(
+        candidate,
+        collateralForBorrowAtHealth(candidate, nextBorrowRaw, healthRaw),
+        nextBorrowRaw,
+      );
+    })
+    .filter((leg): leg is BorrowRouteLeg => leg !== null);
+}
+
+function equalizeRouteHealthFactors(
+  legs: BorrowRouteLeg[],
+  candidates: IsolatedMarketCapacity[],
+  totalCollateral: Map<string, bigint>,
+): BorrowRouteLeg[] {
+  if (!legs.length) return [];
+  const candidateByMarket = new Map(
+    candidates.map((candidate) => [candidate.marketId, candidate]),
+  );
+  const healthScale = 10n ** 18n;
+
+  const assignedAtHealth = (healthRaw: bigint): bigint[] | null => {
+    const assigned = legs.map((leg) => {
+      const candidate = candidateByMarket.get(leg.marketId);
+      if (!candidate) return null;
+      const borrowLimitRaw = mulDivUp(
+        BigInt(leg.borrowAmount.raw),
+        healthRaw,
+        healthScale,
+      );
+      return collateralForBorrowLimit(candidate, borrowLimitRaw);
+    });
+    if (assigned.some((value) => value === null)) return null;
+
+    const usedByCollateral = new Map<string, bigint>();
+    assigned.forEach((value, index) => {
+      const key = legs[index]!.collateralToken.toLowerCase();
+      usedByCollateral.set(key, (usedByCollateral.get(key) ?? 0n) + value!);
+    });
+    for (const [token, usedRaw] of usedByCollateral) {
+      if (usedRaw > (totalCollateral.get(token) ?? 0n)) return null;
+    }
+    return assigned as bigint[];
+  };
+
+  let low = 0n;
+  let high = healthScale;
+  while (assignedAtHealth(high) !== null) high *= 2n;
+  while (low + 1n < high) {
+    const midpoint = (low + high) / 2n;
+    if (assignedAtHealth(midpoint) !== null) low = midpoint;
+    else high = midpoint;
+  }
+
+  const assigned = assignedAtHealth(low);
+  if (!assigned) return legs;
+  return legs.map((leg, index) => {
+    const candidate = candidateByMarket.get(leg.marketId);
+    return candidate
+      ? routeLeg(candidate, assigned[index]!, BigInt(leg.borrowAmount.raw))
+      : leg;
+  });
+}
+
 function isolatedMarketCapacityFromSnapshot(
   market: MorphoLiveMarketSnapshot,
 ): IsolatedMarketCapacity {
   return {
     marketId: market.marketId,
     collateralToken: market.collateralToken,
-    collateralSymbol: market.symbol,
+    collateralSymbol: market.rawCollateral.protocolSymbol,
     collateralAvailable: market.collateralAvailableExact,
+    collateralSources: market.rawCollateral.sources.map((source) => ({
+      token: source.token,
+      symbol: source.symbol,
+      convertedBalance: rawAmount(
+        BigInt(source.convertedBalanceRaw),
+        market.rawCollateral.protocolDecimals,
+      ),
+    })),
     oraclePrice: rawRatio(
       BigInt(market.rawCollateral.priceRaw) *
         BigInt(market.rawCollateral.valueNumeratorScale),
@@ -651,6 +766,38 @@ function maximumMorphoAllocation(
   return legs;
 }
 
+function maximumMorphoAllocationAtHealth(
+  candidates: IsolatedMarketCapacity[],
+  sourceCollateral: Map<string, bigint>,
+  sourceLiquidity: Map<string, bigint>,
+  healthRaw: bigint,
+): BorrowRouteLeg[] {
+  const collateral = new Map(sourceCollateral);
+  const liquidity = new Map(sourceLiquidity);
+  const legs: BorrowRouteLeg[] = [];
+  const ordered = [...candidates].sort(compareMarketCapacityPriority);
+  for (const candidate of ordered) {
+    const key = candidate.collateralToken.toLowerCase();
+    const collateralRaw = collateral.get(key) ?? 0n;
+    const liquidityRaw = liquidity.get(candidate.marketId) ?? 0n;
+    const capacityRaw = marketBorrowCapacityAtHealth(
+      candidate,
+      collateralRaw,
+      liquidityRaw,
+      healthRaw,
+    );
+    if (capacityRaw <= 0n) continue;
+    const assignedRaw = minBigInt(
+      collateralRaw,
+      collateralForBorrowAtHealth(candidate, capacityRaw, healthRaw),
+    );
+    legs.push(routeLeg(candidate, assignedRaw, capacityRaw));
+    collateral.set(key, collateralRaw - assignedRaw);
+    liquidity.set(candidate.marketId, liquidityRaw - capacityRaw);
+  }
+  return legs;
+}
+
 function marketBorrowCapacity(
   candidate: IsolatedMarketCapacity,
   collateralRaw: bigint,
@@ -671,14 +818,54 @@ function marketBorrowCapacity(
   );
 }
 
+function marketBorrowCapacityAtHealth(
+  candidate: IsolatedMarketCapacity,
+  collateralRaw: bigint,
+  liquidityRaw: bigint,
+  healthRaw: bigint,
+): bigint {
+  if (healthRaw <= 0n) return 0n;
+  return minBigInt(
+    mulDivDown(
+      marketBorrowCapacity(candidate, collateralRaw, 2n ** 255n),
+      ROUTE_HEALTH_SCALE,
+      healthRaw,
+    ),
+    liquidityRaw,
+  );
+}
+
 function collateralForBorrow(
   candidate: IsolatedMarketCapacity,
   borrowRaw: bigint,
 ): bigint {
-  return mulDivUp(
-    borrowRaw * BigInt(candidate.oraclePrice.denominator),
+  return collateralForBorrowLimit(candidate, borrowRaw);
+}
+
+function collateralForBorrowAtHealth(
+  candidate: IsolatedMarketCapacity,
+  borrowRaw: bigint,
+  healthRaw: bigint,
+): bigint {
+  return collateralForBorrowLimit(
+    candidate,
+    mulDivUp(borrowRaw, healthRaw, ROUTE_HEALTH_SCALE),
+  );
+}
+
+function collateralForBorrowLimit(
+  candidate: IsolatedMarketCapacity,
+  borrowLimitRaw: bigint,
+): bigint {
+  const collateralValueRaw = mulDivUp(
+    borrowLimitRaw,
     BigInt(candidate.lltv.denominator),
-    BigInt(candidate.oraclePrice.numerator) * BigInt(candidate.lltv.numerator),
+    BigInt(candidate.lltv.numerator),
+  );
+  return mulDivUp(
+    collateralValueRaw,
+    BigInt(candidate.oraclePrice.denominator),
+    BigInt(candidate.oraclePrice.numerator),
   );
 }
 
@@ -727,17 +914,14 @@ function compareMarketCapacityPriority(
   return left.marketId.localeCompare(right.marketId);
 }
 
-function compareMarketRateThenCapacity(
-  left: IsolatedMarketCapacity,
-  right: IsolatedMarketCapacity,
+function compareRouteBorrowAmount(
+  left: BorrowRouteLeg,
+  right: BorrowRouteLeg,
 ): number {
-  const rateComparison = compareRatios(
-    left.currentBorrowApy,
-    right.currentBorrowApy,
-  );
-  return rateComparison !== 0
-    ? rateComparison
-    : compareMarketCapacityPriority(left, right);
+  const difference =
+    BigInt(right.borrowAmount.raw) - BigInt(left.borrowAmount.raw);
+  if (difference !== 0n) return difference > 0n ? 1 : -1;
+  return left.marketId.localeCompare(right.marketId);
 }
 
 function compareRatios(left: RawRatio, right: RawRatio): number {
@@ -763,6 +947,58 @@ function weightedRouteApy(legs: BorrowRouteLeg[]): number | null {
     0n,
   );
   return Number(weightedWad) / Number(borrowedRaw);
+}
+
+function morphoAssetEvaluations(
+  input: MorphoLiveSnapshot,
+  legs: BorrowRouteLeg[],
+): ProtocolAssetEvaluation[] | undefined {
+  if (!input.assetEvaluations) return undefined;
+  const contributions = new Map<string, bigint>();
+  const protocolTokens = new Set(
+    legs.map((leg) => leg.collateralToken.toLowerCase()),
+  );
+  for (const protocolToken of protocolTokens) {
+    const market = input.markets.find(
+      (candidate) => candidate.collateralToken.toLowerCase() === protocolToken,
+    );
+    if (!market) continue;
+    const sources = market.rawCollateral.sources;
+    const totalBalanceRaw = sources.reduce(
+      (sum, source) => sum + BigInt(source.convertedBalanceRaw),
+      0n,
+    );
+    const totalValueRaw = legs
+      .filter((leg) => leg.collateralToken.toLowerCase() === protocolToken)
+      .reduce((sum, leg) => sum + BigInt(leg.collateralValue.raw), 0n);
+    if (totalBalanceRaw <= 0n || totalValueRaw <= 0n) continue;
+    let allocated = 0n;
+    sources.forEach((source, index) => {
+      const contribution =
+        index === sources.length - 1
+          ? totalValueRaw - allocated
+          : mulDivDown(
+              totalValueRaw,
+              BigInt(source.convertedBalanceRaw),
+              totalBalanceRaw,
+            );
+      allocated += contribution;
+      const key = source.token.toLowerCase();
+      contributions.set(key, (contributions.get(key) ?? 0n) + contribution);
+    });
+  }
+  return input.assetEvaluations.map((evaluation) => {
+    const { contributionUsd: _previousContribution, ...base } = evaluation;
+    const contribution = contributions.get(evaluation.token.toLowerCase());
+    return contribution && contribution > 0n
+      ? {
+          ...base,
+          contributionUsd: rawAmountToNumber(
+            rawAmount(contribution, USDC_DECIMALS),
+          ),
+        }
+      : base;
+  });
 }
 
 export function quoteMorphoLiveSnapshot(
@@ -802,6 +1038,7 @@ export function quoteMorphoLiveSnapshot(
   }
 
   const weightedApy = weightedRouteApy(maximumRoute.legs);
+  const assetEvaluations = morphoAssetEvaluations(input, maximumRoute.legs);
   const collateralUsed = maximumRoute.legs.map((leg) => ({
     token: leg.collateralToken,
     symbol: leg.collateralSymbol,
@@ -818,13 +1055,14 @@ export function quoteMorphoLiveSnapshot(
     BigInt(Math.round(safetyBufferForProfile(input.safetyProfile) * 100)),
     100n,
   );
+  const { annualRateExact: _previousAnnualRateExact, ...morphoInput } = input;
 
   return buildLiveQuote({
     input: {
-      ...input,
+      ...morphoInput,
+      ...(assetEvaluations ? { assetEvaluations } : {}),
       indicativeApr: null,
       annualRateValue: weightedApy,
-      annualRateExact: undefined,
       annualRateTransform: "ratio",
       annualRateConvention: "apy",
       rateSourceId: "morpho-blue:weighted-current-route",

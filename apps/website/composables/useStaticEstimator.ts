@@ -22,10 +22,11 @@ import {
   scanConnectedWallet,
   type Eip1193Provider,
 } from "../utils/static-discovery";
-import { filterSmallBalances } from "../utils/estimator-ux";
+import { filterSmallBalances, isAssetSelectable } from "../utils/estimator-ux";
 import { loadStaticMorphoSnapshot } from "../utils/static-morpho";
 import { resolveWalletNames, type WalletNames } from "../utils/static-names";
 import { formatCompactWalletAddress } from "../utils/wallet-identity";
+import { withDeadline } from "../utils/promise-deadline";
 
 type AnnouncedProvider = {
   descriptor: WalletProviderDescriptor;
@@ -45,6 +46,8 @@ type EstimatorSnapshot = {
 };
 
 const LAST_WALLET_RDNS_KEY = "powerrr:last-wallet-rdns";
+const WALLET_NAME_READ_TIMEOUT_MS = 8_000;
+const PROTOCOL_SOURCE_TIMEOUT_MS = 20_000;
 
 export function useStaticEstimator() {
   const announcedProviders = shallowRef<AnnouncedProvider[]>([]);
@@ -126,6 +129,7 @@ export function useStaticEstimator() {
       (asset) =>
         asset.balanceReadStatus === "success" &&
         Number(asset.balance) > 0 &&
+        isAssetSelectable(asset) &&
         selected.has(asset.token.toLowerCase()),
     );
   });
@@ -259,7 +263,9 @@ export function useStaticEstimator() {
           asset.balanceReadStatus === "success" && Number(asset.balance) > 0,
       );
       const availableTokens = new Set(
-        positiveAssets.map((asset) => asset.token.toLowerCase()),
+        positiveAssets
+          .filter((asset) => isAssetSelectable(asset))
+          .map((asset) => asset.token.toLowerCase()),
       );
       const preservedTokens = options.preserveSelection
         ? selectedCollateralTokens.value.filter((token) =>
@@ -276,13 +282,35 @@ export function useStaticEstimator() {
         message:
           "Reading names and complete protocol state at the selected block.",
       };
+      let completedProviderSources = 0;
+      const reportProviderSource = (label: string) => {
+        completedProviderSources += 1;
+        if (attempt !== scanAttempt) return;
+        progress.value = {
+          phase: "providers",
+          completed: completedProviderSources,
+          total: 5,
+          message: `${label} finished. ${completedProviderSources} of 5 snapshot sources complete.`,
+        };
+      };
       const [names, providerSnapshot] = await Promise.all([
-        resolveWalletNames({
+        withDeadline(
+          resolveWalletNames({
+            provider,
+            account: result.receipt.account,
+            blockNumber: result.receipt.blockNumber,
+          }),
+          WALLET_NAME_READ_TIMEOUT_MS,
+          "Wallet name reads did not settle before the scan deadline.",
+        )
+          .catch(() => ({ ensName: null, gweiName: null }))
+          .finally(() => reportProviderSource("Wallet names")),
+        loadProviderSnapshots(
           provider,
-          account: result.receipt.account,
-          blockNumber: result.receipt.blockNumber,
-        }),
-        loadProviderSnapshots(provider, positiveAssets, result.receipt),
+          positiveAssets,
+          result.receipt,
+          reportProviderSource,
+        ),
       ]);
       if (
         attempt !== scanAttempt ||
@@ -363,7 +391,10 @@ export function useStaticEstimator() {
 
   function setAssetSelected(token: string, selected: boolean): void {
     const next = new Set(selectedCollateralTokens.value);
-    if (selected) next.add(token);
+    const asset = assets.value.find(
+      (candidate) => candidate.token.toLowerCase() === token.toLowerCase(),
+    );
+    if (selected && asset && isAssetSelectable(asset)) next.add(asset.token);
     else next.delete(token);
     selectedCollateralTokens.value = [...next];
   }
@@ -594,6 +625,7 @@ async function loadProviderSnapshots(
   provider: Eip1193Provider,
   portfolio: PortfolioAsset[],
   receipt: ReadReceipt,
+  onSourceSettled?: (label: string) => void,
 ): Promise<{ snapshots: LiveQuoteSnapshot[]; statuses: ProviderStatus[] }> {
   const statuses: ProviderStatus[] = [];
   const snapshots: LiveQuoteSnapshot[] = [];
@@ -642,10 +674,16 @@ async function loadProviderSnapshots(
       try {
         return {
           loader,
-          snapshot: (await loader.run()) as LiveQuoteSnapshot,
+          snapshot: await withDeadline<LiveQuoteSnapshot>(
+            loader.run() as Promise<LiveQuoteSnapshot>,
+            PROTOCOL_SOURCE_TIMEOUT_MS,
+            `${loader.label} did not settle before the protocol-read deadline.`,
+          ),
         } as const;
       } catch (cause) {
         return { loader, cause } as const;
+      } finally {
+        onSourceSettled?.(loader.label);
       }
     }),
   );

@@ -10,7 +10,11 @@ import {
 } from "@phosphor-icons/vue";
 import { ethereumAssetMetadataByAddress } from "@powerrr/configs";
 import type { PortfolioAsset } from "@powerrr/shared-types";
-import { formatUsdValue, sortAssetsByUsdValue } from "../utils/estimator-ux";
+import {
+  formatUsdValue,
+  isAssetSelectable,
+  sortAssetsByUsdValue,
+} from "../utils/estimator-ux";
 
 const props = defineProps<{
   assets: PortfolioAsset[];
@@ -121,14 +125,14 @@ function assetValueUsd(asset: PortfolioAsset): number {
 const sortedAssets = computed(() => sortAssetsByUsdValue(props.assets));
 const smallAssets = computed(() =>
   sortedAssets.value.filter(
-    (asset) => asset.marketPriceUsd && assetValueUsd(asset) < 5,
+    (asset) => isAssetSelectable(asset) && assetValueUsd(asset) < 5,
   ),
 );
 const unpricedAssets = computed(() =>
-  sortedAssets.value.filter((asset) => !asset.marketPriceUsd),
+  sortedAssets.value.filter((asset) => !isAssetSelectable(asset)),
 );
 const pricedAssets = computed(() =>
-  sortedAssets.value.filter((asset) => Boolean(asset.marketPriceUsd)),
+  sortedAssets.value.filter((asset) => isAssetSelectable(asset)),
 );
 const regularAssets = computed(() => {
   const regular = pricedAssets.value.filter(
@@ -446,16 +450,11 @@ function formatBalance(asset: PortfolioAsset): string {
               v-for="asset in unpricedAssets"
               :key="asset.token"
               type="button"
-              class="focus-ring rounded-xl border p-4 text-left"
-              :class="
-                isSelected(asset)
-                  ? 'border-river bg-info-surface ring-1 ring-river'
-                  : 'border-line bg-surface hover:border-river/60'
-              "
-              :aria-pressed="isSelected(asset)"
-              @click="emit('toggle', asset.token, !isSelected(asset))"
+              class="rounded-xl border border-line bg-mist/35 p-4 text-left text-slate disabled:cursor-not-allowed"
+              :aria-label="`${asset.symbol} cannot be selected because its price is unavailable`"
+              disabled
             >
-              <strong>{{ asset.symbol }}</strong>
+              <strong class="text-ink">{{ asset.symbol }}</strong>
               <span class="mt-1 block text-sm text-slate">
                 {{ formatBalance(asset) }} · Price unavailable
               </span>
