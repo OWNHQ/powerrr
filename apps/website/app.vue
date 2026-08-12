@@ -294,7 +294,11 @@ function providerStatus(provider: ProviderItem) {
 
 <template>
   <a href="#main-content" class="skip-link">Skip to estimator</a>
-  <main id="main-content" class="flex min-h-screen flex-col bg-paper text-ink">
+  <main
+    id="main-content"
+    class="flex min-h-screen flex-col bg-paper text-ink"
+    data-clarity-mask
+  >
     <header
       class="sticky top-0 z-30 border-b border-line/80 bg-surface/95 backdrop-blur"
     >
@@ -522,8 +526,9 @@ function providerStatus(provider: ProviderItem) {
               {{ ETHEREUM_TOKEN_REGISTRY_TOTAL_COUNT }}-token Ethereum registry
               at one block. Onchain names, prices, and provider rules are then
               read through the same wallet. Name lookup never uses an HTTP
-              gateway. No signature, transaction, analytics request, or Powerrr
-              API is used.
+              gateway. No signature, transaction, wallet data, balance, or
+              estimate is sent to Powerrr. Public builds may collect masked,
+              cookieless interaction data with Microsoft Clarity.
             </p>
           </div>
 

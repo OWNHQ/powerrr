@@ -25,9 +25,9 @@ The user opens the static site with an injected Ethereum wallet on Ethereum Main
 ## Capabilities and Constraints
 
 - Ethereum Mainnet only.
-- Static browser application with no Powerrr backend, database, hosted RPC, GraphQL client, analytics client, lead form, or internal underwriting application.
+- Static browser application with no Powerrr backend, database, hosted RPC, GraphQL client, lead form, or internal underwriting application. Public builds may use Microsoft Clarity with storage consent denied and the estimator surface masked.
 - Wallet discovery, onchain names, prices, protocol state, and estimates use the user-selected EIP-1193 provider and a pinned recent block.
-- The site never requests a signature or transaction and does not transmit or persist accounts, balances, quotes, preferences, or the user's choice to visit OWN.
+- The site never requests a signature or transaction and does not transmit or persist accounts, balances, quotes, preferences, or the user's choice to visit OWN. Clarity may receive cookieless interaction telemetry, but the complete estimator surface is explicitly masked and no custom wallet or estimate properties are sent.
 - Comparisons cover Aave v3, SparkLend, Compound III, and reviewed Morpho USDC markets.
 - OWN is not included as a borrowing provider. A minimal bottom-right page credit links to its public site without sending wallet or estimate data.
 - Estimates are comparisons, not approvals, guarantees of transaction success, liquidation protection, or personalized financial advice.

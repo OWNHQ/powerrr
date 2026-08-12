@@ -2,7 +2,8 @@
 
 The supported public deployment is the verified static artifact in
 `apps/website/.output/public`. It has no Powerrr server, public RPC fallback,
-GraphQL client, analytics client, or lead-submission endpoint.
+GraphQL client, or lead-submission endpoint. A release may optionally include
+Microsoft Clarity in masked, cookieless mode.
 
 ## Build and verify
 
@@ -28,6 +29,12 @@ Vercel is preview-only: do not attach a custom domain. Configure an unused,
 protected branch such as `vercel-production-disabled` as the Vercel Production
 Branch so normal branches receive preview URLs. Vercel Hobby may only be used
 while Powerrr is personal and non-commercial.
+
+The checked-in Clarity project ID is `y177ongyf2`. Set
+`NUXT_PUBLIC_CLARITY_PROJECT_ID` to an alternate ID when needed, or to an empty
+value to disable Clarity for a build. Enable Consent Mode in Clarity with
+analytics and advertising storage denied by default. The app also sends an
+explicit denied Consent V2 state and masks the complete estimator surface.
 
 ## IPFS release
 

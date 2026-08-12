@@ -2,8 +2,8 @@
 
 The public Powerrr application is generated as ordinary HTML, CSS, JavaScript,
 and local image files. It has no deployed server functions and does not contain
-an RPC URL, API key, GraphQL endpoint, analytics client, or lead-submission
-endpoint.
+an RPC URL, API key, GraphQL endpoint, or lead-submission endpoint. Microsoft
+Clarity is enabled with the public Powerrr project ID.
 
 ## Build
 
@@ -12,6 +12,18 @@ corepack enable
 pnpm install --frozen-lockfile
 pnpm build:static
 ```
+
+The checked-in Clarity project ID is `y177ongyf2`. To build without Clarity,
+explicitly provide an empty value:
+
+```bash
+NUXT_PUBLIC_CLARITY_PROJECT_ID= pnpm build:static
+```
+
+An alternate project ID may be supplied with the same variable and may contain
+only letters and numbers. The bootstrap uses Clarity Consent V2 to deny both
+analytics and advertising storage, and the complete estimator surface has
+`data-clarity-mask`. Powerrr does not send custom identifiers, tags, or events.
 
 The deployable directory is `apps/website/.output/public`. The build command
 also writes `SHA256SUMS` inside that directory and rejects known server/API
@@ -23,8 +35,9 @@ pnpm verify:static
 
 Any static file server can serve the directory. Use the headers in
 `vercel.json` as the minimum hosting baseline. The HTML also carries a CSP that
-blocks page-originated network connections; EIP-1193 requests are handled by
-the selected wallet extension or in-app browser.
+blocks page-originated network connections except Clarity when analytics was
+enabled for the build; EIP-1193 requests are handled by the selected wallet
+extension or in-app browser.
 
 ## Runtime boundary
 
