@@ -156,9 +156,9 @@ describe("static token registry", () => {
       "ethereum-top250-2026-07-29-v1",
     );
     expect(ETHEREUM_TOKEN_REGISTRY_RANKED_COUNT).toBe(250);
-    expect(ETHEREUM_TOKEN_REGISTRY_ADDITION_COUNT).toBe(78);
-    expect(ETHEREUM_TOKEN_REGISTRY_TOTAL_COUNT).toBe(328);
-    expect(ethereumTokenRegistryV1).toHaveLength(328);
+    expect(ETHEREUM_TOKEN_REGISTRY_ADDITION_COUNT).toBe(77);
+    expect(ETHEREUM_TOKEN_REGISTRY_TOTAL_COUNT).toBe(327);
+    expect(ethereumTokenRegistryV1).toHaveLength(327);
     expect(
       ethereumTokenRegistryAdditionsV1.map((token) => token.symbol),
     ).toEqual(expect.arrayContaining(["BTC.b", "eBTC", "LINK", "MKR"]));
@@ -253,13 +253,13 @@ describe("static token registry", () => {
 describe("static Morpho USDC market manifest", () => {
   it("pins the complete official set and a structurally executable runtime subset", () => {
     expect(ETHEREUM_MORPHO_USDC_MARKET_MANIFEST_VERSION).toBe(
-      "ethereum-morpho-usdc-25744807-v1",
+      "ethereum-morpho-usdc-25746033-v1",
     );
-    expect(ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT).toBe(119);
-    expect(ethereumMorphoUsdcOfficialMarketIdsV1).toHaveLength(119);
-    expect(ETHEREUM_MORPHO_USDC_EXECUTABLE_COUNT).toBe(117);
-    expect(ethereumMorphoUsdcMarketsV1).toHaveLength(117);
-    expect(ethereumMorphoCollateralTokensV1).toHaveLength(106);
+    expect(ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT).toBe(118);
+    expect(ethereumMorphoUsdcOfficialMarketIdsV1).toHaveLength(118);
+    expect(ETHEREUM_MORPHO_USDC_EXECUTABLE_COUNT).toBe(116);
+    expect(ethereumMorphoUsdcMarketsV1).toHaveLength(116);
+    expect(ethereumMorphoCollateralTokensV1).toHaveLength(105);
     expect(
       new Set(ethereumMorphoUsdcMarketsV1.map((market) => market.marketId))
         .size,

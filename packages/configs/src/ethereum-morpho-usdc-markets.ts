@@ -25,12 +25,12 @@ export type MorphoCollateralRegistryEntry = {
 };
 
 export const ETHEREUM_MORPHO_USDC_MARKET_MANIFEST_VERSION =
-  "ethereum-morpho-usdc-25744807-v1";
-export const ETHEREUM_MORPHO_USDC_MARKET_SOURCE_BLOCK = "25744807";
+  "ethereum-morpho-usdc-25746033-v1";
+export const ETHEREUM_MORPHO_USDC_MARKET_SOURCE_BLOCK = "25746033";
 export const ETHEREUM_MORPHO_USDC_MARKET_SOURCE_HASH =
-  "0xdf4edba77d698521eac2d9fc982aa6e71fca0594caec2d4e70388d34baa633e3";
-export const ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT = 119;
-export const ETHEREUM_MORPHO_USDC_EXECUTABLE_COUNT = 117;
+  "0xc3cd6637c83404e5ce7f5c7ee02ef1c1318a10e1bc7719ed19fe1641f7ff0238";
+export const ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT = 118;
+export const ETHEREUM_MORPHO_USDC_EXECUTABLE_COUNT = 116;
 
 export const ethereumMorphoUsdcOfficialMarketIdsV1 = [
   "0x002278ea242ec722813b4fe3c8eeaa07dbc331c731cc0b4248a1bf0771f933ea",
@@ -49,7 +49,6 @@ export const ethereumMorphoUsdcOfficialMarketIdsV1 = [
   "0x245859412ff82dabcea25ddab15fe5ee5650e20b1af05f65ea1bd8db96416522",
   "0x24852d8d7464402ddcd717415e009d42bf7427d6a8893487f83c75ee0f4a0ea6",
   "0x278ca5513e54e0718a93515d453442f8ecc9a3640dfaf3a88db69f4c8a4880d9",
-  "0x27b9a0a5bfee98a31eb51e3850250d103a9f8e41673c782defc66aa943af0e65",
   "0x2a0b893471c785a1f0fda00df7fca578b703eef7ae7186d2429c2824b5212467",
   "0x2fb3713487c7812e7309935b034f40228841666f6b048faf31fd2110ae674f20",
   "0x31a277fde40c1bd37dd00cb2167fe1d5831b450efecc63323679228a101e9979",
@@ -379,21 +378,6 @@ export const ethereumMorphoUsdcMarketsV1 = [
     oracle: "0xFEC88f8539B8469644025A2955FD1d21577fc40c",
     irm: "0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC",
     lltv: "860000000000000000",
-  },
-  {
-    marketId:
-      "0x27b9a0a5bfee98a31eb51e3850250d103a9f8e41673c782defc66aa943af0e65",
-    createdAtBlock: "24196840",
-    loanToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    loanSymbol: "USDC",
-    loanDecimals: 6,
-    collateralToken: "0x9Bf45ab47747F4B4dD09B3C2c73953484b4eB375",
-    collateralSymbol: "PT-srUSDe-2APR2026",
-    collateralName: "PT Strata Senior USDe 2APR2026",
-    collateralDecimals: 18,
-    oracle: "0x8B417d1e0C08d8005B7Ca1d5ebbc72Ea877DB391",
-    irm: "0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC",
-    lltv: "915000000000000000",
   },
   {
     marketId:
@@ -2434,15 +2418,6 @@ export const ethereumMorphoCollateralTokensV1 = [
     priceMarketId:
       "0x9de73bf59b4b09f9b974081c30a2570174f212ea62de8da777c7770a4832ae72",
     priceOracle: "0xdabD6Bb1c67a911C077c4E63b1c9cf1c0b11F1C0",
-  },
-  {
-    address: "0x9Bf45ab47747F4B4dD09B3C2c73953484b4eB375",
-    symbol: "PT-srUSDe-2APR2026",
-    name: "PT Strata Senior USDe 2APR2026",
-    decimals: 18,
-    priceMarketId:
-      "0x27b9a0a5bfee98a31eb51e3850250d103a9f8e41673c782defc66aa943af0e65",
-    priceOracle: "0x8B417d1e0C08d8005B7Ca1d5ebbc72Ea877DB391",
   },
   {
     address: "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
