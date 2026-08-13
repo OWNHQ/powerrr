@@ -200,7 +200,7 @@ function formatBalance(asset: PortfolioAsset): string {
           <div>
             <h2 id="assets-title" class="type-title">Choose collateral</h2>
             <p class="mt-1 max-w-2xl text-sm leading-6 text-slate">
-              Priced balances above $5 are selected automatically.
+              Priced balances above $5.00 are selected automatically.
             </p>
           </div>
           <p

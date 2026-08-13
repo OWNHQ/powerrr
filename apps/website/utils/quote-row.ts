@@ -3,6 +3,7 @@ import type {
   WebsiteQuoteRow,
 } from "@powerrr/shared-types";
 import { compareRawAmounts } from "@powerrr/math";
+import { formatUsdValue } from "./estimator-ux";
 
 export type WebsiteQuoteGroupRow = WebsiteQuoteRow & {
   groupId: string;
@@ -30,7 +31,7 @@ export function toWebsiteQuoteRow(quote: ProtocolBorrowQuote): WebsiteQuoteRow {
   return {
     protocolId: quote.protocolId,
     protocolLabel: quote.protocolLabel,
-    amountDisplay: formatUsdForRow(quote.safeBorrowUsd),
+    amountDisplay: formatUsdValue(quote.safeBorrowUsd),
     theoreticalBorrowUsd: quote.theoreticalBorrowUsd,
     safeBorrowUsd: quote.safeBorrowUsd,
     targetBorrowAsset: quote.targetBorrowAsset,
@@ -165,18 +166,6 @@ export function collateralDisplay(
   }
 
   return `${symbols.slice(0, 2).join(", ")} +${symbols.length - 2}`;
-}
-
-function formatUsdForRow(value: number | null | undefined): string {
-  if (value === null || value === undefined) {
-    return "Unavailable";
-  }
-
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: value >= 100_000 ? 0 : 2,
-  }).format(value);
 }
 
 function sortQuotesForDisplay(

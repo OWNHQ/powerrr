@@ -183,6 +183,20 @@ describe("estimator UX helpers", () => {
     });
   });
 
+  it("rounds sub-cent coverage dust to zero", () => {
+    const assets: CoverageAsset[] = [
+      { token: tokenA, balance: "100.000001", marketPriceUsd: 1 },
+    ];
+
+    expect(
+      summarizeCollateralCoverage(
+        assets,
+        [selectedEvaluationQuote(tokenA, 100)],
+        availableStatuses(),
+      ),
+    ).toMatchObject({ modeledValueUsd: 100, gapValueUsd: 0 });
+  });
+
   it("reports selected value that is not modeled by any pooled path", () => {
     const assets: CoverageAsset[] = [
       { token: tokenA, balance: "2", marketPriceUsd: 100 },
@@ -344,13 +358,13 @@ describe("estimator UX helpers", () => {
     ).toEqual(["USDC", "DAI", "USDT"]);
   });
 
-  it("formats small positive balances without turning them into zero", () => {
-    expect(formatUsdValue(0)).toBe("$0");
-    expect(formatUsdValue(0.009)).toBe("$0.0090");
-    expect(formatUsdValue(0.0488889)).toBe("$0.0489");
+  it("formats every dollar amount to two decimal places", () => {
+    expect(formatUsdValue(0)).toBe("$0.00");
+    expect(formatUsdValue(0.009)).toBe("$0.01");
+    expect(formatUsdValue(0.0488889)).toBe("$0.05");
     expect(formatUsdValue(0.93)).toBe("$0.93");
     expect(formatUsdValue(45)).toBe("$45.00");
-    expect(formatUsdValue(27_652.42)).toBe("$27,652");
+    expect(formatUsdValue(27_652.42)).toBe("$27,652.42");
   });
 
   it("maps technical estimator failures to safe user-facing messages", () => {

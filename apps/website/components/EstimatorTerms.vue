@@ -196,7 +196,7 @@ function isSelectedUtilization(targetPercent: number): boolean {
             @input="onRangeInput"
           />
           <div class="mt-2 flex justify-between text-xs text-slate">
-            <span>$0</span><span>Ceiling</span>
+            <span>$0.00</span><span>Ceiling</span>
           </div>
         </div>
       </div>

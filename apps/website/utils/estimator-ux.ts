@@ -125,7 +125,7 @@ export function summarizeCollateralCoverage(
   return {
     selectedValueUsd,
     modeledValueUsd,
-    gapValueUsd: Math.max(0, selectedValueUsd - modeledValueUsd),
+    gapValueUsd: roundUsd(Math.max(0, selectedValueUsd - modeledValueUsd)),
     sourceStatus: providerStatuses.some(
       (status) => status.status === "unavailable",
     )
@@ -221,29 +221,17 @@ export function formatUsdValue(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "Unavailable";
   }
-  const minimumFractionDigits =
-    value > 0 && value < 0.01
-      ? 4
-      : value > 0 && value < 1
-        ? 2
-        : value > 0 && value < 100
-          ? 2
-          : 0;
-  const maximumFractionDigits =
-    value > 0 && value < 0.01
-      ? 6
-      : value > 0 && value < 1
-        ? 4
-        : value > 0 && value < 100
-          ? 2
-          : 0;
 
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    minimumFractionDigits,
-    maximumFractionDigits,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
+}
+
+function roundUsd(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 export function friendlyEstimatorError(error: unknown): string {

@@ -1189,12 +1189,12 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
   await expect(collateralCoverage).toBeVisible();
   await expect(
     collateralCoverage.locator("[data-coverage-selected]"),
-  ).toHaveText("$6,000");
+  ).toHaveText("$6,000.00");
   await expect(
     collateralCoverage.locator("[data-coverage-modeled]"),
-  ).toHaveText("$6,000");
+  ).toHaveText("$6,000.00");
   await expect(collateralCoverage.locator("[data-coverage-gap]")).toHaveText(
-    "$0",
+    "$0.00",
   );
   await expect(
     collateralCoverage.getByText(
@@ -1207,7 +1207,9 @@ test("static wallet scan is explicit and uses no Powerrr API", async ({
     ),
   ).toBeVisible();
   await expect(page.getByLabel("Borrow amount in USDC")).toHaveValue("2400.00");
-  await expect(page.getByText("$4,800 ceiling", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("$4,800.00 ceiling", { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByText(
       "Ceiling and capacity utilization use the highest pooled estimate ($4,800).",
@@ -1356,12 +1358,12 @@ test("native ETH and WETH both contribute to a WETH collateral path", async ({
   const collateralCoverage = page.locator("[data-collateral-coverage]");
   await expect(
     collateralCoverage.locator("[data-coverage-selected]"),
-  ).toHaveText("$9,000");
+  ).toHaveText("$9,000.00");
   await expect(
     collateralCoverage.locator("[data-coverage-modeled]"),
-  ).toHaveText("$9,000");
+  ).toHaveText("$9,000.00");
   await expect(collateralCoverage.locator("[data-coverage-gap]")).toHaveText(
-    "$0",
+    "$0.00",
   );
 
   const aave = page.locator('[data-protocol-id="aave"]');
