@@ -25,11 +25,11 @@ export type MorphoCollateralRegistryEntry = {
 };
 
 export const ETHEREUM_MORPHO_USDC_MARKET_MANIFEST_VERSION =
-  "ethereum-morpho-usdc-25724749-v1";
-export const ETHEREUM_MORPHO_USDC_MARKET_SOURCE_BLOCK = "25724749";
+  "ethereum-morpho-usdc-25744807-v1";
+export const ETHEREUM_MORPHO_USDC_MARKET_SOURCE_BLOCK = "25744807";
 export const ETHEREUM_MORPHO_USDC_MARKET_SOURCE_HASH =
-  "0xfc0bbd530560e994b9bc62de8f65757cc1500f88770aa0e8d5943b6b8bb1a18d";
-export const ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT = 118;
+  "0xdf4edba77d698521eac2d9fc982aa6e71fca0594caec2d4e70388d34baa633e3";
+export const ETHEREUM_MORPHO_USDC_OFFICIAL_LISTED_COUNT = 119;
 export const ETHEREUM_MORPHO_USDC_EXECUTABLE_COUNT = 117;
 
 export const ethereumMorphoUsdcOfficialMarketIdsV1 = [
@@ -43,6 +43,7 @@ export const ethereumMorphoUsdcOfficialMarketIdsV1 = [
   "0x1a9ccaca2dba9469cd9cba3d077466761b05f465c412d2bf2c71614c4963dd84",
   "0x1d09bf979a167075f5608686642fd3cdb458de742a234175892fa03f23693f6b",
   "0x1e9d614631a7df0ec07fb05b2c8cb2491575fd1a63a33bf187a6afb295a4fc64",
+  "0x2015b0fa3d69301a0f258aa1c8b7da4769992e1bc01a0e63064154420e438a7b",
   "0x22fe4c688161863c73571a2b8db65cc11a4a6bceee4f0dea4aa83e4b784f1bd9",
   "0x2412afc9614939a5d994397fe0b94a4f6fb8bc02bfc139e1a5956a865e2efe26",
   "0x245859412ff82dabcea25ddab15fe5ee5650e20b1af05f65ea1bd8db96416522",

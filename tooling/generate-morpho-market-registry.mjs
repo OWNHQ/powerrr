@@ -36,6 +36,7 @@ const markets = rows
   .filter(
     (row) =>
       row.identityVerified === true &&
+      row.inRegistry === true &&
       String(row.address).toLowerCase() !== ZERO_ADDRESS &&
       String(row.oracle).toLowerCase() !== ZERO_ADDRESS &&
       String(row.irm).toLowerCase() !== ZERO_ADDRESS &&
