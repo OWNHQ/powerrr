@@ -643,7 +643,6 @@ function providerStatus(provider: ProviderItem) {
                     :block-loaded-at-label="blockLoadedAtLabel"
                     :calls-succeeded="receipt.callsSucceeded"
                     :calls-attempted="receipt.callsAttempted"
-                    :read-coverage="receipt.readCoverage"
                   />
                 </template>
               </EstimatorAssets>
@@ -732,7 +731,6 @@ function providerStatus(provider: ProviderItem) {
           :block-loaded-at-label="blockLoadedAtLabel"
           :calls-succeeded="receipt.callsSucceeded"
           :calls-attempted="receipt.callsAttempted"
-          :read-coverage="receipt.readCoverage"
         />
       </div>
     </Transition>
