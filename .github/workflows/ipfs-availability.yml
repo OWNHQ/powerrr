@@ -24,7 +24,9 @@ jobs:
       - name: Check immutable gateway URL
         run: |
           CID="$(jq -r .cid release-metadata.json)"
+          IPFS_URL="$(jq -r .ipfsUrl release-metadata.json)"
           test -n "$CID"
+          test -n "$IPFS_URL"
           curl --fail --location --retry 8 --retry-all-errors \
-            --max-time 90 "https://${CID}.ipfs.dweb.link/" \
+            --max-time 90 "$IPFS_URL" \
             --output /dev/null

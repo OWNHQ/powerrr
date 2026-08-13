@@ -64,7 +64,7 @@ It does not delete or replace earlier pins.
 The immutable public URL is:
 
 ```text
-https://<CID>.ipfs.dweb.link/
+https://<CID>.ipfs.inbrowser.link/
 ```
 
 Use the CID-subdomain form. Root-relative Nuxt assets do not work through a

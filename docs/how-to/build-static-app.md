@@ -74,6 +74,6 @@ or icons from the network. Run `pnpm report:token-coverage` before release.
 The generated directory is suitable for an IPFS import because routes and
 assets are static. Publish the complete directory, retain `SHA256SUMS`, and
 verify the imported files before announcing a CID. Use a CID-subdomain URL such
-as `https://<CID>.ipfs.dweb.link/`; path-style gateway URLs are unsupported
+as `https://<CID>.ipfs.inbrowser.link/`; path-style gateway URLs are unsupported
 because the app intentionally uses root-relative assets. See
 [Release the static public app](deploy-live.md).

@@ -16,7 +16,7 @@ if (command === "upload-directory") {
   const artifactPath = resolve(argument ?? DEFAULT_ARTIFACT);
   const result = await uploadDirectory(artifactPath, token);
   await emitOutput("cid", result.cid);
-  await emitOutput("ipfs_url", `https://${result.cid}.ipfs.dweb.link/`);
+  await emitOutput("ipfs_url", `https://${result.cid}.ipfs.inbrowser.link/`);
   console.log(`Pinned ${result.size} bytes as ${result.cid}.`);
 } else if (command === "prune") {
   await pruneReleases(token, Number(argument ?? 3));
