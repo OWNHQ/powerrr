@@ -20,9 +20,11 @@ if (command === "upload-directory") {
   console.log(`Pinned ${result.size} bytes as ${result.cid}.`);
 } else if (command === "prune") {
   await pruneReleases(token, Number(argument ?? 3));
+} else if (command === "pin-hash") {
+  await pinHash(token, argument);
 } else {
   throw new Error(
-    "Usage: node tooling/pinata-release.mjs <upload-directory [path]|prune [count]>",
+    "Usage: node tooling/pinata-release.mjs <upload-directory [path]|prune [count]|pin-hash <cid>>",
   );
 }
 
@@ -91,14 +93,37 @@ async function pruneReleases(jwt, retainCount) {
       ) === index,
   );
 
+  const protectedCids = new Set(
+    (process.env.PINATA_PROTECTED_CIDS ?? "")
+      .split(/[\s,]+/)
+      .map((cid) => cid.trim())
+      .filter(Boolean),
+  );
+  const retainedCids = new Set(
+    uniqueRows
+      .filter((row) => protectedCids.has(row.ipfs_pin_hash))
+      .map((row) => row.ipfs_pin_hash),
+  );
+
+  for (const row of uniqueRows) {
+    if (retainedCids.size >= retainCount) break;
+    retainedCids.add(row.ipfs_pin_hash);
+  }
+
   await emitOutput(
     "rollback_cids",
     JSON.stringify(
-      uniqueRows.slice(1, retainCount).map((row) => row.ipfs_pin_hash),
+      uniqueRows
+        .filter(
+          (row, index) => index > 0 && retainedCids.has(row.ipfs_pin_hash),
+        )
+        .map((row) => row.ipfs_pin_hash),
     ),
   );
 
-  for (const row of uniqueRows.slice(retainCount)) {
+  for (const row of uniqueRows.filter(
+    (candidate) => !retainedCids.has(candidate.ipfs_pin_hash),
+  )) {
     const deleteResponse = await fetch(
       `${API_ROOT}/pinning/unpin/${encodeURIComponent(row.ipfs_pin_hash)}`,
       { method: "DELETE", headers: { Authorization: `Bearer ${jwt}` } },
@@ -112,6 +137,42 @@ async function pruneReleases(jwt, retainCount) {
       `Removed old Powerrr release ${row.ipfs_pin_hash} from Pinata.`,
     );
   }
+}
+
+async function pinHash(jwt, cid) {
+  if (!cid || !/^b[a-z2-7]{20,}$/.test(cid)) {
+    throw new Error("pin-hash requires a valid CIDv1.");
+  }
+
+  const existing = (await listPublicFiles(jwt)).some(
+    (row) => row.ipfs_pin_hash === cid,
+  );
+  if (existing) {
+    console.log(`Protected CID ${cid} is already pinned.`);
+    return;
+  }
+
+  const response = await fetch(`${API_ROOT}/pinning/pinByHash`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      hashToPin: cid,
+      pinataMetadata: {
+        name: `${RELEASE_PREFIX}protected-${cid.slice(0, 12)}`,
+        keyvalues: { project: "powerrr", protected: "true" },
+      },
+    }),
+  });
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `Could not pin protected CID ${cid} (${response.status}): ${body.slice(0, 1_000)}`,
+    );
+  }
+  console.log(`Restored protected CID ${cid} to Pinata.`);
 }
 
 async function listPublicFiles(jwt) {

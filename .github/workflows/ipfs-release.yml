@@ -61,10 +61,29 @@ jobs:
           path: apps/website/.output/public
       - name: Recheck downloaded artifact
         run: node tooling/verify-static-artifact.mjs
+      - name: Resolve protected ENS deployment
+        id: ens
+        run: |
+          protected_cid="$(curl --fail --silent --show-error --head https://powerrr.eth.limo/ \
+            | sed -n 's#^[Xx]-[Ii]pfs-[Rr]oots: \([^[:space:]]*\).*$#\1#p' \
+            | tr -d '\r' \
+            | head -n 1)"
+          if [[ ! "$protected_cid" =~ ^b[a-z2-7]{20,}$ ]]; then
+            echo "Could not resolve the protected powerrr.eth.limo CID." >&2
+            exit 1
+          fi
+          echo "protected_cid=$protected_cid" >> "$GITHUB_OUTPUT"
       - name: Free an IPFS release slot
         env:
           PINATA_JWT: ${{ secrets.PINATA_JWT }}
-        run: node tooling/pinata-release.mjs prune 3
+          PINATA_PROTECTED_CIDS: ${{ steps.ens.outputs.protected_cid }}
+        run: node tooling/pinata-release.mjs prune 1
+      - name: Ensure ENS deployment remains pinned
+        env:
+          PINATA_JWT: ${{ secrets.PINATA_JWT }}
+        run: >-
+          node tooling/pinata-release.mjs pin-hash
+          ${{ steps.ens.outputs.protected_cid }}
       - name: Pin verified site to IPFS
         id: pinata
         env:
@@ -102,6 +121,7 @@ jobs:
         id: retention
         env:
           PINATA_JWT: ${{ secrets.PINATA_JWT }}
+          PINATA_PROTECTED_CIDS: ${{ steps.ens.outputs.protected_cid }}
         run: node tooling/pinata-release.mjs prune 3
       - name: Create release metadata
         env:
