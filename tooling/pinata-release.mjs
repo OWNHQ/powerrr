@@ -20,11 +20,9 @@ if (command === "upload-directory") {
   console.log(`Pinned ${result.size} bytes as ${result.cid}.`);
 } else if (command === "prune") {
   await pruneReleases(token, Number(argument ?? 3));
-} else if (command === "pin-hash") {
-  await pinHash(token, argument);
 } else {
   throw new Error(
-    "Usage: node tooling/pinata-release.mjs <upload-directory [path]|prune [count]|pin-hash <cid>>",
+    "Usage: node tooling/pinata-release.mjs <upload-directory [path]|prune [count]>",
   );
 }
 
@@ -137,42 +135,6 @@ async function pruneReleases(jwt, retainCount) {
       `Removed old Powerrr release ${row.ipfs_pin_hash} from Pinata.`,
     );
   }
-}
-
-async function pinHash(jwt, cid) {
-  if (!cid || !/^b[a-z2-7]{20,}$/.test(cid)) {
-    throw new Error("pin-hash requires a valid CIDv1.");
-  }
-
-  const existing = (await listPublicFiles(jwt)).some(
-    (row) => row.ipfs_pin_hash === cid,
-  );
-  if (existing) {
-    console.log(`Protected CID ${cid} is already pinned.`);
-    return;
-  }
-
-  const response = await fetch(`${API_ROOT}/pinning/pinByHash`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${jwt}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      hashToPin: cid,
-      pinataMetadata: {
-        name: `${RELEASE_PREFIX}protected-${cid.slice(0, 12)}`,
-        keyvalues: { project: "powerrr", protected: "true" },
-      },
-    }),
-  });
-  const body = await response.text();
-  if (!response.ok) {
-    throw new Error(
-      `Could not pin protected CID ${cid} (${response.status}): ${body.slice(0, 1_000)}`,
-    );
-  }
-  console.log(`Restored protected CID ${cid} to Pinata.`);
 }
 
 async function listPublicFiles(jwt) {

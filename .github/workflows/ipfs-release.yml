@@ -78,12 +78,6 @@ jobs:
           PINATA_JWT: ${{ secrets.PINATA_JWT }}
           PINATA_PROTECTED_CIDS: ${{ steps.ens.outputs.protected_cid }}
         run: node tooling/pinata-release.mjs prune 1
-      - name: Ensure ENS deployment remains pinned
-        env:
-          PINATA_JWT: ${{ secrets.PINATA_JWT }}
-        run: >-
-          node tooling/pinata-release.mjs pin-hash
-          ${{ steps.ens.outputs.protected_cid }}
       - name: Pin verified site to IPFS
         id: pinata
         env:
