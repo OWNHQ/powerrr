@@ -8,6 +8,7 @@ on:
     - cron: "43 6 * * 1"
 
 permissions:
+  actions: read
   contents: read
   security-events: write
 
@@ -32,6 +33,7 @@ jobs:
           ./gitleaks git --no-banner --redact --config .gitleaks.toml .
 
   codeql:
+    if: github.event.repository.visibility == 'public'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

@@ -39,17 +39,9 @@ explicit denied Consent V2 state and masks the complete estimator surface.
 ## IPFS release
 
 Create a restricted Pinata JWT with public upload, list, and delete/unpin
-permissions. Add it as `PINATA_JWT` in a GitHub environment named
-`production`, then require a reviewer for that environment.
-
-Run the `release-ipfs` workflow from `main`. It builds without secrets, waits
-for production approval, uploads only the checksum-verified static directory,
-then browser-tests the returned CID subdomain, creates a GitHub Release, and
-keeps three Powerrr pins. Folder upload is used because Pinata's current CAR
-import requires a paid plan.
-
-To publish the current checkout locally, put `PINATA_JWT` in the ignored
-`.env` file and run:
+permissions. IPFS deployments are intentionally manual; there is no GitHub
+Actions deployment or availability workflow. Put `PINATA_JWT` in the ignored
+`.env` file and run from a clean `main` checkout:
 
 ```bash
 pnpm check
@@ -61,6 +53,10 @@ pnpm deploy:pinata
 `deploy:pinata` rebuilds and verifies the artifact immediately before upload.
 It does not delete or replace earlier pins.
 
+Before deleting any old pin, resolve `https://powerrr.eth.limo/` and preserve
+the CID reported by its `X-Ipfs-Roots` response header. A failed lookup must
+stop cleanup rather than permit deletion.
+
 The immutable public URL is:
 
 ```text
@@ -70,9 +66,8 @@ https://<CID>.ipfs.dweb.link/
 The static build uses relative asset paths, so it works through this
 CID-subdomain URL as well as path-style gateways.
 
-The GitHub Release contains the CID, commit, checksum manifest, and metadata.
-The weekly `ipfs-availability` workflow checks the latest release. Public
-gateways can be slow or unavailable; no paid fallback is configured.
+Record the CID, source commit, and generated `SHA256SUMS` with the release.
+Public gateways can be slow or unavailable; no paid fallback is configured.
 
 ## Rollback and recovery
 
