@@ -1,0 +1,20 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Generated public Morpho market identifiers and block hashes"
+condition = "AND"
+paths = ['''^packages/configs/src/ethereum-morpho-usdc-markets\.ts$''']
+regexTarget = "match"
+regexes = ['''0x[0-9a-fA-F]{64}''']
+
+[[allowlists]]
+description = "Public Ethereum token addresses in registry tooling and tests"
+condition = "AND"
+paths = [
+  '''^apps/website/utils/provider-destination\.test\.ts$''',
+  '''^packages/configs/src/ethereum-morpho-usdc-markets\.ts$''',
+  '''^tooling/generate-morpho-market-registry\.mjs$''',
+]
+regexTarget = "match"
+regexes = ['''0x[0-9a-fA-F]{40}''']

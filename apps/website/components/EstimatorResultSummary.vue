@@ -1,0 +1,144 @@
+<script setup lang="ts">
+import { PhArrowClockwise, PhCheck, PhSpinnerGap } from "@phosphor-icons/vue";
+
+defineProps<{
+  demo: boolean;
+  address: string;
+  names: string[];
+  matchedCollateral: string;
+  assetCount: number;
+  selectedAssetCount: number;
+  providerCount: number;
+  staleLabel: string;
+  refreshing: boolean;
+  refreshComplete: boolean;
+}>();
+
+const emit = defineEmits<{
+  refresh: [];
+}>();
+
+const root = ref<HTMLElement | null>(null);
+defineExpose({
+  focus: (options?: FocusOptions) => root.value?.focus(options),
+});
+</script>
+
+<template>
+  <section
+    ref="root"
+    tabindex="-1"
+    class="result-summary rounded-2xl border border-line bg-surface px-5 py-4 sm:px-6 sm:py-5"
+    aria-labelledby="result-title"
+  >
+    <div
+      class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"
+    >
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-2">
+          <h1 id="result-title" class="type-headline">
+            Wallet snapshot for
+            {{ names.length ? names.join(" · ") : address }}
+          </h1>
+          <span
+            v-if="demo"
+            class="rounded-full bg-warning-surface px-2.5 py-1 text-xs font-semibold text-warning"
+          >
+            Example data
+          </span>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <dl class="grid grid-cols-3 gap-x-4 gap-y-3 sm:gap-x-7">
+          <div class="min-w-0">
+            <dt>Selected asset value</dt>
+            <dd class="whitespace-nowrap">{{ matchedCollateral }}</dd>
+          </div>
+          <div class="min-w-0">
+            <dt>Selected assets</dt>
+            <dd class="whitespace-nowrap">
+              {{ selectedAssetCount }}/{{ assetCount }}
+            </dd>
+          </div>
+          <div class="min-w-0">
+            <dt>Markets</dt>
+            <dd class="whitespace-nowrap">{{ providerCount }}</dd>
+          </div>
+        </dl>
+        <div
+          class="flex shrink-0 items-center gap-2 sm:border-l sm:border-line sm:pl-5"
+        >
+          <button
+            type="button"
+            class="focus-ring inline-flex min-h-11 min-w-[7.5rem] items-center justify-center gap-2 rounded-lg border border-line px-3 text-sm font-semibold text-river hover:border-river disabled:cursor-wait disabled:opacity-55"
+            :disabled="refreshing"
+            @click="emit('refresh')"
+          >
+            <PhCheck
+              v-if="refreshComplete && !refreshing"
+              :size="17"
+              weight="bold"
+              aria-hidden="true"
+            />
+            <PhArrowClockwise
+              v-else-if="!refreshing"
+              :size="17"
+              aria-hidden="true"
+            />
+            <PhSpinnerGap
+              v-else
+              :size="17"
+              class="refresh-spinner shrink-0"
+              aria-hidden="true"
+            />
+            {{
+              refreshing
+                ? "Refreshing"
+                : refreshComplete
+                  ? "Updated"
+                  : "Refresh"
+            }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <p
+      v-if="staleLabel"
+      class="mt-4 border-t border-line pt-3 text-sm font-medium text-warning"
+    >
+      {{ staleLabel }}. Refresh to check current capacity and rates.
+    </p>
+    <p class="sr-only" aria-live="polite">
+      {{
+        refreshing
+          ? "Refreshing estimate"
+          : refreshComplete
+            ? "Estimate updated with current data"
+            : ""
+      }}
+    </p>
+  </section>
+</template>
+
+<style scoped>
+.refresh-spinner {
+  animation: refresh-spinner-turn 800ms linear infinite;
+  transform-origin: center;
+  will-change: transform;
+}
+
+@keyframes refresh-spinner-turn {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .refresh-spinner {
+    animation: none;
+    will-change: auto;
+  }
+}
+</style>

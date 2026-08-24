@@ -1,0 +1,34 @@
+{
+  "name": "@powerrr/website",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev --host 127.0.0.1 --port 3000",
+    "build": "nuxt generate",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "lint": "nuxt prepare && eslint . --max-warnings 0",
+    "typecheck": "nuxt typecheck"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource/space-mono": "^5.2.7",
+    "@phosphor-icons/vue": "^2.2.1",
+    "@powerrr/configs": "workspace:*",
+    "@powerrr/math": "workspace:*",
+    "@powerrr/protocol-adapters": "workspace:*",
+    "@powerrr/shared-types": "workspace:*",
+    "viem": "^2.55.4",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1.16.0",
+    "@nuxtjs/tailwindcss": "^6.12.2",
+    "eslint": "^10.7.0",
+    "nuxt": "^4.5.0",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vue-tsc": "^2.1.10"
+  }
+}

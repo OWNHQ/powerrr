@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "baseUrl": "../..",
+    "paths": {
+      "@powerrr/shared-types": ["packages/shared-types/src/index.ts"],
+      "@powerrr/math": ["packages/math/src/index.ts"],
+      "@powerrr/protocol-adapters": ["packages/protocol-adapters/src/index.ts"],
+      "@powerrr/configs": ["packages/configs/src/index.ts"]
+    }
+  }
+}

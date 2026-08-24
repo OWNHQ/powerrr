@@ -1,0 +1,11 @@
+{
+  "extends": "./tooling/tsconfig/base.json",
+  "files": [],
+  "references": [
+    { "path": "./packages/shared-types" },
+    { "path": "./packages/math" },
+    { "path": "./packages/protocol-adapters" },
+    { "path": "./packages/configs" },
+    { "path": "./apps/website" }
+  ]
+}

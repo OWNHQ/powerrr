@@ -1,0 +1,45 @@
+{
+  "name": "powerrr",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "build": "turbo run build",
+    "build:static": "pnpm --filter @powerrr/website build && node tooling/verify-static-artifact.mjs --write-checksums",
+    "dev": "pnpm --filter @powerrr/website dev",
+    "dev:website": "pnpm --filter @powerrr/website dev",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "lint": "turbo run lint",
+    "deadcode": "knip",
+    "licenses:check": "node tooling/check-production-licenses.mjs",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "turbo run typecheck",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm deadcode && pnpm licenses:check && pnpm test",
+    "verify:static": "node tooling/verify-static-artifact.mjs",
+    "report:token-coverage": "node tooling/report-token-coverage.mjs",
+    "generate:morpho-registry": "node tooling/generate-morpho-market-registry.mjs",
+    "verify:morpho-registry": "node --experimental-strip-types tooling/verify-morpho-market-registry.ts",
+    "deploy:pinata": "NUXT_APP_CDN_URL=./ pnpm build:static && pnpm verify:static && node --env-file=.env tooling/pinata-release.mjs upload-directory"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^22.10.2",
+    "@vitest/coverage-v8": "^4.1.10",
+    "knip": "^6.32.2",
+    "prettier": "^3.9.5",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "viem": "^2.55.4",
+    "vitest": "^4.1.10"
+  },
+  "pnpm": {
+    "overrides": {
+      "nanoid": ">=3.3.17 <4",
+      "postcss": "^8.5.18"
+    }
+  }
+}

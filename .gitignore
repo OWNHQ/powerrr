@@ -1,0 +1,16 @@
+node_modules
+.turbo
+.nuxt
+.output
+dist
+coverage
+playwright-report
+test-results
+*.tsbuildinfo
+*.local
+.env
+.env.*
+!.env.example
+.vercel
+.impeccable
+powerrr-x.srt
