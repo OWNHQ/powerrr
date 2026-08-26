@@ -19,8 +19,8 @@
     "@powerrr/math": "workspace:*",
     "@powerrr/protocol-adapters": "workspace:*",
     "@powerrr/shared-types": "workspace:*",
-    "viem": "^2.55.4",
-    "vue": "^3.5.13"
+    "viem": "^2.55.19",
+    "vue": "^3.5.41"
   },
   "devDependencies": {
     "@nuxt/eslint": "^1.16.0",
